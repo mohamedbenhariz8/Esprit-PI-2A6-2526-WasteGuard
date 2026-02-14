@@ -1,0 +1,2072 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ui version="4.0">
+ <class>MainWindow</class>
+ <widget class="QMainWindow" name="MainWindow">
+  <property name="geometry">
+   <rect>
+    <x>0</x>
+    <y>0</y>
+    <width>1100</width>
+    <height>804</height>
+   </rect>
+  </property>
+  <property name="windowTitle">
+   <string>WasteGuard - Gestion des Employés</string>
+  </property>
+  <property name="styleSheet">
+   <string notr="true">
+QMainWindow, QWidget {
+    background-color: #f4f6f9; 
+    font-family: &quot;Segoe UI&quot;, sans-serif;
+}
+
+QLabel {
+    color: #333333 !important;
+    font-weight: 600;
+}
+
+QFrame#sidebar {
+    background-color: #0f2b4c;
+    border: none;
+}
+QFrame#sidebar QLabel {
+    color: white !important;
+    background-color: transparent; 
+}
+
+QLabel#label_logo {
+    background-color: transparent !important;
+    border: none;
+}
+
+QFrame#sidebar QPushButton {
+    background-color: transparent;
+    border: none;
+    color: #bdc3c7;
+    text-align: left;
+    padding: 12px 20px;
+    font-size: 14px;
+    border-left: 3px solid transparent;
+}
+QFrame#sidebar QPushButton:hover, QFrame#sidebar QPushButton:checked {
+    background-color: #1a4270;
+    color: white;
+    border-left: 3px solid #3498db;
+}
+
+/* STAT CARDS BASE */
+QFrame#statCard, QFrame#statCard_2, QFrame#statCard_3, QFrame#actionCard, QFrame#cardFrame, QFrame#cardFrame_2 { 
+    background-color: #ffffff;
+    border-radius: 12px;
+    border: 1px solid #dce1e6;
+    border-bottom: 2px solid #dce1e6;
+}
+
+/* 1. Total Employés (BLUE) */
+QFrame#statCard {
+    background-color: #e3f2fd;
+    border: 1px solid #90caf9;
+}
+QFrame#statCard QLabel {
+    color: #1565c0 !important;
+}
+QLabel#lblStatNumber {
+    color: #0d47a1 !important; /* Darker Blue */
+    font-size: 28px;
+}
+
+/* 2. Charge de Travail (GREY/NEUTRAL) */
+QFrame#statCard_2 {
+    background-color: #f8f9fa;
+    border: 1px solid #e9ecef;
+}
+QFrame#statCard_2 QLabel {
+    color: #495057 !important;
+}
+QLabel#lblStatWorkload {
+    color: #343a40 !important;
+    font-size: 24px;
+    font-weight: bold;
+}
+
+/* 3. Disponibilité (GREEN) */
+QFrame#statCard_3 {
+    background-color: #e8f5e9;
+    border: 1px solid #a5d6a7;
+}
+QFrame#statCard_3 QLabel {
+    color: #2e7d32 !important;
+}
+QLabel#lblStatAvailability {
+    color: #1b5e20 !important;
+    font-weight: bold;
+    font-size: 24px;
+}
+
+/* 4. Actions Rapides (WHITE/CLEAN) */
+QFrame#actionCard {
+    background-color: #ffffff;
+    border: 1px solid #dce1e6;
+}
+QFrame#actionCard QLabel#label_Actions {
+    color: #37474f;
+    font-size: 14px;
+    font-weight: bold;
+}
+
+
+
+QPushButton#btnExport, QPushButton#btnFichePaie, QPushButton#btnGoMission, QPushButton#btnGoPointage, QPushButton#btnGoStats {
+    background-color: #ffffff;
+    color: #333333 !important;
+    border: 1px solid #cccccc;
+    border-radius: 8px;
+    padding: 10px 15px;
+    text-align: left;
+    font-weight: bold;
+    font-size: 13px;
+    margin-top: 5px;
+}
+QPushButton#btnExport:hover, QPushButton#btnFichePaie:hover, QPushButton#btnGoMission:hover, QPushButton#btnGoPointage:hover, QPushButton#btnGoStats:hover {
+    background-color: #e3f2fd;
+    border: 1px solid #3498db;
+    color: #0f2b4c !important;
+}
+
+QPushButton#btnSave, QPushButton#btnAjouter, QPushButton#btnNouveau {
+    background-color: #28a745;
+    color: white !important;
+    border-radius: 5px;
+    padding: 8px 15px;
+    font-weight: bold;
+    border: none;
+}
+QPushButton#btnSave:hover, QPushButton#btnAjouter:hover, QPushButton#btnNouveau:hover {
+    background-color: #218838;
+}
+QPushButton#btnNouveau {
+    background-color: #0f2b4c;
+}
+QPushButton#btnNouveau:hover {
+    background-color: #1a4270;
+}
+
+QPushButton#btnAnnuler, QPushButton#btnAnnuler_Ajout {
+    background-color: #6c757d;
+    color: white !important;
+    border-radius: 5px;
+    padding: 8px 15px;
+    font-weight: bold;
+    border: none;
+}
+QPushButton#btnAnnuler:hover, QPushButton#btnAnnuler_Ajout:hover {
+    background-color: #5a6268;
+}
+
+QPushButton#btnDelete {
+    background-color: #dc3545;
+    color: white !important;
+    border-radius: 5px;
+    padding: 8px 15px;
+    font-weight: bold;
+    border: none;
+}
+QPushButton#btnDelete:hover {
+    background-color: #c82333;
+}
+
+QPushButton#btnUploadPhoto, QPushButton#btnUploadPhoto_Ajout {
+    background-color: #ffffff;
+    color: #0f2b4c !important;
+    border: 1px dashed #0f2b4c;
+    border-radius: 8px;
+    padding: 6px;
+    font-weight: bold;
+    margin-top: 5px;
+}
+QPushButton#btnUploadPhoto:hover, QPushButton#btnUploadPhoto_Ajout:hover {
+    background-color: #e3f2fd;
+    border: 1px solid #0f2b4c;
+}
+
+QTableWidget {
+    background-color: #f4f6f9;
+    alternate-background-color: #e8ebf0;
+    color: #000000 !important;
+    gridline-color: transparent;
+    border: 1px solid #dce1e6;
+    border-radius: 8px;
+    font-size: 13px;
+}
+QTableWidget::item {
+    color: #000000 !important;
+    padding: 5px;
+    border-bottom: 1px solid #e0e6ed;
+}
+QTableWidget::item:selected {
+    background-color: #e3f2fd;
+    color: #0f2b4c !important;
+}
+QHeaderView::section {
+    background-color: #0f2b4c;
+    color: white;
+    padding: 8px;
+    border: none;
+    font-weight: bold;
+    font-size: 13px;
+}
+
+QLineEdit {
+    background-color: #ffffff;
+    color: #000000;
+    border: 1px solid #cccccc;
+    border-radius: 5px;
+    padding: 6px;
+}
+QLineEdit:focus {
+    border: 1px solid #3498db;
+}
+
+QComboBox {
+    background-color: #ffffff;
+    color: #333333;
+    border: 1px solid #cccccc;
+    border-radius: 5px;
+    padding: 6px;
+}
+QComboBox:focus {
+    border: 1px solid #3498db;
+}
+QComboBox QAbstractItemView {
+    background-color: #ffffff;
+    color: #333333;
+    selection-background-color: #0f2b4c;
+    selection-color: #ffffff;
+    border: 1px solid #cccccc;
+}
+
+QLabel#imageLabel, QLabel#imageLabel_2 {
+    border: 1px solid #cccccc;
+    border-radius: 10px;
+    background-color: #f4f6f9;
+    color: #888888 !important;
+}
+
+QTabWidget::pane { border: none; }
+QTabBar::tab {
+    background: #e0e4e8;
+    color: #333 !important;
+    padding: 8px 20px;
+    margin-right: 2px;
+}
+QTabBar::tab:selected {
+    background: #0f2b4c;
+    color: white !important;
+}
+
+QLabel#lblUserName, QLabel#lblUserName_Modif, QLabel#lblUserName_Ajout {
+    font-size: 14px;
+    font-weight: bold;
+    color: #0f2b4c !important;
+}
+QLabel#lblUserRole, QLabel#lblUserRole_Modif, QLabel#lblUserRole_Ajout {
+    font-size: 12px;
+    font-weight: bold;
+    color: #28a745 !important;
+    margin-top: -2px;
+}
+
+/* Style Spécifique pour l'onglet Mission */
+QPushButton#btnAnalyser {
+    background-color: #6c5ce7;
+    color: white;
+    font-weight: bold;
+    padding: 12px;
+    border-radius: 6px;
+}
+QPushButton#btnAnalyser:hover {
+    background-color: #5b4cc4;
+}
+QLabel#lblTitreMission {
+    font-size: 16px;
+    color: #0f2b4c !important;
+}
+QLabel#lblResultat {
+    font-size: 14px;
+    color: #27ae60 !important;
+}
+
+/* Style pour l'onglet Pointage */
+QLabel#lblStatutRFID {
+    background-color: #ecf0f1;
+    color: #7f8c8d;
+    font-size: 24px;
+    font-weight: bold;
+    border-radius: 10px;
+    padding: 20px;
+    border: 2px dashed #bdc3c7;
+}
+QPushButton#btnSimulerBadge {
+    background-color: #e67e22;
+    color: white;
+    font-weight: bold;
+    padding: 10px;
+    border-radius: 5px;
+    margin-top: 10px;
+}
+QPushButton#btnSimulerBadge:hover {
+    background-color: #d35400;
+}
+
+QSlider::groove:horizontal {
+    border: 1px solid #cccccc;
+    height: 8px;
+    background: #e0e0e0;
+    margin: 2px 0;
+    border-radius: 4px;
+}
+QSlider::handle:horizontal {
+    background: #0f2b4c;
+    border: 1px solid #0f2b4c;
+    width: 18px;
+    height: 18px;
+    margin: -6px 0;
+    border-radius: 9px;
+}
+/* ======================================================= */
+/* STYLE UNIFIÉ POUR LES 5 BOUTONS PRINCIPAUX              */
+/* ======================================================= */
+
+/* 1. Style de base pour les deux boutons du haut ET les trois du bas */
+QPushButton#btnFichePaie, QPushButton#btnExport,
+QPushButton#btnGoMission, QPushButton#btnGoPointage, QPushButton#btnGoStats {
+    background-color: #ffffff;  /* Fond blanc */
+    color: #333333;             /* Texte gris foncé (le standard pro) */
+    border: 1px solid #dcdcdc;  /* Bordure grise subtile */
+    border-radius: 8px;         /* Coins joliment arrondis */
+    padding: 15px 20px;         /* Espace intérieur confortable */
+    font-size: 14px;            /* Taille de texte lisible */
+    font-weight: bold;          /* Texte en gras pour l'importance */
+    text-align: left;           /* Alignement du texte */
+}
+
+/* 2. Effet quand la souris passe dessus (Hover) pour les 5 boutons */
+QPushButton#btnFichePaie:hover, QPushButton#btnExport:hover,
+QPushButton#btnGoMission:hover, QPushButton#btnGoPointage:hover, QPushButton#btnGoStats:hover {
+    background-color: #f0f8ff;  /* Fond bleu très pâle au survol */
+    border: 1px solid #3498db;  /* La bordure devient bleue */
+    color: #000000;             /* Le texte devient noir pur */
+}
+
+/* 3. Effet quand on clique dessus (Pressed) pour les 5 boutons */
+QPushButton#btnFichePaie:pressed, QPushButton#btnExport:pressed,
+QPushButton#btnGoMission:pressed, QPushButton#btnGoPointage:pressed, QPushButton#btnGoStats:pressed {
+    background-color: #e1ecf4;  /* Fond un peu plus foncé au clic */
+    border: 1px solid #2980b9;
+}
+/* Style pour les boutons de RETOUR dans les pages Mission, Pointage et Stats */
+QPushButton#btnAnnulerMission, 
+QPushButton#btnAnnulerPointage, 
+QPushButton#btnAnnulerStats {
+    background-color: #6c757d;  /* Gris foncé standard pour &quot;Annuler/Retour&quot; */
+    color: white;               /* Texte blanc */
+    border: none;
+    border-radius: 5px;
+    padding: 10px 20px;
+    font-weight: bold;
+    font-size: 14px;
+    min-width: 200px;           /* Largeur minimale pour être bien visible */
+    margin-top: 20px;           /* Un peu d'espace au-dessus */
+}
+
+/* Effet au survol */
+QPushButton#btnAnnulerMission:hover, 
+QPushButton#btnAnnulerPointage:hover, 
+QPushButton#btnAnnulerStats:hover {
+    background-color: #5a6268;  /* Gris un peu plus foncé */
+}
+/* ======================================================= */
+/* 1. CORRECTION DES BOUTONS DE RETOUR (Pages internes)    */
+/* ======================================================= */
+/* Cela rendra les boutons &quot;Retour&quot; bien visibles en gris foncé */
+QPushButton#btnAnnulerMission, 
+QPushButton#btnAnnulerPointage, 
+QPushButton#btnAnnulerStats {
+    background-color: #6c757d;  /* Gris foncé */
+    color: white !important;    /* Texte BLANC forcé */
+    border: none;
+    border-radius: 6px;
+    padding: 10px 25px;         /* Plus large pour être cliquable */
+    font-weight: bold;
+    font-size: 14px;
+    margin-top: 50px;           /* Espace au dessus (Augmenté) */
+    min-width: 150px;           /* Largeur minimale */
+}
+
+QPushButton#btnAnnulerMission:hover, 
+QPushButton#btnAnnulerPointage:hover, 
+QPushButton#btnAnnulerStats:hover {
+    background-color: #5a6268;  /* Gris plus foncé au survol */
+}
+
+/* ======================================================= */
+/* 2. CORRECTION DE LA BOITE DE DIALOGUE (Supprimer)       */
+/* ======================================================= */
+/* Cela corrige les boutons &quot;Yes/No&quot; illisibles */
+QMessageBox {
+    background-color: white;
+}
+
+QMessageBox QPushButton {
+    background-color: #0f2b4c;  /* Bleu foncé */
+    color: white !important;    /* Texte blanc */
+    border-radius: 5px;
+    padding: 6px 20px;
+    min-width: 80px;            /* Taille correcte */
+    font-weight: bold;
+}
+
+QMessageBox QPushButton:hover {
+    background-color: #1a4270;  /* Bleu plus clair au survol */
+}
+
+/* ======================================================= */
+/* 3. UNIFICATION DES 5 BOUTONS DU DASHBOARD (Accueil)     */
+/* ======================================================= */
+/* Pour que les 3 boutons du bas ressemblent à ceux du haut */
+QPushButton#btnFichePaie, QPushButton#btnExport,
+QPushButton#btnGoMission, QPushButton#btnGoPointage, QPushButton#btnGoStats {
+    background-color: #ffffff;
+    color: #333333 !important;  /* Gris foncé lisible */
+    border: 1px solid #dcdcdc;
+    border-radius: 8px;
+    padding: 15px;
+    font-size: 14px;
+    font-weight: bold;
+    text-align: center;         /* Centré ou left selon préférence */
+}
+
+QPushButton#btnFichePaie:hover, QPushButton#btnExport:hover,
+QPushButton#btnGoMission:hover, QPushButton#btnGoPointage:hover, QPushButton#btnGoStats:hover {
+    background-color: #e3f2fd;
+    border: 1px solid #3498db;
+    color: #000000 !important;
+}</string>
+  </property>
+  <widget class="QWidget" name="centralwidget">
+   <layout class="QHBoxLayout" name="horizontalLayout_Main">
+    <property name="spacing">
+     <number>0</number>
+    </property>
+    <property name="leftMargin">
+     <number>0</number>
+    </property>
+    <property name="topMargin">
+     <number>0</number>
+    </property>
+    <property name="rightMargin">
+     <number>0</number>
+    </property>
+    <property name="bottomMargin">
+     <number>0</number>
+    </property>
+    <item>
+     <widget class="QFrame" name="sidebar">
+      <property name="sizePolicy">
+       <sizepolicy hsizetype="Fixed" vsizetype="Expanding">
+        <horstretch>0</horstretch>
+        <verstretch>0</verstretch>
+       </sizepolicy>
+      </property>
+      <property name="minimumSize">
+       <size>
+        <width>250</width>
+        <height>0</height>
+       </size>
+      </property>
+      <property name="maximumSize">
+       <size>
+        <width>250</width>
+        <height>16777215</height>
+       </size>
+      </property>
+      <property name="frameShape">
+       <enum>QFrame::Shape::StyledPanel</enum>
+      </property>
+      <property name="frameShadow">
+       <enum>QFrame::Shadow::Raised</enum>
+      </property>
+      <layout class="QVBoxLayout" name="verticalLayout_4">
+       <item>
+        <widget class="QLabel" name="label_logo">
+         <property name="minimumSize">
+          <size>
+           <width>0</width>
+           <height>100</height>
+          </size>
+         </property>
+         <property name="text">
+          <string/>
+         </property>
+         <property name="pixmap">
+          <pixmap resource="logo.qrc">:/Gemini_Generated_Image_8k5i7p8k5i7p8k5i-removebg-preview (2).png</pixmap>
+         </property>
+         <property name="alignment">
+          <set>Qt::AlignmentFlag::AlignCenter</set>
+         </property>
+        </widget>
+       </item>
+       <item>
+        <widget class="QPushButton" name="btnAccueil">
+         <property name="text">
+          <string>Accueil</string>
+         </property>
+        </widget>
+       </item>
+       <item>
+        <widget class="QPushButton" name="btnStock">
+         <property name="text">
+          <string>Stock</string>
+         </property>
+        </widget>
+       </item>
+       <item>
+        <widget class="QPushButton" name="btnProduits">
+         <property name="text">
+          <string>Produits</string>
+         </property>
+        </widget>
+       </item>
+       <item>
+        <widget class="QPushButton" name="btnEmployes">
+         <property name="text">
+          <string>Employés</string>
+         </property>
+        </widget>
+       </item>
+       <item>
+        <widget class="QPushButton" name="btnStatistiques">
+         <property name="text">
+          <string>Statistiques</string>
+         </property>
+        </widget>
+       </item>
+       <item>
+        <widget class="QPushButton" name="btnMaintenance">
+         <property name="text">
+          <string>Maintenance</string>
+         </property>
+        </widget>
+       </item>
+       <item>
+        <spacer name="verticalSpacer">
+         <property name="orientation">
+          <enum>Qt::Orientation::Vertical</enum>
+         </property>
+         <property name="sizeType">
+          <enum>QSizePolicy::Policy::Expanding</enum>
+         </property>
+         <property name="sizeHint" stdset="0">
+          <size>
+           <width>20</width>
+           <height>40</height>
+          </size>
+         </property>
+        </spacer>
+       </item>
+      </layout>
+     </widget>
+    </item>
+    <item>
+     <widget class="QWidget" name="contentArea" native="true">
+      <property name="sizePolicy">
+       <sizepolicy hsizetype="Expanding" vsizetype="Expanding">
+        <horstretch>0</horstretch>
+        <verstretch>0</verstretch>
+       </sizepolicy>
+      </property>
+      <layout class="QVBoxLayout" name="verticalLayout_Main">
+       <item>
+        <widget class="QStackedWidget" name="stackedWidget">
+         <property name="sizePolicy">
+          <sizepolicy hsizetype="Expanding" vsizetype="Expanding">
+           <horstretch>0</horstretch>
+           <verstretch>0</verstretch>
+          </sizepolicy>
+         </property>
+         <property name="currentIndex">
+          <number>0</number>
+         </property>
+         <widget class="QWidget" name="affichage">
+          <layout class="QHBoxLayout" name="horizontalLayout_Split" stretch="3,1">
+           <item>
+            <layout class="QVBoxLayout" name="verticalLayout_Left">
+             <item>
+              <layout class="QHBoxLayout" name="horizontalLayout_Header">
+               <item>
+                <widget class="QLabel" name="label_Title">
+                 <property name="font">
+                  <font>
+                   <family>Segoe UI</family>
+                   <pointsize>18</pointsize>
+                   <fontweight>DemiBold</fontweight>
+                  </font>
+                 </property>
+                 <property name="text">
+                  <string>Tableau de Bord</string>
+                 </property>
+                </widget>
+               </item>
+               <item>
+                <spacer name="horizontalSpacer">
+                 <property name="orientation">
+                  <enum>Qt::Orientation::Horizontal</enum>
+                 </property>
+                 <property name="sizeType">
+                  <enum>QSizePolicy::Policy::Expanding</enum>
+                 </property>
+                 <property name="sizeHint" stdset="0">
+                  <size>
+                   <width>40</width>
+                   <height>20</height>
+                  </size>
+                 </property>
+                </spacer>
+               </item>
+               <item>
+                <widget class="QPushButton" name="btnNouveau">
+                 <property name="minimumSize">
+                  <size>
+                   <width>0</width>
+                   <height>40</height>
+                  </size>
+                 </property>
+                 <property name="cursor">
+                  <cursorShape>PointingHandCursor</cursorShape>
+                 </property>
+                 <property name="text">
+                  <string>+ Nouvel Employé</string>
+                 </property>
+                </widget>
+               </item>
+               <item>
+                <spacer name="horizontalSpacer_User">
+                 <property name="orientation">
+                  <enum>Qt::Orientation::Horizontal</enum>
+                 </property>
+                 <property name="sizeType">
+                  <enum>QSizePolicy::Policy::Fixed</enum>
+                 </property>
+                 <property name="sizeHint" stdset="0">
+                  <size>
+                   <width>20</width>
+                   <height>20</height>
+                  </size>
+                 </property>
+                </spacer>
+               </item>
+               <item>
+                <widget class="QFrame" name="frameUser">
+                 <property name="frameShape">
+                  <enum>QFrame::Shape::NoFrame</enum>
+                 </property>
+                 <layout class="QVBoxLayout" name="verticalLayout_User">
+                  <property name="spacing">
+                   <number>2</number>
+                  </property>
+                  <property name="leftMargin">
+                   <number>0</number>
+                  </property>
+                  <property name="topMargin">
+                   <number>0</number>
+                  </property>
+                  <property name="rightMargin">
+                   <number>5</number>
+                  </property>
+                  <property name="bottomMargin">
+                   <number>0</number>
+                  </property>
+                  <item>
+                   <widget class="QLabel" name="lblUserName">
+                    <property name="text">
+                     <string>Admin System</string>
+                    </property>
+                    <property name="alignment">
+                     <set>Qt::AlignmentFlag::AlignRight|Qt::AlignmentFlag::AlignTrailing|Qt::AlignmentFlag::AlignVCenter</set>
+                    </property>
+                   </widget>
+                  </item>
+                  <item>
+                   <widget class="QLabel" name="lblUserRole">
+                    <property name="text">
+                     <string>Chef d'Atelier</string>
+                    </property>
+                    <property name="alignment">
+                     <set>Qt::AlignmentFlag::AlignRight|Qt::AlignmentFlag::AlignTrailing|Qt::AlignmentFlag::AlignVCenter</set>
+                    </property>
+                   </widget>
+                  </item>
+                 </layout>
+                </widget>
+               </item>
+              </layout>
+             </item>
+             <item>
+              <layout class="QHBoxLayout" name="horizontalLayout_Search">
+               <item>
+                <widget class="QLineEdit" name="txtSearch">
+                 <property name="minimumSize">
+                  <size>
+                   <width>0</width>
+                   <height>40</height>
+                  </size>
+                 </property>
+                 <property name="placeholderText">
+                  <string>🔍 Rechercher un employé...</string>
+                 </property>
+                </widget>
+               </item>
+               <item>
+                <widget class="QComboBox" name="cbSort">
+                 <property name="minimumSize">
+                  <size>
+                   <width>180</width>
+                   <height>40</height>
+                  </size>
+                 </property>
+                 <item>
+                  <property name="text">
+                   <string>Trier par: Spécialité</string>
+                  </property>
+                 </item>
+                 <item>
+                  <property name="text">
+                   <string>Trier par: note de fin d annes</string>
+                  </property>
+                 </item>
+                 <item>
+                  <property name="text">
+                   <string>Trier par: salaire</string>
+                  </property>
+                 </item>
+                 <item>
+                  <property name="text">
+                   <string>Trier par: Nom</string>
+                  </property>
+                 </item>
+                </widget>
+               </item>
+              </layout>
+             </item>
+             <item>
+              <widget class="QTableWidget" name="tableEmployes">
+               <property name="sizePolicy">
+                <sizepolicy hsizetype="Expanding" vsizetype="Expanding">
+                 <horstretch>0</horstretch>
+                 <verstretch>0</verstretch>
+                </sizepolicy>
+               </property>
+               <property name="alternatingRowColors">
+                <bool>true</bool>
+               </property>
+               <property name="selectionBehavior">
+                <enum>QAbstractItemView::SelectionBehavior::SelectRows</enum>
+               </property>
+               <property name="verticalScrollMode">
+                <enum>QAbstractItemView::ScrollMode::ScrollPerPixel</enum>
+               </property>
+               <property name="horizontalScrollMode">
+                <enum>QAbstractItemView::ScrollMode::ScrollPerPixel</enum>
+               </property>
+               <property name="showGrid">
+                <bool>false</bool>
+               </property>
+               <attribute name="horizontalHeaderStretchLastSection">
+                <bool>true</bool>
+               </attribute>
+               <attribute name="verticalHeaderVisible">
+                <bool>false</bool>
+               </attribute>
+               <row>
+                <property name="text">
+                 <string>1</string>
+                </property>
+               </row>
+               <row>
+                <property name="text">
+                 <string>2</string>
+                </property>
+               </row>
+               <row>
+                <property name="text">
+                 <string>3</string>
+                </property>
+               </row>
+               <row>
+                <property name="text">
+                 <string>4</string>
+                </property>
+               </row>
+               <column>
+                <property name="text">
+                 <string>MATRICULE</string>
+                </property>
+               </column>
+               <column>
+                <property name="text">
+                 <string>NOM COMPLET</string>
+                </property>
+               </column>
+               <column>
+                <property name="text">
+                 <string>SPÉCIALITÉ</string>
+                </property>
+               </column>
+               <column>
+                <property name="text">
+                 <string>DISPONIBILITÉ</string>
+                </property>
+               </column>
+               <column>
+                <property name="text">
+                 <string>ACTIONS</string>
+                </property>
+               </column>
+               <item row="0" column="0">
+                <property name="text">
+                 <string>EMP-001</string>
+                </property>
+               </item>
+               <item row="0" column="1">
+                <property name="text">
+                 <string>Ali Ben Salah</string>
+                </property>
+               </item>
+               <item row="0" column="2">
+                <property name="text">
+                 <string>Mécanicien</string>
+                </property>
+               </item>
+               <item row="0" column="3">
+                <property name="text">
+                 <string>Disponible</string>
+                </property>
+               </item>
+               <item row="0" column="4">
+                <property name="text">
+                 <string>✏️ | 🗑️</string>
+                </property>
+                <property name="textAlignment">
+                 <set>AlignCenter</set>
+                </property>
+               </item>
+               <item row="1" column="0">
+                <property name="text">
+                 <string>EMP-002</string>
+                </property>
+               </item>
+               <item row="1" column="1">
+                <property name="text">
+                 <string>Sara Tounsi</string>
+                </property>
+               </item>
+               <item row="1" column="2">
+                <property name="text">
+                 <string>Chauffeur</string>
+                </property>
+               </item>
+               <item row="1" column="3">
+                <property name="text">
+                 <string>En Mission</string>
+                </property>
+               </item>
+               <item row="1" column="4">
+                <property name="text">
+                 <string>✏️ | 🗑️</string>
+                </property>
+                <property name="textAlignment">
+                 <set>AlignCenter</set>
+                </property>
+               </item>
+               <item row="2" column="0">
+                <property name="text">
+                 <string>EMP-003</string>
+                </property>
+               </item>
+               <item row="2" column="1">
+                <property name="text">
+                 <string>Mohamed Amine</string>
+                </property>
+               </item>
+               <item row="2" column="2">
+                <property name="text">
+                 <string>Électronicien</string>
+                </property>
+               </item>
+               <item row="2" column="3">
+                <property name="text">
+                 <string>Congé</string>
+                </property>
+               </item>
+               <item row="2" column="4">
+                <property name="text">
+                 <string>✏️ | 🗑️</string>
+                </property>
+                <property name="textAlignment">
+                 <set>AlignCenter</set>
+                </property>
+               </item>
+               <item row="3" column="0">
+                <property name="text">
+                 <string>EMP-004</string>
+                </property>
+               </item>
+               <item row="3" column="1">
+                <property name="text">
+                 <string>Rania Kallel</string>
+                </property>
+               </item>
+               <item row="3" column="2">
+                <property name="text">
+                 <string>Responsable</string>
+                </property>
+               </item>
+               <item row="3" column="3">
+                <property name="text">
+                 <string>Disponible</string>
+                </property>
+               </item>
+               <item row="3" column="4">
+                <property name="text">
+                 <string>✏️ | 🗑️</string>
+                </property>
+                <property name="textAlignment">
+                 <set>AlignCenter</set>
+                </property>
+               </item>
+              </widget>
+             </item>
+            </layout>
+           </item>
+           <item>
+            <layout class="QVBoxLayout" name="verticalLayout_Right">
+             <property name="spacing">
+              <number>20</number>
+             </property>
+             <property name="leftMargin">
+              <number>15</number>
+             </property>
+             <item>
+              <widget class="QLabel" name="label_StatTitle">
+               <property name="font">
+                <font>
+                 <family>Segoe UI</family>
+                 <pointsize>12</pointsize>
+                 <fontweight>DemiBold</fontweight>
+                </font>
+               </property>
+               <property name="text">
+                <string>Aperçu</string>
+               </property>
+              </widget>
+             </item>
+             <item>
+              <widget class="QFrame" name="statCard">
+               <property name="frameShape">
+                <enum>QFrame::Shape::StyledPanel</enum>
+               </property>
+               <layout class="QVBoxLayout" name="verticalLayout_5">
+                <item>
+                 <widget class="QLabel" name="label_10">
+                  <property name="text">
+                   <string>Total Employés</string>
+                  </property>
+                 </widget>
+                </item>
+                <item>
+                 <widget class="QLabel" name="lblStatNumber">
+                  <property name="text">
+                   <string>12</string>
+                  </property>
+                 </widget>
+                </item>
+               </layout>
+              </widget>
+             </item>
+             <item>
+              <widget class="QFrame" name="statCard_2">
+               <property name="frameShape">
+                <enum>QFrame::Shape::StyledPanel</enum>
+               </property>
+               <layout class="QVBoxLayout" name="verticalLayout_6">
+                <item>
+                 <widget class="QLabel" name="label_12">
+                  <property name="text">
+                   <string>Charge de Travail de l'equipe</string>
+                  </property>
+                 </widget>
+                </item>
+                <item>
+                 <widget class="QLabel" name="lblStatWorkload">
+                  <property name="text">
+                   <string>75%</string>
+                  </property>
+                 </widget>
+                </item>
+               </layout>
+              </widget>
+             </item>
+             <item>
+              <widget class="QFrame" name="statCard_3">
+               <property name="frameShape">
+                <enum>QFrame::Shape::StyledPanel</enum>
+               </property>
+               <layout class="QVBoxLayout" name="verticalLayout_7">
+                <item>
+                 <widget class="QLabel" name="label_14">
+                  <property name="text">
+                   <string>Disponibilité</string>
+                  </property>
+                 </widget>
+                </item>
+                <item>
+                 <widget class="QLabel" name="lblStatAvailability">
+                  <property name="text">
+                   <string>4 Dispo</string>
+                  </property>
+                 </widget>
+                </item>
+               </layout>
+              </widget>
+             </item>
+             <item>
+              <widget class="QFrame" name="actionCard">
+               <property name="frameShape">
+                <enum>QFrame::Shape::StyledPanel</enum>
+               </property>
+               <layout class="QVBoxLayout" name="verticalLayout_Actions">
+                <property name="spacing">
+                 <number>15</number>
+                </property>
+                <item>
+                 <widget class="QLabel" name="label_Actions">
+                  <property name="font">
+                   <font>
+                    <family>Segoe UI</family>
+                    <pointsize>-1</pointsize>
+                    <bold>true</bold>
+                   </font>
+                  </property>
+                  <property name="text">
+                   <string>Actions Rapides</string>
+                  </property>
+                 </widget>
+                </item>
+                <item>
+                 <widget class="QPushButton" name="btnFichePaie">
+                  <property name="cursor">
+                   <cursorShape>PointingHandCursor</cursorShape>
+                  </property>
+                  <property name="text">
+                   <string>💰  Générer Fiche de Paie</string>
+                  </property>
+                 </widget>
+                </item>
+                <item>
+                 <widget class="QPushButton" name="btnGoMission">
+                  <property name="cursor">
+                   <cursorShape>PointingHandCursor</cursorShape>
+                  </property>
+                  <property name="text">
+                   <string>🤖  Affectation IA</string>
+                  </property>
+                 </widget>
+                </item>
+                <item>
+                 <widget class="QPushButton" name="btnGoPointage">
+                  <property name="cursor">
+                   <cursorShape>PointingHandCursor</cursorShape>
+                  </property>
+                  <property name="text">
+                   <string>⏱️  Pointage</string>
+                  </property>
+                 </widget>
+                </item>
+                <item>
+                 <widget class="QPushButton" name="btnGoStats">
+                  <property name="cursor">
+                   <cursorShape>PointingHandCursor</cursorShape>
+                  </property>
+                  <property name="text">
+                   <string>📊  Statistiques</string>
+                  </property>
+                 </widget>
+                </item>
+               </layout>
+              </widget>
+             </item>
+             <item>
+              <spacer name="verticalSpacer_Right">
+               <property name="orientation">
+                <enum>Qt::Orientation::Vertical</enum>
+               </property>
+               <property name="sizeType">
+                <enum>QSizePolicy::Policy::Expanding</enum>
+               </property>
+               <property name="sizeHint" stdset="0">
+                <size>
+                 <width>20</width>
+                 <height>40</height>
+                </size>
+               </property>
+              </spacer>
+             </item>
+            </layout>
+           </item>
+          </layout>
+         </widget>
+         <widget class="QWidget" name="modification">
+          <layout class="QGridLayout" name="gridLayout_Modif">
+           <item row="0" column="0" colspan="2">
+            <layout class="QHBoxLayout" name="headerLayout_Modif">
+             <item>
+              <spacer name="horizontalSpacer_HeaderModif">
+               <property name="orientation">
+                <enum>Qt::Orientation::Horizontal</enum>
+               </property>
+               <property name="sizeType">
+                <enum>QSizePolicy::Policy::Expanding</enum>
+               </property>
+               <property name="sizeHint" stdset="0">
+                <size>
+                 <width>40</width>
+                 <height>20</height>
+                </size>
+               </property>
+              </spacer>
+             </item>
+             <item>
+              <widget class="QFrame" name="frameUser_Modif">
+               <property name="frameShape">
+                <enum>QFrame::Shape::NoFrame</enum>
+               </property>
+               <layout class="QVBoxLayout" name="verticalLayout_User_Modif">
+                <property name="spacing">
+                 <number>2</number>
+                </property>
+                <property name="leftMargin">
+                 <number>0</number>
+                </property>
+                <property name="topMargin">
+                 <number>0</number>
+                </property>
+                <property name="rightMargin">
+                 <number>5</number>
+                </property>
+                <property name="bottomMargin">
+                 <number>0</number>
+                </property>
+                <item>
+                 <widget class="QLabel" name="lblUserName_Modif">
+                  <property name="text">
+                   <string>Admin System</string>
+                  </property>
+                  <property name="alignment">
+                   <set>Qt::AlignmentFlag::AlignRight|Qt::AlignmentFlag::AlignTrailing|Qt::AlignmentFlag::AlignVCenter</set>
+                  </property>
+                 </widget>
+                </item>
+                <item>
+                 <widget class="QLabel" name="lblUserRole_Modif">
+                  <property name="text">
+                   <string>Chef d'Atelier</string>
+                  </property>
+                  <property name="alignment">
+                   <set>Qt::AlignmentFlag::AlignRight|Qt::AlignmentFlag::AlignTrailing|Qt::AlignmentFlag::AlignVCenter</set>
+                  </property>
+                 </widget>
+                </item>
+               </layout>
+              </widget>
+             </item>
+            </layout>
+           </item>
+           <item row="1" column="0">
+            <widget class="QFrame" name="cardFrame">
+             <property name="frameShape">
+              <enum>QFrame::Shape::StyledPanel</enum>
+             </property>
+             <property name="frameShadow">
+              <enum>QFrame::Shadow::Raised</enum>
+             </property>
+             <layout class="QHBoxLayout" name="horizontalLayout_ModifFrame">
+              <item>
+               <layout class="QVBoxLayout" name="verticalLayout_Photo_Modif">
+                <property name="spacing">
+                 <number>10</number>
+                </property>
+                <item>
+                 <widget class="QLabel" name="imageLabel">
+                  <property name="minimumSize">
+                   <size>
+                    <width>200</width>
+                    <height>300</height>
+                   </size>
+                  </property>
+                  <property name="text">
+                   <string>Photo</string>
+                  </property>
+                  <property name="alignment">
+                   <set>Qt::AlignmentFlag::AlignCenter</set>
+                  </property>
+                 </widget>
+                </item>
+                <item>
+                 <widget class="QPushButton" name="btnUploadPhoto">
+                  <property name="cursor">
+                   <cursorShape>PointingHandCursor</cursorShape>
+                  </property>
+                  <property name="text">
+                   <string>📷 Charger une photo</string>
+                  </property>
+                 </widget>
+                </item>
+                <item>
+                 <spacer name="verticalSpacer_Photo">
+                  <property name="orientation">
+                   <enum>Qt::Orientation::Vertical</enum>
+                  </property>
+                  <property name="sizeType">
+                   <enum>QSizePolicy::Policy::Expanding</enum>
+                  </property>
+                  <property name="sizeHint" stdset="0">
+                   <size>
+                    <width>20</width>
+                    <height>40</height>
+                   </size>
+                  </property>
+                 </spacer>
+                </item>
+               </layout>
+              </item>
+              <item>
+               <layout class="QVBoxLayout" name="verticalLayout_FormRight">
+                <item>
+                 <layout class="QFormLayout" name="formLayout_Modif">
+                  <property name="verticalSpacing">
+                   <number>65</number>
+                  </property>
+                  <item row="0" column="0">
+                   <widget class="QLabel" name="lblMatricule">
+                    <property name="text">
+                     <string>Matricule</string>
+                    </property>
+                   </widget>
+                  </item>
+                  <item row="0" column="1">
+                   <widget class="QLineEdit" name="txtMatricule">
+                    <property name="readOnly">
+                     <bool>true</bool>
+                    </property>
+                    <property name="placeholderText">
+                     <string>Auto</string>
+                    </property>
+                   </widget>
+                  </item>
+                  <item row="2" column="0">
+                   <widget class="QLabel" name="lblNom">
+                    <property name="text">
+                     <string>Nom Complet</string>
+                    </property>
+                   </widget>
+                  </item>
+                  <item row="2" column="1">
+                   <widget class="QLineEdit" name="txtNom"/>
+                  </item>
+                  <item row="3" column="0">
+                   <widget class="QLabel" name="lblSpecialite">
+                    <property name="text">
+                     <string>Spécialité</string>
+                    </property>
+                   </widget>
+                  </item>
+                  <item row="3" column="1">
+                   <widget class="QComboBox" name="cbSpecialite">
+                    <item>
+                     <property name="text">
+                      <string>Mécanicien</string>
+                     </property>
+                    </item>
+                    <item>
+                     <property name="text">
+                      <string>Chauffeur</string>
+                     </property>
+                    </item>
+                    <item>
+                     <property name="text">
+                      <string>Électronicien</string>
+                     </property>
+                    </item>
+                   </widget>
+                  </item>
+                  <item row="4" column="0">
+                   <widget class="QLabel" name="lblStatut">
+                    <property name="text">
+                     <string>Statut</string>
+                    </property>
+                   </widget>
+                  </item>
+                  <item row="4" column="1">
+                   <widget class="QComboBox" name="cbStatut">
+                    <item>
+                     <property name="text">
+                      <string>Disponible</string>
+                     </property>
+                    </item>
+                    <item>
+                     <property name="text">
+                      <string>En intervention</string>
+                     </property>
+                    </item>
+                    <item>
+                     <property name="text">
+                      <string>Congé</string>
+                     </property>
+                    </item>
+                   </widget>
+                  </item>
+                  <item row="5" column="0">
+                   <widget class="QLabel" name="lblSalaire_Modif">
+                    <property name="text">
+                     <string>Salaire</string>
+                    </property>
+                   </widget>
+                  </item>
+                  <item row="5" column="1">
+                   <layout class="QVBoxLayout" name="verticalLayout_Salaire_Modif">
+                    <item>
+                     <widget class="QSlider" name="sliderSalaire_Modif">
+                      <property name="minimum">
+                       <number>600</number>
+                      </property>
+                      <property name="maximum">
+                       <number>5000</number>
+                      </property>
+                      <property name="value">
+                       <number>1200</number>
+                      </property>
+                      <property name="orientation">
+                       <enum>Qt::Orientation::Horizontal</enum>
+                      </property>
+                     </widget>
+                    </item>
+                    <item>
+                     <widget class="QLabel" name="lblValSalaire_Modif">
+                      <property name="font">
+                       <font>
+                        <family>Segoe UI</family>
+                        <pointsize>8</pointsize>
+                        <fontweight>DemiBold</fontweight>
+                       </font>
+                      </property>
+                      <property name="text">
+                       <string>1200 DT</string>
+                      </property>
+                      <property name="alignment">
+                       <set>Qt::AlignmentFlag::AlignCenter</set>
+                      </property>
+                     </widget>
+                    </item>
+                   </layout>
+                  </item>
+                  <item row="1" column="0">
+                   <widget class="QLabel" name="label">
+                    <property name="text">
+                     <string>EMAIL</string>
+                    </property>
+                   </widget>
+                  </item>
+                  <item row="1" column="1">
+                   <widget class="QLineEdit" name="txtEmailModif">
+                    <property name="placeholderText">
+                     <string>xyz@emeple.com</string>
+                    </property>
+                   </widget>
+                  </item>
+                 </layout>
+                </item>
+                <item>
+                 <spacer name="verticalSpacer_Form">
+                  <property name="orientation">
+                   <enum>Qt::Orientation::Vertical</enum>
+                  </property>
+                  <property name="sizeType">
+                   <enum>QSizePolicy::Policy::Expanding</enum>
+                  </property>
+                  <property name="sizeHint" stdset="0">
+                   <size>
+                    <width>20</width>
+                    <height>40</height>
+                   </size>
+                  </property>
+                 </spacer>
+                </item>
+                <item>
+                 <layout class="QHBoxLayout" name="horizontalLayout_Buttons">
+                  <item>
+                   <widget class="QPushButton" name="btnDelete">
+                    <property name="cursor">
+                     <cursorShape>PointingHandCursor</cursorShape>
+                    </property>
+                    <property name="text">
+                     <string>Supprimer</string>
+                    </property>
+                   </widget>
+                  </item>
+                  <item>
+                   <spacer name="horizontalSpacer_Buttons">
+                    <property name="orientation">
+                     <enum>Qt::Orientation::Horizontal</enum>
+                    </property>
+                    <property name="sizeType">
+                     <enum>QSizePolicy::Policy::Expanding</enum>
+                    </property>
+                    <property name="sizeHint" stdset="0">
+                     <size>
+                      <width>40</width>
+                      <height>20</height>
+                     </size>
+                    </property>
+                   </spacer>
+                  </item>
+                  <item>
+                   <widget class="QPushButton" name="btnAnnuler">
+                    <property name="text">
+                     <string>Annuler</string>
+                    </property>
+                   </widget>
+                  </item>
+                  <item>
+                   <widget class="QPushButton" name="btnSave">
+                    <property name="text">
+                     <string>Sauvegarder</string>
+                    </property>
+                   </widget>
+                  </item>
+                 </layout>
+                </item>
+               </layout>
+              </item>
+             </layout>
+            </widget>
+           </item>
+          </layout>
+         </widget>
+         <widget class="QWidget" name="ajout">
+          <layout class="QGridLayout" name="gridLayout_Ajout">
+           <item row="0" column="0" colspan="2">
+            <layout class="QHBoxLayout" name="headerLayout_Ajout">
+             <item>
+              <spacer name="horizontalSpacer_HeaderAjout">
+               <property name="orientation">
+                <enum>Qt::Orientation::Horizontal</enum>
+               </property>
+               <property name="sizeType">
+                <enum>QSizePolicy::Policy::Expanding</enum>
+               </property>
+               <property name="sizeHint" stdset="0">
+                <size>
+                 <width>40</width>
+                 <height>20</height>
+                </size>
+               </property>
+              </spacer>
+             </item>
+             <item>
+              <widget class="QFrame" name="frameUser_Ajout">
+               <property name="frameShape">
+                <enum>QFrame::Shape::NoFrame</enum>
+               </property>
+               <layout class="QVBoxLayout" name="verticalLayout_User_Ajout">
+                <property name="spacing">
+                 <number>2</number>
+                </property>
+                <property name="leftMargin">
+                 <number>0</number>
+                </property>
+                <property name="topMargin">
+                 <number>0</number>
+                </property>
+                <property name="rightMargin">
+                 <number>5</number>
+                </property>
+                <property name="bottomMargin">
+                 <number>0</number>
+                </property>
+                <item>
+                 <widget class="QLabel" name="lblUserName_Ajout">
+                  <property name="text">
+                   <string>Admin System</string>
+                  </property>
+                  <property name="alignment">
+                   <set>Qt::AlignmentFlag::AlignRight|Qt::AlignmentFlag::AlignTrailing|Qt::AlignmentFlag::AlignVCenter</set>
+                  </property>
+                 </widget>
+                </item>
+                <item>
+                 <widget class="QLabel" name="lblUserRole_Ajout">
+                  <property name="text">
+                   <string>Chef d'Atelier</string>
+                  </property>
+                  <property name="alignment">
+                   <set>Qt::AlignmentFlag::AlignRight|Qt::AlignmentFlag::AlignTrailing|Qt::AlignmentFlag::AlignVCenter</set>
+                  </property>
+                 </widget>
+                </item>
+               </layout>
+              </widget>
+             </item>
+            </layout>
+           </item>
+           <item row="1" column="0">
+            <widget class="QFrame" name="cardFrame_2">
+             <property name="frameShape">
+              <enum>QFrame::Shape::StyledPanel</enum>
+             </property>
+             <layout class="QHBoxLayout" name="horizontalLayout_AjoutFrame">
+              <item>
+               <layout class="QVBoxLayout" name="verticalLayout_Photo_Ajout">
+                <property name="spacing">
+                 <number>10</number>
+                </property>
+                <item>
+                 <widget class="QLabel" name="imageLabel_2">
+                  <property name="minimumSize">
+                   <size>
+                    <width>200</width>
+                    <height>300</height>
+                   </size>
+                  </property>
+                  <property name="text">
+                   <string>Photo</string>
+                  </property>
+                  <property name="alignment">
+                   <set>Qt::AlignmentFlag::AlignCenter</set>
+                  </property>
+                 </widget>
+                </item>
+                <item>
+                 <widget class="QPushButton" name="btnUploadPhoto_Ajout">
+                  <property name="cursor">
+                   <cursorShape>PointingHandCursor</cursorShape>
+                  </property>
+                  <property name="text">
+                   <string>📷 Charger une photo</string>
+                  </property>
+                 </widget>
+                </item>
+                <item>
+                 <spacer name="verticalSpacer_Photo_Ajout">
+                  <property name="orientation">
+                   <enum>Qt::Orientation::Vertical</enum>
+                  </property>
+                  <property name="sizeType">
+                   <enum>QSizePolicy::Policy::Expanding</enum>
+                  </property>
+                  <property name="sizeHint" stdset="0">
+                   <size>
+                    <width>20</width>
+                    <height>40</height>
+                   </size>
+                  </property>
+                 </spacer>
+                </item>
+               </layout>
+              </item>
+              <item>
+               <layout class="QVBoxLayout" name="verticalLayout_FormRight_2">
+                <item>
+                 <layout class="QFormLayout" name="formLayout_Ajout">
+                  <property name="verticalSpacing">
+                   <number>65</number>
+                  </property>
+                  <item row="0" column="0">
+                   <widget class="QLabel" name="label_7">
+                    <property name="text">
+                     <string>Nom Complet</string>
+                    </property>
+                   </widget>
+                  </item>
+                  <item row="0" column="1">
+                   <widget class="QLineEdit" name="txtNom_Ajout"/>
+                  </item>
+                  <item row="2" column="0">
+                   <widget class="QLabel" name="label_8">
+                    <property name="text">
+                     <string>Spécialité</string>
+                    </property>
+                   </widget>
+                  </item>
+                  <item row="2" column="1">
+                   <widget class="QComboBox" name="cbSpecialite_Ajout">
+                    <item>
+                     <property name="text">
+                      <string>Mécanicien</string>
+                     </property>
+                    </item>
+                    <item>
+                     <property name="text">
+                      <string>Chauffeur</string>
+                     </property>
+                    </item>
+                   </widget>
+                  </item>
+                  <item row="3" column="0">
+                   <widget class="QLabel" name="label_9">
+                    <property name="text">
+                     <string>Statut</string>
+                    </property>
+                   </widget>
+                  </item>
+                  <item row="3" column="1">
+                   <widget class="QComboBox" name="cbStatut_Ajout">
+                    <item>
+                     <property name="text">
+                      <string>Disponible</string>
+                     </property>
+                    </item>
+                    <item>
+                     <property name="text">
+                      <string>En intervention</string>
+                     </property>
+                    </item>
+                   </widget>
+                  </item>
+                  <item row="4" column="0">
+                   <widget class="QLabel" name="lblSalaire_Ajout">
+                    <property name="text">
+                     <string>Salaire</string>
+                    </property>
+                   </widget>
+                  </item>
+                  <item row="4" column="1">
+                   <layout class="QVBoxLayout" name="verticalLayout_Salaire_Ajout">
+                    <item>
+                     <widget class="QSlider" name="sliderSalaire_Ajout">
+                      <property name="minimum">
+                       <number>600</number>
+                      </property>
+                      <property name="maximum">
+                       <number>5000</number>
+                      </property>
+                      <property name="value">
+                       <number>1200</number>
+                      </property>
+                      <property name="orientation">
+                       <enum>Qt::Orientation::Horizontal</enum>
+                      </property>
+                     </widget>
+                    </item>
+                    <item>
+                     <widget class="QLabel" name="lblValSalaire_Ajout">
+                      <property name="minimumSize">
+                       <size>
+                        <width>70</width>
+                        <height>0</height>
+                       </size>
+                      </property>
+                      <property name="font">
+                       <font>
+                        <family>Segoe UI</family>
+                        <pointsize>8</pointsize>
+                        <fontweight>DemiBold</fontweight>
+                       </font>
+                      </property>
+                      <property name="text">
+                       <string>1200 DT</string>
+                      </property>
+                      <property name="alignment">
+                       <set>Qt::AlignmentFlag::AlignCenter</set>
+                      </property>
+                     </widget>
+                    </item>
+                   </layout>
+                  </item>
+                  <item row="1" column="1">
+                   <widget class="QLineEdit" name="txtEmailAjout">
+                    <property name="placeholderText">
+                     <string>xyz@emeple.com</string>
+                    </property>
+                   </widget>
+                  </item>
+                  <item row="1" column="0">
+                   <widget class="QLabel" name="label_2">
+                    <property name="text">
+                     <string>EMAIL</string>
+                    </property>
+                   </widget>
+                  </item>
+                 </layout>
+                </item>
+                <item>
+                 <spacer name="verticalSpacer_Form_2">
+                  <property name="orientation">
+                   <enum>Qt::Orientation::Vertical</enum>
+                  </property>
+                  <property name="sizeType">
+                   <enum>QSizePolicy::Policy::Expanding</enum>
+                  </property>
+                  <property name="sizeHint" stdset="0">
+                   <size>
+                    <width>20</width>
+                    <height>40</height>
+                   </size>
+                  </property>
+                 </spacer>
+                </item>
+                <item>
+                 <layout class="QHBoxLayout" name="horizontalLayout_Buttons_2">
+                  <item>
+                   <spacer name="horizontalSpacer_Buttons_2">
+                    <property name="orientation">
+                     <enum>Qt::Orientation::Horizontal</enum>
+                    </property>
+                    <property name="sizeType">
+                     <enum>QSizePolicy::Policy::Expanding</enum>
+                    </property>
+                    <property name="sizeHint" stdset="0">
+                     <size>
+                      <width>40</width>
+                      <height>20</height>
+                     </size>
+                    </property>
+                   </spacer>
+                  </item>
+                  <item>
+                   <widget class="QPushButton" name="btnAnnuler_Ajout">
+                    <property name="text">
+                     <string>Annuler</string>
+                    </property>
+                   </widget>
+                  </item>
+                  <item>
+                   <widget class="QPushButton" name="btnAjouter">
+                    <property name="text">
+                     <string>Ajouter</string>
+                    </property>
+                   </widget>
+                  </item>
+                 </layout>
+                </item>
+               </layout>
+              </item>
+             </layout>
+            </widget>
+           </item>
+          </layout>
+         </widget>
+         <widget class="QWidget" name="mission">
+          <layout class="QVBoxLayout" name="verticalLayout_Mission">
+           <item>
+            <widget class="QLabel" name="lblTitreMission">
+             <property name="text">
+              <string>📢 Définition de la Mission</string>
+             </property>
+            </widget>
+           </item>
+           <item>
+            <widget class="QLineEdit" name="txtMission">
+             <property name="text">
+              <string>Réparation Moteur bac Zone Nord - Urgent</string>
+             </property>
+             <property name="placeholderText">
+              <string>Ex: Réparation Moteur bac Urgent...</string>
+             </property>
+            </widget>
+           </item>
+           <item>
+            <widget class="QPushButton" name="btnAnalyser">
+             <property name="cursor">
+              <cursorShape>PointingHandCursor</cursorShape>
+             </property>
+             <property name="text">
+              <string>🤖 Lancer l'Analyse IA &amp; Trouver l'Équipe</string>
+             </property>
+            </widget>
+           </item>
+           <item>
+            <widget class="QLabel" name="lblResultat">
+             <property name="text">
+              <string>✅ Équipe Optimale Recommandée (Score: 98%)</string>
+             </property>
+            </widget>
+           </item>
+           <item>
+            <widget class="QTableWidget" name="tableResultat">
+             <property name="styleSheet">
+              <string notr="true">background-color: white; gridline-color: #eee;</string>
+             </property>
+             <attribute name="horizontalHeaderStretchLastSection">
+              <bool>true</bool>
+             </attribute>
+             <attribute name="verticalHeaderVisible">
+              <bool>false</bool>
+             </attribute>
+             <column>
+              <property name="text">
+               <string>Matricule</string>
+              </property>
+             </column>
+             <column>
+              <property name="text">
+               <string>Nom</string>
+              </property>
+             </column>
+             <column>
+              <property name="text">
+               <string>Compétence Clé</string>
+              </property>
+             </column>
+             <column>
+              <property name="text">
+               <string>Score Match</string>
+              </property>
+             </column>
+            </widget>
+           </item>
+           <item>
+            <spacer name="verticalSpacer_Mission">
+             <property name="orientation">
+              <enum>Qt::Orientation::Vertical</enum>
+             </property>
+             <property name="sizeType">
+              <enum>QSizePolicy::Policy::Fixed</enum>
+             </property>
+             <property name="sizeHint" stdset="0">
+              <size>
+               <width>20</width>
+               <height>10</height>
+              </size>
+             </property>
+            </spacer>
+           </item>
+           <item>
+            <widget class="QPushButton" name="btnAnnulerMission">
+             <property name="text">
+              <string>Retour / Annuler</string>
+             </property>
+            </widget>
+           </item>
+          </layout>
+         </widget>
+         <widget class="QWidget" name="pointage">
+          <layout class="QVBoxLayout" name="verticalLayout_Pointage">
+           <item>
+            <widget class="QLabel" name="lblTitrePointage">
+             <property name="text">
+              <string>État du Lecteur RFID :</string>
+             </property>
+            </widget>
+           </item>
+           <item>
+            <widget class="QLabel" name="lblStatutRFID">
+             <property name="text">
+              <string>🕒 EN ATTENTE DE BADGE...</string>
+             </property>
+             <property name="alignment">
+              <set>Qt::AlignmentFlag::AlignCenter</set>
+             </property>
+            </widget>
+           </item>
+           <item>
+            <widget class="QPushButton" name="btnSimulerBadge">
+             <property name="cursor">
+              <cursorShape>PointingHandCursor</cursorShape>
+             </property>
+             <property name="text">
+              <string>🔮 Simuler un passage de badge (Démo)</string>
+             </property>
+            </widget>
+           </item>
+           <item>
+            <widget class="QLabel" name="lblLog">
+             <property name="text">
+              <string>📋 Historique des Entrées / Sorties (Aujourd'hui)</string>
+             </property>
+            </widget>
+           </item>
+           <item>
+            <widget class="QTableWidget" name="tablePointage">
+             <property name="styleSheet">
+              <string notr="true">background-color: white; gridline-color: #eee;</string>
+             </property>
+             <attribute name="horizontalHeaderStretchLastSection">
+              <bool>true</bool>
+             </attribute>
+             <attribute name="verticalHeaderVisible">
+              <bool>false</bool>
+             </attribute>
+             <column>
+              <property name="text">
+               <string>Heure</string>
+              </property>
+             </column>
+             <column>
+              <property name="text">
+               <string>ID Badge</string>
+              </property>
+             </column>
+             <column>
+              <property name="text">
+               <string>Employé</string>
+              </property>
+             </column>
+             <column>
+              <property name="text">
+               <string>Statut</string>
+              </property>
+             </column>
+            </widget>
+           </item>
+           <item>
+            <spacer name="verticalSpacer_Pointage">
+             <property name="orientation">
+              <enum>Qt::Orientation::Vertical</enum>
+             </property>
+             <property name="sizeType">
+              <enum>QSizePolicy::Policy::Fixed</enum>
+             </property>
+             <property name="sizeHint" stdset="0">
+              <size>
+               <width>20</width>
+               <height>10</height>
+              </size>
+             </property>
+            </spacer>
+           </item>
+           <item>
+            <widget class="QPushButton" name="btnAnnulerPointage">
+             <property name="text">
+              <string>Retour / Annuler</string>
+             </property>
+            </widget>
+           </item>
+          </layout>
+         </widget>
+         <widget class="QWidget" name="statistiques">
+          <layout class="QVBoxLayout" name="verticalLayout_StatsPage">
+           <item>
+            <layout class="QHBoxLayout" name="horizontalLayout_Stats">
+              <property name="spacing">
+               <number>20</number>
+              </property>
+             <item>
+              <widget class="QChartView" name="chartViewAbsence">
+               <property name="minimumSize">
+                <size>
+                 <width>0</width>
+                 <height>350</height>
+                </size>
+               </property>
+              </widget>
+             </item>
+             <item>
+              <widget class="QChartView" name="chartViewWorkload">
+               <property name="minimumSize">
+                <size>
+                 <width>0</width>
+                 <height>350</height>
+                </size>
+               </property>
+              </widget>
+             </item>
+            </layout>
+           </item>
+           <item>
+            <widget class="QChartView" name="chartViewTasks">
+             <property name="minimumSize">
+              <size>
+               <width>0</width>
+               <height>300</height>
+              </size>
+             </property>
+            </widget>
+           </item>
+           <item>
+            <widget class="QComboBox" name="cbProjetStats">
+             <property name="placeholderText">
+              <string>Sélectionnez un projet...</string>
+             </property>
+             <item>
+              <property name="text">
+               <string>Projet A</string>
+              </property>
+             </item>
+             <item>
+              <property name="text">
+               <string>Projet B</string>
+              </property>
+             </item>
+             <item>
+              <property name="text">
+               <string>Projet C</string>
+              </property>
+             </item>
+            </widget>
+           </item>
+           <item>
+            <spacer name="verticalSpacer_Stats">
+             <property name="orientation">
+              <enum>Qt::Orientation::Vertical</enum>
+             </property>
+             <property name="sizeType">
+              <enum>QSizePolicy::Policy::Fixed</enum>
+             </property>
+             <property name="sizeHint" stdset="0">
+              <size>
+               <width>20</width>
+               <height>10</height>
+              </size>
+             </property>
+            </spacer>
+           </item>
+           <item>
+            <widget class="QPushButton" name="btnAnnulerStats">
+             <property name="text">
+              <string>Retour / Annuler</string>
+             </property>
+            </widget>
+           </item>
+          </layout>
+         </widget>
+        </widget>
+       </item>
+      </layout>
+     </widget>
+    </item>
+   </layout>
+  </widget>
+  <widget class="QMenuBar" name="menubar">
+   <property name="geometry">
+    <rect>
+     <x>0</x>
+     <y>0</y>
+     <width>1100</width>
+     <height>25</height>
+    </rect>
+   </property>
+  </widget>
+  <widget class="QStatusBar" name="statusbar"/>
+ </widget>
+ <customwidgets>
+  <customwidget>
+   <class>QChartView</class>
+   <extends>QGraphicsView</extends>
+   <header>QtCharts</header>
+  </customwidget>
+ </customwidgets>
+ <resources>
+  <include location="logo.qrc"/>
+ </resources>
+ <connections/>
+</ui>

@@ -1,5 +1,7 @@
 <RCC>
     <qresource prefix="/">
+        <file>login_logo.png</file>
+        <file>wasteguard_logo.png</file>
         <file>logo1.png</file>
         <file>logo2.png</file>
         <file>WASTEGUARD (1) (1).png</file>
