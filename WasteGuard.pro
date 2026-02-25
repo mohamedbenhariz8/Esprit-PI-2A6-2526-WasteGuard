@@ -8,12 +8,16 @@ SOURCES += \
     connection.cpp \
     main.cpp \
     mainwindow.cpp \
-    mascotwidget.cpp
+    mascotwidget.cpp \
+    produit.cpp \
+    stockmapwidget.cpp
 
 HEADERS += \
     connection.h \
     mainwindow.h \
-    mascotwidget.h
+    mascotwidget.h \
+    produit.h \
+    stockmapwidget.h
 
 FORMS += \
     mainwindow.ui

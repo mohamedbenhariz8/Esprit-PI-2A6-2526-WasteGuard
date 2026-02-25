@@ -11,7 +11,8 @@
 #include <QBarSet>
 #include <QBarCategoryAxis>
 #include <QValueAxis>
-
+#include "produit.h"
+#include "stockmapwidget.h"
 QT_BEGIN_NAMESPACE
 namespace Ui { class MainWindow; }
 QT_END_NAMESPACE
@@ -27,21 +28,9 @@ class MainWindow : public QMainWindow
 public:
     MainWindow(QWidget *parent = nullptr);
     ~MainWindow();
+    bool eventFilter(QObject *obj, QEvent *event) override;
 
 private slots:
-    // Employe
-    void on_btnNouveau_clicked();
-    void on_btnAjouter_clicked();
-    void on_btnAnnuler_Ajout_clicked();
-    void on_btnModifier_clicked();
-    void on_btnSave_clicked();
-    void on_btnAnalyser_clicked();
-    void on_btnSimulerBadge_clicked();
-    void on_btnSupprimer_clicked();
-    void on_cbProjetStats_currentIndexChanged(const QString &arg1);
-    void on_btnFichePaie_clicked();
-    void on_btnCommsSend_clicked();
-
     // Client module slots (from mainwindowcl)
     void on_btnClient_clicked();
     void on_btn_ajouter_client_clicked();
@@ -62,9 +51,18 @@ private slots:
     void goAjout();
     void goModification();
     void goStatistiques();
+    void on_prod_btnSave_Add_clicked();
+    void on_prod_btnSave_Mod_clicked();
 
     void handleEditClicked();
     void handleDeleteClicked();
+
+    // Stock Map 3D
+    void openStockMap3D();
+
+    // Photo upload
+    void onUploadImageAdd();
+    void onUploadImageMod();
 
     // Card View Toggle (Produit)
     void slot_toggleView();
@@ -74,11 +72,6 @@ private slots:
     void on_pagination_btnPrev_clicked();
     void on_pagination_btnNext_clicked();
 
-    // Employee Card View
-    void slot_toggleEmpView();
-    void on_emp_pagination_cbSize_currentIndexChanged(int index);
-    void on_emp_pagination_btnPrev_clicked();
-    void on_emp_pagination_btnNext_clicked();
 
     // Stock Card View
     void slot_toggleStockView();
@@ -105,23 +98,14 @@ private slots:
     void on_cmd_pagination_btnNext_clicked();
 
 private:
-    // Employe
-    void setupStatistics();
-    void setupAccueilDashboard();
-    void setupDashboardCharts();
-    void applyUnifiedTopBarStyle();
-    void showDashboardHome();
-    void showEmployesPage();
-    void updateTaskChart(const QString &projectName);
-    void installEmployeActionButtonsForRow(int row);
-    void refreshEmployeActionButtons();
-
+    Produit Ptmp;
     // Produit
     void setupProduitModule();
     void applyStyleFix();
     void refreshActionButtons();
     void buildStatsCharts();
     void addExampleRow();
+    void loadProduitToModificationForm(int row);
     void installActionButtonsForRow(int row);
     void ensureProduitModuleVisible();
     QString productStyleSheet() const;
@@ -131,11 +115,6 @@ private:
     void refreshCardView();
     QWidget* createProductCard(int row);
 
-    // Employee Card View implementation
-    void setupEmpCardViewContainer();
-    void refreshEmpCardView();
-    QWidget* createEmployeeCard(int row);
-    void setupEmployeModule();
 
     // Stock Module
     void setupStockModule();
@@ -185,7 +164,7 @@ private:
     Ui::MainWindow *ui;
     QButtonGroup *sidebarGroup;
     QWidget *homeDashboardPage;
-    int currentEmployeRow; // To track which row is being modified in employee table
+    int currentProduitRow; // To track which row is being modified in product table
     int currentClientRow; // To track which row is being modified in client table
     int currentMaintRow;  // To track which row is being modified in maintenance table
     QWidget *globalStatsReturnPage;
@@ -199,11 +178,6 @@ private:
     int m_currentPage = 0;
     int m_itemsPerPage = 6;
 
-    // Card View state (Employe)
-    bool m_isEmpCardView = false;
-    QGridLayout *m_empCardLayout = nullptr;
-    int m_empCurrentPage = 0;
-    int m_empItemsPerPage = 6;
 
     // Card View state (Stock)
     bool m_isStockCardView = false;
@@ -235,6 +209,9 @@ private slots:
 private:
    bool m_sidebarExpanded;
    void updateSidebarState();
+   QString m_selectedEmplacement;  // stock location from 3D map
+   QString m_addImagePath;         // image path for add form
+   QString m_modImagePath;         // image path for mod form
 };
 
 #endif // MAINWINDOW_H

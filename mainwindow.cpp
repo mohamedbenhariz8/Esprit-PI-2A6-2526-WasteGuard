@@ -6,6 +6,7 @@
 #include <QPageSize>
 #include <QMarginsF>
 #include <QFileDialog>
+#include <QEvent>
 
 
 
@@ -81,13 +82,150 @@
 
 #include <QtCharts/QAreaSeries>
 
+#include <QSqlQuery>
+#include <QSqlError>
+#include <QMessageBox>
+#include <QRegularExpression>
+#include <QRegularExpressionValidator>
 
-
-static constexpr int ACTIONS_COL = 7;
+static constexpr int ACTIONS_COL = 6;
+static constexpr int PROD_ROLE_CUR = Qt::UserRole;
+static constexpr int PROD_ROLE_MAX = Qt::UserRole + 1;
+static constexpr int PROD_ROLE_AISLE = Qt::UserRole + 2;
+static constexpr int PROD_ROLE_ID = Qt::UserRole + 6;
+static constexpr int PROD_ROLE_BATTERY = Qt::UserRole + 7;
+static constexpr int PROD_ROLE_IMAGE   = Qt::UserRole + 8;
 
 
 
 namespace {
+
+const QRegularExpression &emailRegex()
+{
+    static const QRegularExpression re(
+        R"(^[A-Z0-9._%+\-]+@[A-Z0-9.\-]+\.[A-Z]{2,}$)",
+        QRegularExpression::CaseInsensitiveOption
+    );
+    return re;
+}
+
+bool isValidEmail(const QString &email)
+{
+    return emailRegex().match(email.trimmed()).hasMatch();
+}
+
+QString productStatusFromQty(int qty)
+{
+    if (qty <= 0) return "Rupture";
+    if (qty < 20) return "Stock Faible";
+    return "En Stock";
+}
+
+QString resolvedProductStatus(const QString &statusUi, int qty)
+{
+    const QString s = statusUi.trimmed();
+    return s.isEmpty() ? productStatusFromQty(qty) : s;
+}
+
+void setComboTextSafe(QComboBox *combo, const QString &value)
+{
+    if (!combo) return;
+    int idx = combo->findText(value, Qt::MatchFixedString);
+    if (idx < 0) idx = combo->findText(value, Qt::MatchContains);
+    if (idx < 0) {
+        combo->addItem(value);
+        idx = combo->findText(value, Qt::MatchFixedString);
+    }
+    if (idx >= 0) combo->setCurrentIndex(idx);
+}
+
+QString firstNonEmptyLineEditText(QWidget *scope, const QStringList &preferredNames)
+{
+    if (!scope) return QString();
+
+    auto byName = [scope](const QString &name) -> QString {
+        if (auto *le = scope->findChild<QLineEdit*>(name)) {
+            return le->text().trimmed();
+        }
+        return QString();
+    };
+
+    for (const QString &name : preferredNames) {
+        const QString v = byName(name);
+        if (!v.isEmpty()) return v;
+    }
+
+    const auto edits = scope->findChildren<QLineEdit*>();
+    for (QLineEdit *le : edits) {
+        if (!le || !le->isVisible()) continue;
+        const QString v = le->text().trimmed();
+        if (!v.isEmpty()) return v;
+    }
+
+    return QString();
+}
+
+QString normalizedStatus(QString value)
+{
+    return value.normalized(QString::NormalizationForm_D).toLower().trimmed();
+}
+
+QString toDbDisponibilite(const QString &statusUi)
+{
+    const QString s = normalizedStatus(statusUi);
+    if (s.contains("indispon")) return "INDISPONIBLE";
+    if (s.contains("intervention")) return "INDISPONIBLE";
+    if (s.contains("conge")) return "INDISPONIBLE";
+    if (s.contains("mission")) return "INDISPONIBLE";
+    if (s.contains("disponible")) return "DISPONIBLE";
+    return "INDISPONIBLE";
+}
+
+QString friendlySqlErrorMessage(const QString &rawError, const QString &action)
+{
+    const QString upper = rawError.toUpper();
+
+    if (upper.contains("AUCUN FOURNISSEUR DISPONIBLE")) {
+        return QString("Impossible de %1: aucun fournisseur n'existe dans la base.").arg(action);
+    }
+    if (upper.contains("ORA-00001")) {
+        return QString("Impossible de %1: une valeur unique existe deja.").arg(action);
+    }
+    if (upper.contains("ORA-01400")) {
+        if (upper.contains("ID_FOUR")) {
+            return QString("Impossible de %1: fournisseur obligatoire manquant (ID_FOUR).").arg(action);
+        }
+        return QString("Impossible de %1: un champ obligatoire est vide.").arg(action);
+    }
+    if (upper.contains("ORA-02291")) {
+        if (upper.contains("ID_FOUR")) {
+            return QString("Impossible de %1: le fournisseur selectionne n'existe pas.").arg(action);
+        }
+        return QString("Impossible de %1: reference inexistante.").arg(action);
+    }
+    if (upper.contains("ORA-02292")) {
+        return QString("Impossible de %1: element utilise dans d'autres donnees.").arg(action);
+    }
+    if (upper.contains("DRIVER NOT LOADED")) {
+        return "Connexion base indisponible: driver SQL non charge.";
+    }
+    if (upper.contains("ORA-00942")) {
+        return "Table introuvable dans la base de donnees.";
+    }
+    return QString("Impossible de %1. Verifiez les donnees saisies.").arg(action);
+}
+
+void showFriendlySqlError(QWidget *parent, const QString &action, const QString &rawError)
+{
+    QMessageBox msg(parent);
+    msg.setIcon(QMessageBox::Critical);
+    msg.setWindowTitle("Erreur SQL");
+    msg.setText(friendlySqlErrorMessage(rawError, action));
+    if (!rawError.trimmed().isEmpty()) {
+        msg.setDetailedText(rawError);
+    }
+    msg.exec();
+}
 
 void enableStyledBgRecursive(QWidget *root)
 
@@ -421,7 +559,8 @@ MainWindow::MainWindow(QWidget *parent)
 
     , homeDashboardPage(nullptr)
 
-    , currentEmployeRow(-1)
+
+    , currentProduitRow(-1)
 
     , currentClientRow(-1)
 
@@ -837,9 +976,6 @@ MainWindow::MainWindow(QWidget *parent)
 
 
 
-    connect(ui->btnEmployes, &QPushButton::clicked, this, &MainWindow::showEmployesPage);
-
-    connect(ui->btnAccueil, &QPushButton::clicked, this, &MainWindow::showDashboardHome);
 
     connect(ui->btnProduits, &QPushButton::clicked, this, [this](){
 
@@ -1511,123 +1647,12 @@ MainWindow::MainWindow(QWidget *parent)
 
 
 
-    // --- REMPLISSAGE DU TABLEAU ---
-
-    if (ui->tableEmployes) {
-
-        ui->tableEmployes->setRowCount(0);
-
-        ui->tableEmployes->setColumnCount(5);
-
-        ui->tableEmployes->setHorizontalHeaderLabels({"MATRICULE", "NOM COMPLET", "SPECIALITE", "DISPONIBILITE", "ACTIONS"});
-
-        ui->tableEmployes->setWordWrap(false);
-
-        ui->tableEmployes->verticalHeader()->setDefaultSectionSize(40);
 
 
 
-        if (auto *header = ui->tableEmployes->horizontalHeader()) {
-
-            header->setStretchLastSection(false);
-
-            header->setMinimumSectionSize(90);
-
-            header->setSectionResizeMode(0, QHeaderView::ResizeToContents);
-
-            header->setSectionResizeMode(1, QHeaderView::Stretch);
-
-            header->setSectionResizeMode(2, QHeaderView::Stretch);
-
-            header->setSectionResizeMode(3, QHeaderView::Stretch);
-
-            header->setSectionResizeMode(4, QHeaderView::Fixed);
-
-        }
-
-        ui->tableEmployes->setColumnWidth(4, 220);
 
 
 
-        struct EmpProto { QString mat; QString nom; QString role; QString statut; QString email; QString cin; int salaire; int perf; };
-        QList<EmpProto> empData = {
-            {"EMP-001", "Ahmed Ben Salah",  "Technicien Maintenance",   "En mission",  "ahmed@wasteguard.tn",  "10234567", 850,  88},
-            {"EMP-002", "Sarah Khalifa",    "Responsable Technique",    "Disponible",  "sarah@wasteguard.tn",  "20345678", 1200, 96},
-            {"EMP-003", "Yassine Allani",   "Agent de Terrain",         "En congé",    "yassine@wasteguard.tn","30456789", 850,  82},
-            {"EMP-004", "Oussama Trabelsi", "Technicien Maintenance",   "Disponible",  "oussama@wasteguard.tn","40567890", 1500, 94},
-            {"EMP-005", "Asma Melliti",     "Assistante Administrative", "En congé",    "asma@wasteguard.tn",   "50678901", 950,  79},
-            {"EMP-006", "Mehdi Bousnina",   "Agent de Maintenance",     "En congé",    "mehdi@wasteguard.tn",  "60789012", 1100, 85},
-        };
-
-        for (int i = 0; i < empData.size(); ++i) {
-            const auto &e = empData[i];
-            int row = ui->tableEmployes->rowCount();
-            ui->tableEmployes->insertRow(row);
-
-            auto *matItem = new QTableWidgetItem(e.mat);
-            matItem->setData(Qt::UserRole + 1, e.email);
-            matItem->setData(Qt::UserRole + 2, e.cin);
-            matItem->setData(Qt::UserRole + 3, e.salaire);
-            matItem->setData(Qt::UserRole + 4, e.perf); // performance score
-
-            ui->tableEmployes->setItem(row, 0, matItem);
-            ui->tableEmployes->setItem(row, 1, new QTableWidgetItem(e.nom));
-            ui->tableEmployes->setItem(row, 2, new QTableWidgetItem(e.role));
-            ui->tableEmployes->setItem(row, 3, new QTableWidgetItem(e.statut));
-            installEmployeActionButtonsForRow(row);
-        }
-
-    }
-
-
-
-    // Connexions
-
-    connect(ui->btnAnalyser, &QPushButton::clicked, this, &MainWindow::on_btnAnalyser_clicked);
-
-    connect(ui->btnSimulerBadge, &QPushButton::clicked, this, &MainWindow::on_btnSimulerBadge_clicked);
-
-    connect(ui->btnNouveau, &QPushButton::clicked, this, &MainWindow::on_btnNouveau_clicked);
-
-    connect(ui->btnAnnuler_Ajout, &QPushButton::clicked, this, &MainWindow::on_btnAnnuler_Ajout_clicked);
-
-    connect(ui->btnAnnuler, &QPushButton::clicked, this, &MainWindow::showEmployesPage);
-
-    connect(ui->btnDelete, &QPushButton::clicked, this, &MainWindow::on_btnSupprimer_clicked);
-
-    connect(ui->btnFichePaie, &QPushButton::clicked, this, &MainWindow::on_btnFichePaie_clicked);
-
-
-
-    // --- NAVIGATION DASHBOARD (ACTIONS RAPIDES) ---
-
-    connect(ui->btnGoMission, &QPushButton::clicked, this, [this](){
-
-        if (auto *sw = mainStacked()) {
-
-            if (auto *page = sw->findChild<QWidget*>("mission", Qt::FindDirectChildrenOnly)) {
-
-                sw->setCurrentWidget(page);
-
-            }
-
-        }
-
-    });
-
-    connect(ui->btnGoPointage, &QPushButton::clicked, this, [this](){
-
-        if (auto *sw = mainStacked()) {
-
-            if (auto *page = sw->findChild<QWidget*>("pointage", Qt::FindDirectChildrenOnly)) {
-
-                sw->setCurrentWidget(page);
-
-            }
-
-        }
-
-    });
 
     connect(ui->btnGoStats, &QPushButton::clicked, this, openGlobalStats);
 
@@ -1667,11 +1692,6 @@ MainWindow::MainWindow(QWidget *parent)
 
 
 
-    // --- BOUTONS ANNULER / RETOUR ---
-
-    connect(ui->btnAnnulerMission, &QPushButton::clicked, this, &MainWindow::showEmployesPage);
-
-    connect(ui->btnAnnulerPointage, &QPushButton::clicked, this, &MainWindow::showEmployesPage);
 
     connect(ui->btnAnnulerStats, &QPushButton::clicked, this, [this]() {
 
@@ -1689,37 +1709,14 @@ MainWindow::MainWindow(QWidget *parent)
 
         }
 
-        showEmployesPage();
 
     });
 
 
 
-    // Connexion ComboBox Projet Stats
-
-    connect(ui->cbProjetStats, &QComboBox::currentTextChanged, this, &MainWindow::updateTaskChart);
 
 
 
-    // --- SLIDERS DYNAMIQUES (SALAIRE) ---
-
-    connect(ui->sliderSalaire_Ajout, &QSlider::valueChanged, [=](int value){
-
-        ui->lblValSalaire_Ajout->setText(QString::number(value) + " DT");
-
-    });
-
-    ui->lblValSalaire_Ajout->setText(QString::number(ui->sliderSalaire_Ajout->value()) + " DT");
-
-
-
-    connect(ui->sliderSalaire_Modif, &QSlider::valueChanged, [=](int value){
-
-        ui->lblValSalaire_Modif->setText(QString::number(value) + " DT");
-
-    });
-
-    ui->lblValSalaire_Modif->setText(QString::number(ui->sliderSalaire_Modif->value()) + " DT");
 
 
 
@@ -1775,13 +1772,10 @@ MainWindow::MainWindow(QWidget *parent)
 
 
 
-    setupStatistics();
 
-    setupAccueilDashboard();
 
     setupProduitModule();
 
-    setupEmployeModule();
 
     setupStockModule();
 
@@ -1795,11 +1789,9 @@ MainWindow::MainWindow(QWidget *parent)
 
     setupCommandesModule();
 
-    applyUnifiedTopBarStyle();
 
     forceApplySidebarStyles();
 
-    showDashboardHome();
 
 }
 
@@ -1814,3092 +1806,6 @@ MainWindow::~MainWindow()
 }
 
 
-
-// --- NAVIGATION ---
-
-void MainWindow::on_btnNouveau_clicked()
-
-{
-
-    if (auto *sw = mainStacked()) {
-
-        if (auto *page = sw->findChild<QWidget*>("ajout", Qt::FindDirectChildrenOnly)) {
-
-            sw->setCurrentWidget(page);
-
-        } else {
-
-            sw->setCurrentIndex(2);
-
-        }
-
-    }
-
-
-
-    // --- STYLE SIDEBAR & CLEAN LABELS (Employee Ajout) ---
-
-    QTimer::singleShot(100, this, [this]() {
-
-        if (QWidget *side = this->findChild<QWidget*>("sideAjout")) {
-
-            side->setStyleSheet("QWidget#sideAjout { background-color: #ffffff; border-radius: 20px; border: 1px solid #e2e8f0; }");
-
-            QList<QLabel*> labels = side->findChildren<QLabel*>();
-
-            for (QLabel *lbl : labels) {
-
-                lbl->setStyleSheet(lbl->styleSheet() + " background: transparent; color: #0f2b4c; border: none;");
-
-            }
-
-        }
-
-        // Remove gray background from all labels in the page
-
-        if (auto *page = mainStacked() ? mainStacked()->currentWidget() : nullptr) {
-
-            QList<QLabel*> allLabels = page->findChildren<QLabel*>();
-
-            for (QLabel *lbl : allLabels) {
-
-                lbl->setStyleSheet(lbl->styleSheet() + " background: transparent; border: none;");
-
-            }
-
-        }
-
-    });
-
-}
-
-
-
-void MainWindow::on_btnAnnuler_Ajout_clicked()
-
-{
-
-    showEmployesPage();
-
-}
-
-
-
-void MainWindow::installEmployeActionButtonsForRow(int row)
-
-{
-
-    if (!ui->tableEmployes) return;
-
-    if (row < 0 || row >= ui->tableEmployes->rowCount()) return;
-
-
-
-    if (QWidget *existing = ui->tableEmployes->cellWidget(row, 4)) {
-
-        const auto buttons = existing->findChildren<QPushButton*>();
-
-        for (auto *b : buttons)
-
-            b->setProperty("row", row);
-
-        return;
-
-    }
-
-
-
-    QWidget *pWidget = new QWidget(ui->tableEmployes);
-
-    QPushButton *btnEdit = new QPushButton("Modifier", pWidget);
-
-    btnEdit->setCursor(Qt::PointingHandCursor);
-
-    btnEdit->setStyleSheet("QPushButton { background-color: #3498db; color: white; border-radius: 4px; padding: 4px 8px; font-weight: bold; }");
-
-    btnEdit->setMinimumWidth(84);
-
-    btnEdit->setProperty("row", row);
-
-
-
-    QPushButton *btnDelete = new QPushButton("Supprimer", pWidget);
-
-    btnDelete->setCursor(Qt::PointingHandCursor);
-
-    btnDelete->setStyleSheet(
-
-        "QPushButton { background-color: #e74c3c; color: white; border-radius: 4px; padding: 4px 10px; font-weight: bold; }"
-
-        "QPushButton:hover { background-color: #cf3e2e; }"
-
-    );
-
-    btnDelete->setMinimumWidth(96);
-
-    btnDelete->setProperty("row", row);
-
-
-
-    connect(btnEdit, &QPushButton::clicked, this, &MainWindow::on_btnModifier_clicked);
-
-    connect(btnDelete, &QPushButton::clicked, this, &MainWindow::on_btnSupprimer_clicked);
-
-
-
-    QHBoxLayout *pLayout = new QHBoxLayout(pWidget);
-
-    pLayout->addWidget(btnEdit);
-
-    pLayout->addWidget(btnDelete);
-
-    pLayout->setSpacing(8);
-
-    pLayout->setAlignment(Qt::AlignCenter);
-
-    pLayout->setContentsMargins(0, 0, 0, 0);
-
-    pWidget->setLayout(pLayout);
-
-
-
-    ui->tableEmployes->setCellWidget(row, 4, pWidget);
-
-}
-
-
-
-void MainWindow::refreshEmployeActionButtons()
-
-{
-
-    if (!ui->tableEmployes) return;
-
-    for (int row = 0; row < ui->tableEmployes->rowCount(); ++row)
-
-        installEmployeActionButtonsForRow(row);
-
-}
-
-
-
-void MainWindow::on_btnAjouter_clicked()
-
-{
-
-    if (!ui->tableEmployes) return;
-
-
-
-    const QString nom = ui->txtNom_Ajout ? ui->txtNom_Ajout->text().trimmed() : QString();
-
-    if (nom.isEmpty()) {
-
-        QMessageBox::warning(this, "Ajout", "Le nom est obligatoire.");
-
-        return;
-
-    }
-
-
-
-    int maxId = 0;
-
-    for (int r = 0; r < ui->tableEmployes->rowCount(); ++r) {
-
-        if (auto *item = ui->tableEmployes->item(r, 0)) {
-
-            const QString matricule = item->text().trimmed();
-
-            const int dashPos = matricule.lastIndexOf('-');
-
-            const QString numericPart = (dashPos >= 0) ? matricule.mid(dashPos + 1) : matricule;
-
-            bool ok = false;
-
-            const int id = numericPart.toInt(&ok);
-
-            if (ok) maxId = qMax(maxId, id);
-
-        }
-
-    }
-
-    const QString matricule = QString("EMP-%1").arg(maxId + 1, 3, 10, QChar('0'));
-
-
-
-    const QString specialite = ui->cbSpecialite_Ajout ? ui->cbSpecialite_Ajout->currentText().trimmed() : QString();
-
-    const QString statut = ui->cbStatut_Ajout ? ui->cbStatut_Ajout->currentText().trimmed() : QString();
-
-    const QString email = ui->txtEmailAjout ? ui->txtEmailAjout->text().trimmed() : QString();
-
-    const QString cin = ui->txtCIN_Ajout ? ui->txtCIN_Ajout->text().trimmed() : QString();
-
-    const int salaire = ui->sliderSalaire_Ajout ? ui->sliderSalaire_Ajout->value() : 1200;
-
-
-
-    const int row = ui->tableEmployes->rowCount();
-
-    ui->tableEmployes->insertRow(row);
-
-
-
-    auto *matItem = new QTableWidgetItem(matricule);
-
-    matItem->setData(Qt::UserRole + 1, email);
-
-    matItem->setData(Qt::UserRole + 2, cin);
-
-    matItem->setData(Qt::UserRole + 3, salaire);
-
-
-
-    ui->tableEmployes->setItem(row, 0, matItem);
-
-    ui->tableEmployes->setItem(row, 1, new QTableWidgetItem(nom));
-
-    ui->tableEmployes->setItem(row, 2, new QTableWidgetItem(specialite));
-
-    ui->tableEmployes->setItem(row, 3, new QTableWidgetItem(statut));
-
-
-
-    installEmployeActionButtonsForRow(row);
-
-    currentEmployeRow = row;
-
-    ui->tableEmployes->selectRow(row);
-
-
-
-    if (ui->txtNom_Ajout) ui->txtNom_Ajout->clear();
-
-    if (ui->txtEmailAjout) ui->txtEmailAjout->clear();
-
-    if (ui->txtCIN_Ajout) ui->txtCIN_Ajout->clear();
-
-    if (ui->cbSpecialite_Ajout && ui->cbSpecialite_Ajout->count() > 0) ui->cbSpecialite_Ajout->setCurrentIndex(0);
-
-    if (ui->cbStatut_Ajout && ui->cbStatut_Ajout->count() > 0) ui->cbStatut_Ajout->setCurrentIndex(0);
-
-    if (ui->sliderSalaire_Ajout) {
-
-        const int resetSalaire = qMax(ui->sliderSalaire_Ajout->minimum(), qMin(ui->sliderSalaire_Ajout->maximum(), 1200));
-
-        ui->sliderSalaire_Ajout->setValue(resetSalaire);
-
-    }
-
-
-
-    showEmployesPage();
-
-}
-
-
-
-void MainWindow::on_btnModifier_clicked()
-
-{
-
-    int row = -1;
-
-    if (auto *btn = qobject_cast<QPushButton*>(sender())) {
-
-        const QVariant rowProp = btn->property("row");
-
-        if (rowProp.isValid())
-
-            row = rowProp.toInt();
-
-    }
-
-
-
-    if (row < 0 && ui->tableEmployes)
-
-        row = ui->tableEmployes->currentRow();
-
-
-
-    if (row < 0 && ui->tableEmployes) {
-
-        if (auto *btn = qobject_cast<QPushButton*>(sender())) {
-
-            for (int r = 0; r < ui->tableEmployes->rowCount(); ++r) {
-
-                QWidget *cell = ui->tableEmployes->cellWidget(r, 4);
-
-                if (cell && (cell == btn->parentWidget() || cell->isAncestorOf(btn))) {
-
-                    row = r;
-
-                    break;
-
-                }
-
-            }
-
-        }
-
-    }
-
-
-
-    auto cellText = [this, row](int col) -> QString {
-
-        if (!ui->tableEmployes) return QString();
-
-        if (row < 0 || row >= ui->tableEmployes->rowCount()) return QString();
-
-        if (auto *item = ui->tableEmployes->item(row, col))
-
-            return item->text().trimmed();
-
-        return QString();
-
-    };
-
-
-
-    auto normalizeText = [](QString value) -> QString {
-
-        value = value.normalized(QString::NormalizationForm_D).toLower().trimmed();
-
-        QString normalized;
-
-        normalized.reserve(value.size());
-
-        for (QChar ch : value) {
-
-            const QChar::Category category = ch.category();
-
-            if (category == QChar::Mark_NonSpacing ||
-
-                category == QChar::Mark_SpacingCombining ||
-
-                category == QChar::Mark_Enclosing) {
-
-                continue;
-
-            }
-
-            if (ch.isLetterOrNumber())
-
-                normalized.append(ch);
-
-        }
-
-        return normalized;
-
-    };
-
-
-
-    auto setComboValue = [&](QComboBox *combo, const QString &value) {
-
-        if (!combo || value.trimmed().isEmpty()) return;
-
-
-
-        int idx = combo->findText(value, Qt::MatchFixedString);
-
-        if (idx < 0)
-
-            idx = combo->findText(value, Qt::MatchCaseSensitive | Qt::MatchContains);
-
-        if (idx < 0)
-
-            idx = combo->findText(value, Qt::MatchContains);
-
-
-
-        if (idx < 0) {
-
-            const QString wanted = normalizeText(value);
-
-            for (int i = 0; i < combo->count(); ++i) {
-
-                if (normalizeText(combo->itemText(i)) == wanted) {
-
-                    idx = i;
-
-                    break;
-
-                }
-
-            }
-
-        }
-
-
-
-        if (idx < 0) {
-
-            const QString wanted = normalizeText(value);
-
-            for (int i = 0; i < combo->count(); ++i) {
-
-                const QString current = normalizeText(combo->itemText(i));
-
-                if (current.contains(wanted) || wanted.contains(current)) {
-
-                    idx = i;
-
-                    break;
-
-                }
-
-            }
-
-        }
-
-
-
-        if (idx >= 0)
-
-            combo->setCurrentIndex(idx);
-
-    };
-
-
-
-    if (row >= 0 && ui->tableEmployes) {
-
-        currentEmployeRow = row;
-
-        ui->tableEmployes->selectRow(row);
-
-
-
-        const QString matricule = cellText(0);
-
-        const QString nom = cellText(1);
-
-        const QString specialite = cellText(2);
-
-        const QString statut = cellText(3);
-
-
-
-        if (ui->txtMatricule) ui->txtMatricule->setText(matricule);
-
-        if (ui->txtNom) ui->txtNom->setText(nom);
-
-        setComboValue(ui->cbSpecialite, specialite);
-
-        setComboValue(ui->cbStatut, statut);
-
-
-
-        if (auto *matItem = ui->tableEmployes->item(row, 0)) {
-
-            const QString email = matItem->data(Qt::UserRole + 1).toString().trimmed();
-
-            const QString cin = matItem->data(Qt::UserRole + 2).toString().trimmed();
-
-            const QVariant salaireData = matItem->data(Qt::UserRole + 3);
-
-
-
-            if (ui->txtEmailModif) ui->txtEmailModif->setText(email);
-
-            if (ui->txtCIN_Modif) ui->txtCIN_Modif->setText(cin);
-
-
-
-            if (ui->sliderSalaire_Modif) {
-
-                int salaire = 1200;
-
-                if (salaireData.isValid()) {
-
-                    salaire = salaireData.toInt();
-
-                }
-
-                salaire = qMax(ui->sliderSalaire_Modif->minimum(),
-
-                               qMin(ui->sliderSalaire_Modif->maximum(), salaire));
-
-                ui->sliderSalaire_Modif->setValue(salaire);
-
-            }
-
-        }
-
-    } else {
-
-        currentEmployeRow = -1;
-
-    }
-
-
-
-    if (auto *sw = mainStacked()) {
-
-        if (auto *page = sw->findChild<QWidget*>("modification", Qt::FindDirectChildrenOnly)) {
-
-            sw->setCurrentWidget(page);
-
-        } else {
-
-            sw->setCurrentIndex(1);
-
-        }
-
-    }
-
-
-
-    // --- STYLE SIDEBAR & CLEAN LABELS (Employee Modification) ---
-
-    QTimer::singleShot(100, this, [this]() {
-
-        if (QWidget *side = this->findChild<QWidget*>("sideMod")) {
-
-            side->setStyleSheet("QWidget#sideMod { background-color: #ffffff; border-radius: 20px; border: 1px solid #e2e8f0; }");
-
-            QList<QLabel*> labels = side->findChildren<QLabel*>();
-
-            for (QLabel *lbl : labels) {
-
-                lbl->setStyleSheet(lbl->styleSheet() + " background: transparent; color: #0f2b4c; border: none;");
-
-            }
-
-        }
-
-        // Remove gray background from all labels in the page
-
-        if (auto *page = mainStacked() ? mainStacked()->currentWidget() : nullptr) {
-
-            QList<QLabel*> allLabels = page->findChildren<QLabel*>();
-
-            for (QLabel *lbl : allLabels) {
-
-                lbl->setStyleSheet(lbl->styleSheet() + " background: transparent; border: none;");
-
-            }
-
-        }
-
-    });
-
-}
-
-
-
-void MainWindow::on_btnSave_clicked()
-
-{
-
-    if (!ui->tableEmployes)
-
-        return;
-
-
-
-    int row = currentEmployeRow;
-
-    if (row < 0 || row >= ui->tableEmployes->rowCount()) {
-
-        // Fallback: find row by matricule in case the tracked row was reset.
-
-        const QString matriculeFromForm = ui->txtMatricule ? ui->txtMatricule->text().trimmed() : QString();
-
-        if (!matriculeFromForm.isEmpty()) {
-
-            for (int r = 0; r < ui->tableEmployes->rowCount(); ++r) {
-
-                if (auto *item = ui->tableEmployes->item(r, 0)) {
-
-                    if (item->text().trimmed() == matriculeFromForm) {
-
-                        row = r;
-
-                        break;
-
-                    }
-
-                }
-
-            }
-
-        }
-
-    }
-
-
-
-    if (row < 0 || row >= ui->tableEmployes->rowCount())
-
-        return;
-
-
-
-    auto ensureItem = [this, row](int col) -> QTableWidgetItem* {
-
-        QTableWidgetItem *item = ui->tableEmployes->item(row, col);
-
-        if (!item) {
-
-            item = new QTableWidgetItem();
-
-            ui->tableEmployes->setItem(row, col, item);
-
-        }
-
-        return item;
-
-    };
-
-
-
-    const QString matricule = ui->txtMatricule ? ui->txtMatricule->text().trimmed() : QString();
-
-    const QString nom = ui->txtNom ? ui->txtNom->text().trimmed() : QString();
-
-    const QString specialite = ui->cbSpecialite ? ui->cbSpecialite->currentText().trimmed() : QString();
-
-    const QString statut = ui->cbStatut ? ui->cbStatut->currentText().trimmed() : QString();
-
-    const QString email = ui->txtEmailModif ? ui->txtEmailModif->text().trimmed() : QString();
-
-    const QString cin = ui->txtCIN_Modif ? ui->txtCIN_Modif->text().trimmed() : QString();
-
-    const int salaire = ui->sliderSalaire_Modif ? ui->sliderSalaire_Modif->value() : 0;
-
-
-
-    QTableWidgetItem *matItem = ensureItem(0);
-
-    matItem->setText(matricule);
-
-    matItem->setData(Qt::UserRole + 1, email);
-
-    matItem->setData(Qt::UserRole + 2, cin);
-
-    matItem->setData(Qt::UserRole + 3, salaire);
-
-
-
-    ensureItem(1)->setText(nom);
-
-    ensureItem(2)->setText(specialite);
-
-    ensureItem(3)->setText(statut);
-
-
-
-    ui->tableEmployes->selectRow(row);
-
-    currentEmployeRow = row;
-
-    showEmployesPage();
-
-}
-
-
-
-// --- SUPPRESSION ---
-
-void MainWindow::on_btnSupprimer_clicked()
-
-{
-
-    if (!ui->tableEmployes) return;
-
-
-
-    int row = -1;
-
-    if (auto *btn = qobject_cast<QPushButton*>(sender())) {
-
-        const QVariant rowProp = btn->property("row");
-
-        if (rowProp.isValid())
-
-            row = rowProp.toInt();
-
-    }
-
-
-
-    if ((row < 0 || row >= ui->tableEmployes->rowCount()) && currentEmployeRow >= 0)
-
-        row = currentEmployeRow;
-
-
-
-    if ((row < 0 || row >= ui->tableEmployes->rowCount()) && ui->tableEmployes->currentRow() >= 0)
-
-        row = ui->tableEmployes->currentRow();
-
-
-
-    if (row < 0 || row >= ui->tableEmployes->rowCount()) {
-
-        const QString matriculeForm = ui->txtMatricule ? ui->txtMatricule->text().trimmed() : QString();
-
-        if (!matriculeForm.isEmpty()) {
-
-            for (int r = 0; r < ui->tableEmployes->rowCount(); ++r) {
-
-                if (auto *it = ui->tableEmployes->item(r, 0)) {
-
-                    if (it->text().trimmed() == matriculeForm) {
-
-                        row = r;
-
-                        break;
-
-                    }
-
-                }
-
-            }
-
-        }
-
-    }
-
-
-
-    if (row < 0 || row >= ui->tableEmployes->rowCount())
-
-        return;
-
-
-
-    if (QMessageBox::question(this, "Supprimer", "Voulez-vous vraiment supprimer cet employé ?", QMessageBox::Yes | QMessageBox::No) != QMessageBox::Yes)
-
-        return;
-
-
-
-    ui->tableEmployes->removeRow(row);
-
-    refreshEmployeActionButtons();
-
-
-
-    currentEmployeRow = -1;
-
-
-
-    if (ui->tableEmployes->rowCount() > 0) {
-
-        const int rowToSelect = qMax(0, qMin(row, ui->tableEmployes->rowCount() - 1));
-
-        ui->tableEmployes->selectRow(rowToSelect);
-
-    }
-
-
-
-    showEmployesPage();
-
-}
-
-
-
-// --- MISSION IA ---
-
-void MainWindow::on_btnAnalyser_clicked()
-
-{
-
-    ui->tableResultat->setRowCount(0);
-
-    ui->tableResultat->insertRow(0);
-
-    ui->tableResultat->setItem(0, 0, new QTableWidgetItem("EMP-001"));
-
-    ui->tableResultat->setItem(0, 1, new QTableWidgetItem("Ali Ben Salah"));
-
-    ui->tableResultat->setItem(0, 2, new QTableWidgetItem("🔧 Moteur Diesel"));
-
-    QTableWidgetItem* score1 = new QTableWidgetItem("99%");
-
-    score1->setForeground(QBrush(QColor("#27ae60")));
-
-    ui->tableResultat->setItem(0, 3, score1);
-
-}
-
-
-
-// --- POINTAGE ---
-
-void MainWindow::on_btnSimulerBadge_clicked()
-
-{
-
-    ui->lblStatutRFID->setText("✅ BADGE ACCEPTÉ");
-
-    ui->lblStatutRFID->setStyleSheet("background-color: #2ecc71; color: white; font-size: 24px; font-weight: bold; border-radius: 10px; padding: 20px; border: 2px solid #27ae60;");
-
-
-
-    int row = ui->tablePointage->rowCount();
-
-    ui->tablePointage->insertRow(row);
-
-    ui->tablePointage->setItem(row, 0, new QTableWidgetItem(QTime::currentTime().toString("HH:mm:ss")));
-
-    ui->tablePointage->setItem(row, 1, new QTableWidgetItem("BADGE-123"));
-
-    ui->tablePointage->setItem(row, 2, new QTableWidgetItem("Ali Ben Salah"));
-
-
-
-    QTableWidgetItem* status = new QTableWidgetItem("PRÉSENT");
-
-    status->setForeground(QBrush(QColor("#27ae60")));
-
-    ui->tablePointage->setItem(row, 3, status);
-
-}
-
-
-
-void MainWindow::on_btnFichePaie_clicked()
-
-{
-
-    QInputDialog dialog(this);
-
-    dialog.setWindowTitle("Fiche de Paie");
-
-    dialog.setLabelText("Veuillez entrer le matricule de l'employé :");
-
-    dialog.setTextValue("");
-
-    dialog.setInputMode(QInputDialog::TextInput);
-
-    dialog.resize(400, 200);
-
-
-
-    dialog.setStyleSheet(
-
-        "QDialog { background-color: white; }"
-
-        "QLabel { color: #333333; font-weight: bold; font-size: 14px; }"
-
-        "QLineEdit { border: 1px solid #ccc; border-radius: 5px; padding: 5px; color: black; }"
-
-        "QPushButton { "
-
-        "   background-color: #0f2b4c; "
-
-        "   color: white; "
-
-        "   border: none; "
-
-        "   border-radius: 5px; "
-
-        "   padding: 8px 15px; "
-
-        "   font-weight: bold; "
-
-        "   min-width: 70px; "
-
-        "}"
-
-        "QPushButton:hover { background-color: #1a4270; }"
-
-    );
-
-
-
-    if (dialog.exec() == QDialog::Accepted) {
-
-        QString matricule = dialog.textValue();
-
-        if (!matricule.isEmpty()) {
-
-            QMessageBox::information(this, "Génération en cours",
-
-                                     "✅ Génération de la fiche de paie pour le matricule : " + matricule);
-
-        }
-
-    }
-
-}
-
-
-
-void MainWindow::on_btnCommsSend_clicked()
-
-{
-
-    QLineEdit *input = findChild<QLineEdit*>("txtCommsInput");
-
-    QListWidget *list = findChild<QListWidget*>("listComms");
-
-
-
-    if (!input || !list)
-
-        return;
-
-
-
-    const QString message = input->text().trimmed();
-
-    if (message.isEmpty())
-
-        return;
-
-
-
-    QListWidgetItem *item = new QListWidgetItem("Vous : " + message);
-
-    item->setForeground(QColor("#27ae60"));
-
-    list->addItem(item);
-
-    input->clear();
-
-}
-
-
-
-void MainWindow::setupStatistics()
-
-{
-
-    QPieSeries *absenceSeries = new QPieSeries();
-
-    absenceSeries->append("Présent", 85);
-
-    absenceSeries->append("Absent", 15);
-
-
-
-    QPieSlice *presentSlice = absenceSeries->slices().at(0);
-
-    presentSlice->setLabelVisible(true);
-
-    presentSlice->setBrush(QColor("#27ae60"));
-
-    presentSlice->setLabelColor(Qt::black);
-
-
-
-    QPieSlice *absentSlice = absenceSeries->slices().at(1);
-
-    absentSlice->setLabelVisible(true);
-
-    absentSlice->setExploded(true);
-
-    absentSlice->setBrush(QColor("#c0392b"));
-
-    absentSlice->setLabelColor(Qt::black);
-
-
-
-    QChart *absenceChart = new QChart();
-
-    absenceChart->addSeries(absenceSeries);
-
-    absenceChart->setTitle("Taux de Présence Global");
-
-    absenceChart->setTitleFont(QFont("Segoe UI", 12, QFont::Bold));
-
-    absenceChart->legend()->setAlignment(Qt::AlignBottom);
-
-    absenceChart->setAnimationOptions(QChart::SeriesAnimations);
-
-
-
-    ui->chartViewAbsence->setChart(absenceChart);
-
-    ui->chartViewAbsence->setRenderHint(QPainter::Antialiasing);
-
-
-
-    QBarSet *set0 = new QBarSet("Heures Travaillées");
-
-    *set0 << 40 << 35 << 42 << 38 << 45;
-
-    set0->setColor(QColor("#3498db"));
-
-
-
-    QBarSeries *workloadSeries = new QBarSeries();
-
-    workloadSeries->append(set0);
-
-
-
-    QChart *workloadChart = new QChart();
-
-    workloadChart->addSeries(workloadSeries);
-
-    workloadChart->setTitle("Charge de Travail par Employé (Semaine)");
-
-    workloadChart->setTitleFont(QFont("Segoe UI", 12, QFont::Bold));
-
-    workloadChart->setAnimationOptions(QChart::SeriesAnimations);
-
-    workloadChart->legend()->setVisible(false);
-
-
-
-    QStringList categories;
-
-    categories << "Ali" << "Sara" << "Mohamed" << "Rania" << "Karim";
-
-    QBarCategoryAxis *axisX = new QBarCategoryAxis();
-
-    axisX->append(categories);
-
-    workloadChart->addAxis(axisX, Qt::AlignBottom);
-
-    workloadSeries->attachAxis(axisX);
-
-
-
-    QValueAxis *axisY = new QValueAxis();
-
-    axisY->setRange(0, 50);
-
-    axisY->setTitleText("Heures / Semaine");
-
-    workloadChart->addAxis(axisY, Qt::AlignLeft);
-
-    workloadSeries->attachAxis(axisY);
-
-
-
-    ui->chartViewWorkload->setChart(workloadChart);
-
-    ui->chartViewWorkload->setRenderHint(QPainter::Antialiasing);
-
-
-
-    updateTaskChart("Projet A");
-
-}
-
-
-
-void MainWindow::setupAccueilDashboard()
-
-{
-
-    QStackedWidget *sw = mainStacked();
-
-    if (!sw)
-
-        return;
-
-
-
-    QWidget *existing = sw->findChild<QWidget*>("dashboardAccueil", Qt::FindDirectChildrenOnly);
-
-    if (existing) {
-
-        homeDashboardPage = existing;
-
-    } else {
-
-        QWidget *page = new QWidget();
-
-        page->setObjectName("dashboardAccueil");
-
-
-
-        auto *mainLayout = new QHBoxLayout(page);
-
-        mainLayout->setContentsMargins(20, 20, 20, 20);
-
-        mainLayout->setSpacing(16);
-
-
-
-        auto *leftLayout = new QVBoxLayout();
-
-        leftLayout->setSpacing(20);
-
-
-
-        auto *title = new QLabel("Tableau de Bord");
-
-        title->setStyleSheet("font-size: 28px; font-weight: 700; color: #34495e;");
-
-        leftLayout->addWidget(title);
-
-
-
-        // --- WELCOME CARD (HERO) ---
-
-        auto *welcomeCard = new QFrame();
-
-        welcomeCard->setObjectName("welcomeCard");
-
-        welcomeCard->setFrameShape(QFrame::StyledPanel);
-
-        welcomeCard->setStyleSheet(
-
-            "#welcomeCard {"
-
-            "    background: qlineargradient(spread:pad, x1:0, y1:0, x2:1, y2:1, stop:0 #0f2b4c, stop:1 #3498db);"
-
-            "    border-radius: 15px;"
-
-            "    color: white;"
-
-            "}"
-
-        );
-
-        auto *welcomeLayout = new QVBoxLayout(welcomeCard);
-
-        welcomeLayout->setContentsMargins(30, 30, 30, 30);
-
-        
-
-        auto *welcomeTitle = new QLabel("WasteGuard : L'Innovation au Service de la Ville Durable.");
-
-        welcomeTitle->setStyleSheet("font-size: 22px; font-weight: 700; color: #ffffff; background: transparent;");
-
-        auto *welcomeMsg = new QLabel("Nous optimisons la collecte des déchets urbains grâce à l'intelligence artificielle (IA) et aux objets connectés (IoT).");
-
-        welcomeMsg->setWordWrap(true);
-
-        welcomeMsg->setStyleSheet("font-size: 15px; font-weight: 400; color: #ecf0f1; margin-top: 10px; background: transparent;");
-
-        
-
-        welcomeLayout->addWidget(welcomeTitle);
-
-        welcomeLayout->addWidget(welcomeMsg);
-
-        leftLayout->addWidget(welcomeCard);
-
-
-
-        // --- FINANCE CARDS ---
-
-        auto *financeRow = new QHBoxLayout();
-
-        financeRow->setSpacing(20);
-
-
-
-        // CARD 1: CA MENSIEL
-
-        auto *financeCard1 = new QFrame();
-
-        financeCard1->setObjectName("financeCard");
-
-        financeCard1->setStyleSheet(
-
-            "#financeCard {"
-
-            "    background-color: #ffffff;"
-
-            "    border-radius: 15px;"
-
-            "    border-left: 10px solid #2980b9;"
-
-            "    border-right: 1px solid #dce1e6;"
-
-            "    border-top: 1px solid #dce1e6;"
-
-            "    border-bottom: 2px solid #dce1e6;"
-
-            "}"
-
-        );
-
-        auto *f1 = new QVBoxLayout(financeCard1);
-
-        f1->setContentsMargins(25, 25, 25, 25);
-
-        
-
-        QLabel *lblTitle1 = new QLabel("CHIFFRE D'AFFAIRES MENSUEL (CA)");
-
-        lblTitle1->setStyleSheet("color: #7f8c8d; font-size: 12px; font-weight: 700; letter-spacing: 1px; text-transform: uppercase; background: transparent;");
-
-        
-
-        QLabel *lblValue1 = new QLabel("125 k TND");
-
-        lblValue1->setStyleSheet("color: #2c3e50; font-size: 48px; font-weight: 800; margin-top: 5px; margin-bottom: 5px; background: transparent;");
-
-        
-
-        QLabel *lblDesc1 = new QLabel("Montant total des ventes (bacs intelligents + abonnements) ce mois-ci.");
-
-        lblDesc1->setWordWrap(true);
-
-        lblDesc1->setStyleSheet("color: #95a5a6; font-size: 13px; font-style: italic; background: transparent;");
-
-        
-
-        f1->addWidget(lblTitle1);
-
-        f1->addWidget(lblValue1);
-
-        f1->addWidget(lblDesc1);
-
-
-
-        // CARD 2: MARGE NETTE
-
-        auto *financeCard2 = new QFrame();
-
-        financeCard2->setObjectName("financeCard_2");
-
-        financeCard2->setStyleSheet(
-
-            "#financeCard_2 {"
-
-            "    background-color: #ffffff;"
-
-            "    border-radius: 15px;"
-
-            "    border-left: 10px solid #27ae60;"
-
-            "    border-right: 1px solid #dce1e6;"
-
-            "    border-top: 1px solid #dce1e6;"
-
-            "    border-bottom: 2px solid #dce1e6;"
-
-            "}"
-
-        );
-
-        auto *f2 = new QVBoxLayout(financeCard2);
-
-        f2->setContentsMargins(25, 25, 25, 25);
-
-        
-
-        QLabel *lblTitle2 = new QLabel("MARGE BÉNÉFICIAIRE NETTE");
-
-        lblTitle2->setStyleSheet("color: #7f8c8d; font-size: 12px; font-weight: 700; letter-spacing: 1px; text-transform: uppercase; background: transparent;");
-
-        
-
-        QLabel *lblValue2 = new QLabel("+ 24 %");
-
-        lblValue2->setStyleSheet("color: #27ae60; font-size: 48px; font-weight: 800; margin-top: 5px; margin-bottom: 5px; background: transparent;");
-
-        
-
-        QLabel *lblDesc2 = new QLabel("Pourcentage de profit réel après coûts de production et salaires.");
-
-        lblDesc2->setWordWrap(true);
-
-        lblDesc2->setStyleSheet("color: #95a5a6; font-size: 13px; font-style: italic; background: transparent;");
-
-        
-
-        f2->addWidget(lblTitle2);
-
-        f2->addWidget(lblValue2);
-
-        f2->addWidget(lblDesc2);
-
-
-
-        financeRow->addWidget(financeCard1);
-
-        financeRow->addWidget(financeCard2);
-
-        leftLayout->addLayout(financeRow);
-
-
-
-        // --- CHARTS ROW ---
-
-        auto *chartsRow = new QHBoxLayout();
-
-        chartsRow->setSpacing(20);
-
-
-
-        auto *teamsCard = new QFrame();
-
-        teamsCard->setObjectName("hrChartCard");
-
-        teamsCard->setStyleSheet("background-color: white; border-radius: 12px; border: 1px solid #dce1e6;");
-
-        auto *teamsLayout = new QVBoxLayout(teamsCard);
-
-        
-
-        QLabel *lblTeamTitle = new QLabel("Gestion des Ressources Humaines");
-
-        lblTeamTitle->setStyleSheet("font-size: 16px; font-weight: 700; color: #2c3e50; margin-bottom: 10px; background: transparent;");
-
-        teamsLayout->addWidget(lblTeamTitle);
-
-        
-
-        auto *teamsView = new QChartView();
-
-        teamsView->setObjectName("chartViewTeams");
-
-        teamsView->setMinimumHeight(250);
-
-        teamsLayout->addWidget(teamsView);
-
-
-
-        auto *prodCard = new QFrame();
-
-        prodCard->setObjectName("productionChartCard");
-
-        prodCard->setStyleSheet("background-color: white; border-radius: 12px; border: 1px solid #dce1e6;");
-
-        auto *prodLayout = new QVBoxLayout(prodCard);
-
-        
-
-        QLabel *lblProdTitle = new QLabel("Production & Logistique");
-
-        lblProdTitle->setStyleSheet("font-size: 16px; font-weight: 700; color: #2c3e50; margin-bottom: 10px; background: transparent;");
-
-        prodLayout->addWidget(lblProdTitle);
-
-        
-
-        auto *prodView = new QChartView();
-
-        prodView->setObjectName("chartViewProduction");
-
-        prodView->setMinimumHeight(250);
-
-        prodLayout->addWidget(prodView);
-
-
-
-        chartsRow->addWidget(teamsCard);
-
-        chartsRow->addWidget(prodCard);
-
-        leftLayout->addLayout(chartsRow);
-
-        
-
-        leftLayout->addStretch();
-
-
-
-        // --- RIGHT SIDEBAR (COMMS) ---
-
-        auto *rightCard = new QFrame();
-
-        rightCard->setObjectName("commsCard");
-
-        rightCard->setMinimumWidth(360);
-
-        rightCard->setMaximumWidth(420);
-
-        auto *rightLayout = new QVBoxLayout(rightCard);
-
-        rightLayout->setContentsMargins(20, 20, 20, 20);
-
-        rightLayout->setSpacing(15);
-
-
-
-        auto *commsTitle = new QLabel("Communication Interne");
-
-        commsTitle->setObjectName("lblCommsTitle");
-
-        rightLayout->addWidget(commsTitle);
-
-        
-
-        auto *list = new QListWidget();
-
-        list->setObjectName("listComms");
-
-        list->setMinimumHeight(220);
-
-        list->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
-
-        list->setWordWrap(true);
-
-        list->setTextElideMode(Qt::ElideNone);
-
-        rightLayout->addWidget(list);
-
-
-
-        auto *inputRow = new QHBoxLayout();
-
-        auto *input = new QLineEdit();
-
-        input->setObjectName("txtCommsInput");
-
-        input->setPlaceholderText("Écrire un message...");
-
-        input->setMinimumHeight(40);
-
-        
-
-        auto *btnSend = new QPushButton("Envoyer");
-
-        btnSend->setObjectName("btnCommsSend");
-
-        btnSend->setMinimumWidth(80);
-
-        btnSend->setMinimumHeight(40);
-
-        btnSend->setCursor(Qt::PointingHandCursor);
-
-        
-
-        inputRow->addWidget(input);
-
-        inputRow->addWidget(btnSend);
-
-        rightLayout->addLayout(inputRow);
-
-
-
-        rightCard->setStyleSheet(
-
-            "QFrame#commsCard {"
-
-            " background-color: #ffffff;"
-
-            " border: 1px solid #dce1e6;"
-
-            " border-radius: 12px;"
-
-            "}"
-
-            "QLabel#lblCommsTitle {"
-
-            " color: #0f2b4c;"
-
-            " font-size: 18px;"
-
-            " font-weight: 700;"
-
-            " border: none;"
-
-            " background: transparent;"
-
-            "}"
-
-            "QListWidget#listComms {"
-
-            " background-color: #f8f9fa;"
-
-            " color: #2c3e50;"
-
-            " border: 1px solid #e9ecef;"
-
-            " border-radius: 10px;"
-
-            " padding: 10px;"
-
-            " font-size: 13px;"
-
-            "}"
-
-            "QListWidget#listComms::item {"
-
-            " padding: 8px;"
-
-            " margin-bottom: 5px;"
-
-            " border-bottom: 1px solid #e9ecef;"
-
-            "}"
-
-            "QLineEdit#txtCommsInput {"
-
-            " background-color: #ffffff;"
-
-            " color: #2c3e50;"
-
-            " border: 2px solid #e9ecef;"
-
-            " border-radius: 8px;"
-
-            " padding: 0px 12px;"
-
-            " font-size: 13px;"
-
-            "}"
-
-            "QLineEdit#txtCommsInput:focus {"
-
-            " border: 2px solid #3498db;"
-
-            "}"
-
-            "QPushButton#btnCommsSend {"
-
-            " background-color: #3498db;"
-
-            " color: white;"
-
-            " border: none;"
-
-            " border-radius: 8px;"
-
-            " font-weight: bold;"
-
-            " font-size: 13px;"
-
-            "}"
-
-            "QPushButton#btnCommsSend:hover {"
-
-            " background-color: #2980b9;"
-
-            "}"
-
-        );
-
-
-
-        mainLayout->addLayout(leftLayout, 3);
-
-        mainLayout->addWidget(rightCard, 1);
-
-
-
-        homeDashboardPage = page;
-
-        sw->insertWidget(0, page);
-
-    }
-
-    QPushButton *btnSend = findChild<QPushButton*>("btnCommsSend");
-
-    QLineEdit *input = findChild<QLineEdit*>("txtCommsInput");
-
-    QListWidget *list = findChild<QListWidget*>("listComms");
-
-
-
-    if (btnSend) {
-
-        btnSend->setVisible(true);
-
-        btnSend->setEnabled(true);
-
-        btnSend->setCursor(Qt::PointingHandCursor);
-
-        btnSend->setMinimumWidth(110);
-
-        btnSend->setMinimumHeight(36);
-
-        btnSend->setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Fixed);
-
-        btnSend->setStyleSheet(
-
-            "QPushButton#btnCommsSend {"
-
-            " background-color: #0f2b4c;"
-
-            " color: white;"
-
-            " border: 1px solid #0b223c;"
-
-            " border-radius: 8px;"
-
-            " font-weight: 700;"
-
-            " padding: 6px 14px;"
-
-            "}"
-
-            "QPushButton#btnCommsSend:hover { background-color: #1a4270; }"
-
-            "QPushButton#btnCommsSend:pressed { background-color: #0b223c; }"
-
-        );
-
-        connect(btnSend, &QPushButton::clicked, this, &MainWindow::on_btnCommsSend_clicked, Qt::UniqueConnection);
-
-    }
-
-    if (input) {
-
-        input->setMinimumHeight(36);
-
-        connect(input, &QLineEdit::returnPressed, this, &MainWindow::on_btnCommsSend_clicked, Qt::UniqueConnection);
-
-    }
-
-
-
-    if (list && list->count() == 0) {
-
-        QListWidgetItem *msg1 = new QListWidgetItem("Ahmed (Technique) : Intervention prévue Zone Nord à 15h.");
-
-        msg1->setForeground(QColor("#1f2d3d"));
-
-        list->addItem(msg1);
-
-
-
-        QListWidgetItem *msg2 = new QListWidgetItem("Sarah (RH) : Réunion RH demain à 10h.");
-
-        msg2->setForeground(QColor("#1f2d3d"));
-
-        list->addItem(msg2);
-
-
-
-        QListWidgetItem *systemAlert = new QListWidgetItem("Alerte Système : Maintenance serveur ce soir à 22h.");
-
-        systemAlert->setForeground(QColor("#e67e22"));
-
-        list->addItem(systemAlert);
-
-    }
-
-
-
-    setupDashboardCharts();
-
-}
-
-
-
-void MainWindow::setupDashboardCharts()
-
-{
-
-    QChartView *teamsView = findChild<QChartView*>("chartViewTeams");
-
-    QChartView *productionView = findChild<QChartView*>("chartViewProduction");
-
-
-
-    if (!teamsView || !productionView)
-
-        return;
-
-
-
-    QPieSeries *teamSeries = new QPieSeries();
-
-    teamSeries->append("Disponibles (12)", 12);
-
-    teamSeries->append("En Mission (8)", 8);
-
-    teamSeries->append("Absents (3)", 3);
-
-    teamSeries->setHoleSize(0.45);
-
-
-
-    teamSeries->slices().at(0)->setBrush(QColor("#27ae60"));
-
-    teamSeries->slices().at(1)->setBrush(QColor("#f39c12"));
-
-    teamSeries->slices().at(2)->setBrush(QColor("#c0392b"));
-
-    for (QPieSlice *slice : teamSeries->slices()) {
-
-        slice->setLabelVisible(true);
-
-        slice->setLabelColor(Qt::black);
-
-    }
-
-
-
-    QChart *teamChart = new QChart();
-
-    teamChart->addSeries(teamSeries);
-
-    teamChart->legend()->setAlignment(Qt::AlignBottom);
-
-    teamChart->setAnimationOptions(QChart::SeriesAnimations);
-
-    teamChart->setTitle("Disponibilité des équipes techniques");
-
-    teamsView->setChart(teamChart);
-
-    teamsView->setRenderHint(QPainter::Antialiasing);
-
-
-
-    QBarSet *setRaw = new QBarSet("Matière Première (t)");
-
-    *setRaw << 40 << 38 << 42 << 36;
-
-    setRaw->setColor(QColor("#95a5a6"));
-
-
-
-    QBarSet *setBins = new QBarSet("Bacs Assemblés");
-
-    *setBins << 28 << 32 << 35 << 30;
-
-    setBins->setColor(QColor("#3498db"));
-
-
-
-    QBarSeries *prodSeries = new QBarSeries();
-
-    prodSeries->append(setRaw);
-
-    prodSeries->append(setBins);
-
-
-
-    QChart *prodChart = new QChart();
-
-    prodChart->addSeries(prodSeries);
-
-    prodChart->setTitle("Suivi de fabrication (hebdomadaire)");
-
-    prodChart->legend()->setAlignment(Qt::AlignBottom);
-
-    prodChart->setAnimationOptions(QChart::SeriesAnimations);
-
-
-
-    QStringList weeks;
-
-    weeks << "S1" << "S2" << "S3" << "S4";
-
-    QBarCategoryAxis *axisX = new QBarCategoryAxis();
-
-    axisX->append(weeks);
-
-    prodChart->addAxis(axisX, Qt::AlignBottom);
-
-    prodSeries->attachAxis(axisX);
-
-
-
-    QValueAxis *axisY = new QValueAxis();
-
-    axisY->setRange(0, 50);
-
-    axisY->setTitleText("Volume / semaine");
-
-    prodChart->addAxis(axisY, Qt::AlignLeft);
-
-    prodSeries->attachAxis(axisY);
-
-
-
-    productionView->setChart(prodChart);
-
-    productionView->setRenderHint(QPainter::Antialiasing);
-
-}
-
-
-
-void MainWindow::applyUnifiedTopBarStyle()
-
-{
-
-    const QStringList headerContainers = {
-
-        "headerBar", "topBar", "header_Client"
-
-    };
-
-    for (const QString &name : headerContainers) {
-
-        if (auto *w = findChild<QWidget*>(name)) {
-
-            w->setStyleSheet("background-color: #ffffff; border: none; border-bottom: 1px solid #dce1e6;");
-
-        }
-
-    }
-
-    if (auto *stockHeader = findChild<QWidget*>("headerBar")) {
-
-        stockHeader->setMinimumHeight(68);
-
-        stockHeader->setMaximumHeight(68);
-
-    }
-
-    if (auto *clientHeader = findChild<QWidget*>("header_Client")) {
-
-        clientHeader->setMinimumHeight(72);
-
-        clientHeader->setMaximumHeight(72);
-
-    }
-
-
-
-    const QStringList titleLabels = {
-
-        "label_Title", "prod_label_Title", "headerTitle",
-
-        "wasteguardhead_Client", "lb_1", "lb_3", "lb_5", "titleLabel"
-
-    };
-
-    for (const QString &name : titleLabels)
-
-        styleTopTitle(findChild<QLabel*>(name));
-
-
-
-    const QStringList userNameLabels = {
-
-        "lblUserName", "lblUserName_Modif", "lblUserName_Ajout", "prod_lblUserName"
-
-    };
-
-    for (const QString &name : userNameLabels)
-
-        styleTopUserName(findChild<QLabel*>(name));
-
-
-
-    const QStringList userRoleLabels = {
-
-        "lblUserRole", "lblUserRole_Modif", "lblUserRole_Ajout", "prod_lblUserRole", "userLabel"
-
-    };
-
-    for (const QString &name : userRoleLabels)
-
-        styleTopUserRole(findChild<QLabel*>(name));
-
-
-
-    const QStringList combinedUserLabels = {
-
-        "user_1", "user_3", "user_5", "user", "responsable_Client"
-
-    };
-
-    for (const QString &name : combinedUserLabels)
-
-        styleTopCombinedUser(findChild<QLabel*>(name));
-
-
-
-    const QStringList addButtons = {
-
-        "btnNouveau", "prod_btnAddProduct", "btnNouveau_Client",
-
-        "btnAddDashboard", "btnAddProduct_2", "btnNew", "btnGotoAjout"
-
-    };
-
-    for (const QString &name : addButtons)
-
-        styleModelAddButton(findChild<QPushButton*>(name));
-
-
-
-    const QStringList iconButtons = {
-
-        "btnnotif_1", "btnprofil_1", "btnnotif_3", "btnprofil_3",
-
-        "btnnotif_5", "btnprofil_5", "btnNotif", "btnProfil"
-
-    };
-
-    for (const QString &name : iconButtons)
-
-        styleTopIconButton(findChild<QPushButton*>(name));
-
-
-
-    const QStringList userFrames = {
-
-        "frameUser", "frameUser_Modif", "frameUser_Ajout", "prod_frameUser"
-
-    };
-
-    for (const QString &name : userFrames) {
-
-        if (auto *frame = findChild<QFrame*>(name))
-
-            frame->setStyleSheet("background: transparent; border: none;");
-
-    }
-
-
-
-    // --- Maintenance top bar: align visual structure with other module headers ---
-
-    if (auto *maintLayout = findChild<QHBoxLayout*>("topLayout_1")) {
-
-        maintLayout->setContentsMargins(16, 8, 16, 8);
-
-        maintLayout->setSpacing(10);
-
-    }
-
-    if (auto *maintTitle = findChild<QLabel*>("titleLabel")) {
-
-        styleTopTitle(maintTitle);
-
-        maintTitle->setText("Tableau de Bord");
-
-    }
-
-    if (auto *maintUser = findChild<QLabel*>("userLabel")) {
-
-        maintUser->setTextFormat(Qt::RichText);
-
-        maintUser->setText(
-
-            "<span style=\"color:#0f2b4c;font-size:14px;font-weight:700;\">Admin System</span>"
-
-            "<br/>"
-
-            "<span style=\"color:#16a34a;font-size:12px;font-weight:700;\">Chef d'Atelier</span>"
-
-        );
-
-        maintUser->setAlignment(Qt::AlignRight | Qt::AlignVCenter);
-
-    }
-
-    if (auto *notif = findChild<QPushButton*>("btnNotif")) notif->hide();
-
-    if (auto *profil = findChild<QPushButton*>("btnProfil")) profil->hide();
-
-    moveWidgetBefore(this, "btnGotoAjout", "topLayout_1", "userLabel");
-
-
-
-    // --- Client top bar: same visual language as global headers ---
-
-    if (auto *clientLayout = findChild<QHBoxLayout*>("horizontalLayout_header_Client")) {
-
-        clientLayout->setContentsMargins(16, 6, 16, 6);
-
-        clientLayout->setSpacing(8);
-
-    }
-
-    if (auto *clientTitle = findChild<QLabel*>("wasteguardhead_Client")) {
-
-        styleTopTitle(clientTitle);
-
-        clientTitle->setText("Gestion de Clients");
-
-    }
-
-    if (auto *clientResp = findChild<QLabel*>("responsable_Client")) {
-
-        clientResp->setTextFormat(Qt::RichText);
-
-        clientResp->setText(
-
-            "<span style=\"color:#0f2b4c;font-size:14px;font-weight:700;\">Admin System</span>"
-
-            "<br/>"
-
-            "<span style=\"color:#16a34a;font-size:12px;font-weight:700;\">Responsable Commercial</span>"
-
-        );
-
-        clientResp->setAlignment(Qt::AlignRight | Qt::AlignVCenter);
-
-    }
-
-    moveWidgetBefore(this, "btnNouveau_Client", "horizontalLayout_header_Client", "responsable_Client");
-
-
-
-    // Employes top bar: keep + button directly before user block.
-
-    moveWidgetToStart(this, "btnNouveau", "horizontalLayout_UserHeader");
-
-
-
-    // Stock top bar: use "Tableau de Bord" strip as the main top strip.
-
-    if (auto *stockTitle = findChild<QLabel*>("headerTitle")) {
-
-        styleTopTitle(stockTitle);
-
-        stockTitle->setText("Tableau de Bord");
-
-    }
-
-    if (auto *stockUser = findChild<QLabel*>("user")) {
-
-        stockUser->setTextFormat(Qt::RichText);
-
-        stockUser->setText(
-
-            "<span style=\"color:#0f2b4c;font-size:14px;font-weight:700;\">Admin System</span>"
-
-            "<br/>"
-
-            "<span style=\"color:#16a34a;font-size:12px;font-weight:700;\">Responsable du stock</span>"
-
-        );
-
-        stockUser->setAlignment(Qt::AlignRight | Qt::AlignVCenter);
-
-    }
-
-    if (auto *headerLayout = findChild<QHBoxLayout*>("headerLayout")) {
-
-        headerLayout->setContentsMargins(16, 4, 12, 4);
-
-        headerLayout->setSpacing(4);
-
-        QWidget *stockUserWidget = findChild<QWidget*>("user");
-
-        QWidget *stockAddWidget = findChild<QWidget*>("btnNew");
-
-
-
-        if (stockUserWidget) {
-
-            if (auto *parentLayout = stockUserWidget->parentWidget() ? stockUserWidget->parentWidget()->layout() : nullptr)
-
-                parentLayout->removeWidget(stockUserWidget);
-
-        }
-
-        if (stockAddWidget) {
-
-            if (auto *parentLayout = stockAddWidget->parentWidget() ? stockAddWidget->parentWidget()->layout() : nullptr)
-
-                parentLayout->removeWidget(stockAddWidget);
-
-        }
-
-
-
-        // Keep add button close to the user block: [+ Ajouter][Admin System]
-
-        if (stockAddWidget) headerLayout->addWidget(stockAddWidget);
-
-        if (stockUserWidget) headerLayout->addWidget(stockUserWidget);
-
-    }
-
-    if (auto *lblTableTitle = findChild<QLabel*>("lblTableTitle"))
-
-        lblTableTitle->hide();
-
-    if (auto *tableHeaderActions = findChild<QHBoxLayout*>("tableHeaderActions")) {
-
-        tableHeaderActions->setContentsMargins(0, 0, 0, 0);
-
-        tableHeaderActions->setSpacing(0);
-
-        for (int i = 0; i < tableHeaderActions->count(); ++i) {
-
-            if (auto *spacer = tableHeaderActions->itemAt(i)->spacerItem()) {
-
-                spacer->changeSize(0, 0, QSizePolicy::Fixed, QSizePolicy::Fixed);
-
-            }
-
-        }
-
-    }
-
-    if (auto *stockPage = findChild<QWidget*>("pageStock")) {
-
-        if (auto *dashLayout = stockPage->findChild<QHBoxLayout*>("dashboardLayout")) {
-
-            dashLayout->setContentsMargins(25, 18, 25, 25);
-
-        }
-
-        if (auto *rightColumn = stockPage->findChild<QVBoxLayout*>("rightColumn")) {
-
-            rightColumn->setContentsMargins(0, 0, 0, 0);
-
-            rightColumn->setSpacing(14);
-
-        }
-
-
-
-        auto styleStockCard = [](QFrame *card) {
-
-            if (!card) return;
-
-            card->setStyleSheet(
-
-                "QFrame {"
-
-                " background-color: #ffffff;"
-
-                " border: 1px solid #dce1e6;"
-
-                " border-radius: 14px;"
-
-                "}"
-
-            );
-
-        };
-
-        styleStockCard(stockPage->findChild<QFrame*>("statsBox"));
-
-        styleStockCard(stockPage->findChild<QFrame*>("orderBox"));
-
-
-
-        if (auto *statsTitle = stockPage->findChild<QLabel*>("lblStatsTitle")) {
-
-            statsTitle->setStyleSheet("color: #607080; font-size: 13px; font-weight: 600;");
-
-        }
-
-        if (auto *totalStock = stockPage->findChild<QLabel*>("totalStock")) {
-
-            totalStock->setStyleSheet("color: #1f2d3d; font-size: 22px; font-weight: 700;");
-
-        }
-
-        if (auto *criticalStock = stockPage->findChild<QLabel*>("lblCriticalStock")) {
-
-            criticalStock->setStyleSheet("color: #ef4444; font-size: 16px; font-weight: 700;");
-
-        }
-
-        if (auto *orderTitle = stockPage->findChild<QLabel*>("lblOrderTitle")) {
-
-            orderTitle->setStyleSheet("color: #1f2d3d; font-size: 13px; font-weight: 700;");
-
-        }
-
-        if (auto *orderSummary = stockPage->findChild<QLabel*>("lblOrderSummary")) {
-
-            orderSummary->setStyleSheet("color: #ef4444; font-size: 14px; font-weight: 700;");
-
-        }
-
-
-
-        if (auto *btnOrder = stockPage->findChild<QPushButton*>("btnOrder")) {
-
-            btnOrder->setMinimumHeight(56);
-
-            btnOrder->setCursor(Qt::PointingHandCursor);
-
-        }
-
-    }
-
-
-
-    if (auto *maintRightLayout = findChild<QVBoxLayout*>("rightLayout_1")) {
-
-        maintRightLayout->setContentsMargins(0, 0, 0, 0);
-
-        maintRightLayout->setSpacing(10);
-
-        if (auto *maintRight = qobject_cast<QFrame*>(maintRightLayout->parentWidget())) {
-
-            maintRight->setMinimumWidth(300);
-
-            maintRight->setMaximumWidth(350);
-
-        }
-
-    }
-
-    if (auto *maintContent = findChild<QHBoxLayout*>("contentLayout_1")) {
-
-        maintContent->setContentsMargins(0, 0, 0, 0);
-
-        maintContent->setSpacing(16);
-
-    }
-
-    if (auto *maintTop = findChild<QHBoxLayout*>("topLayout_1")) {
-
-        maintTop->setContentsMargins(16, 6, 12, 6);
-
-        maintTop->setSpacing(4);
-
-    }
-
-
-
-    // Commandes dashboard top bar: put add button before user block.
-
-    moveWidgetBefore(this, "btnAddDashboard", "horizontalLayout_1", "user_1");
-
-    moveWidgetBefore(this, "btnAddProduct_2", "horizontalLayout_9", "user_5");
-
-    if (auto *cmdAddDash = findChild<QWidget*>("btnAddDashboard")) {
-
-        if (auto *cmdUserDash = findChild<QWidget*>("user_1")) {
-
-            if (auto *targetLayout = qobject_cast<QHBoxLayout*>(cmdUserDash->parentWidget() ? cmdUserDash->parentWidget()->layout() : nullptr)) {
-
-                if (auto *oldLayout = cmdAddDash->parentWidget() ? cmdAddDash->parentWidget()->layout() : nullptr)
-
-                    oldLayout->removeWidget(cmdAddDash);
-
-                int userIdx = targetLayout->indexOf(cmdUserDash);
-
-                if (userIdx >= 0) targetLayout->insertWidget(userIdx, cmdAddDash);
-
-            }
-
-        }
-
-    }
-
-    if (auto *cmdAddAjout = findChild<QWidget*>("btnAddProduct_2")) {
-
-        if (auto *cmdUserAjoutWidget = findChild<QWidget*>("user_5")) {
-
-            if (auto *targetLayout = qobject_cast<QHBoxLayout*>(cmdUserAjoutWidget->parentWidget() ? cmdUserAjoutWidget->parentWidget()->layout() : nullptr)) {
-
-                if (auto *oldLayout = cmdAddAjout->parentWidget() ? cmdAddAjout->parentWidget()->layout() : nullptr)
-
-                    oldLayout->removeWidget(cmdAddAjout);
-
-                int userIdx = targetLayout->indexOf(cmdUserAjoutWidget);
-
-                if (userIdx >= 0) targetLayout->insertWidget(userIdx, cmdAddAjout);
-
-            }
-
-        }
-
-    }
-
-    if (auto *cmdUserDash = findChild<QLabel*>("user_1")) {
-
-        cmdUserDash->setTextFormat(Qt::RichText);
-
-        cmdUserDash->setText(
-
-            "<span style=\"color:#0f2b4c;font-size:14px;font-weight:700;\">Admin System</span>"
-
-            "<br/>"
-
-            "<span style=\"color:#16a34a;font-size:12px;font-weight:700;\">Chef d'Atelier</span>"
-
-        );
-
-        cmdUserDash->setAlignment(Qt::AlignRight | Qt::AlignVCenter);
-
-        cmdUserDash->setStyleSheet("background-color: #ffffff; border: none; border-bottom: 1px solid #dce1e6; padding: 0 6px;");
-
-        cmdUserDash->setMinimumHeight(64);
-
-        cmdUserDash->setMaximumHeight(64);
-
-    }
-
-    if (auto *cmdUserAjout = findChild<QLabel*>("user_5")) {
-
-        cmdUserAjout->setTextFormat(Qt::RichText);
-
-        cmdUserAjout->setText(
-
-            "<span style=\"color:#0f2b4c;font-size:14px;font-weight:700;\">Admin System</span>"
-
-            "<br/>"
-
-            "<span style=\"color:#16a34a;font-size:12px;font-weight:700;\">Chef d'Atelier</span>"
-
-        );
-
-        cmdUserAjout->setAlignment(Qt::AlignRight | Qt::AlignVCenter);
-
-        cmdUserAjout->setStyleSheet("background-color: #ffffff; border: none; border-bottom: 1px solid #dce1e6; padding: 0 6px;");
-
-        cmdUserAjout->setMinimumHeight(64);
-
-        cmdUserAjout->setMaximumHeight(64);
-
-    }
-
-    if (auto *cmdTitleDash = findChild<QLabel*>("lb_1")) {
-
-        cmdTitleDash->setText("Tableau de Bord");
-
-        cmdTitleDash->setStyleSheet("color: #1f2d3d; font-size: 18px; font-weight: 700; background-color: #ffffff; border: none; border-bottom: 1px solid #dce1e6; padding: 0 6px;");
-
-        cmdTitleDash->setAlignment(Qt::AlignLeft | Qt::AlignVCenter);
-
-        cmdTitleDash->setMinimumHeight(64);
-
-        cmdTitleDash->setMaximumHeight(64);
-
-    }
-
-    if (auto *cmdTitleAjout = findChild<QLabel*>("lb_5")) {
-
-        cmdTitleAjout->setStyleSheet("color: #1f2d3d; font-size: 18px; font-weight: 700; background-color: #ffffff; border: none; border-bottom: 1px solid #dce1e6; padding: 0 6px;");
-
-        cmdTitleAjout->setAlignment(Qt::AlignLeft | Qt::AlignVCenter);
-
-        cmdTitleAjout->setMinimumHeight(64);
-
-        cmdTitleAjout->setMaximumHeight(64);
-
-    }
-
-    if (auto *layoutDash = findChild<QHBoxLayout*>("horizontalLayout_1")) {
-
-        layoutDash->setContentsMargins(16, 0, 10, 0);
-
-        layoutDash->setSpacing(4);
-
-    }
-
-    if (auto *layoutAjout = findChild<QHBoxLayout*>("horizontalLayout_9")) {
-
-        layoutAjout->setContentsMargins(16, 0, 10, 0);
-
-        layoutAjout->setSpacing(4);
-
-    }
-
-    if (auto *fillDash = findChild<QFrame*>("topFill_1")) {
-
-        fillDash->setStyleSheet("background-color: #ffffff; border: none; border-bottom: 1px solid #dce1e6;");
-
-        fillDash->setMinimumHeight(64);
-
-        fillDash->setMaximumHeight(64);
-
-    }
-
-    if (auto *fillAjout = findChild<QFrame*>("topFill_5")) {
-
-        fillAjout->setStyleSheet("background-color: #ffffff; border: none; border-bottom: 1px solid #dce1e6;");
-
-        fillAjout->setMinimumHeight(64);
-
-        fillAjout->setMaximumHeight(64);
-
-    }
-
-    if (auto *gapDash = findChild<QFrame*>("topGap_1")) {
-
-        gapDash->setStyleSheet("background-color: #ffffff; border: none; border-bottom: 1px solid #dce1e6;");
-
-        gapDash->setMinimumSize(2, 64);
-
-        gapDash->setMaximumSize(2, 64);
-
-    }
-
-    if (auto *gapAjout = findChild<QFrame*>("topGap_5")) {
-
-        gapAjout->setStyleSheet("background-color: #ffffff; border: none; border-bottom: 1px solid #dce1e6;");
-
-        gapAjout->setMinimumSize(2, 64);
-
-        gapAjout->setMaximumSize(2, 64);
-
-    }
-
-    if (auto *notif1 = findChild<QPushButton*>("btnnotif_1")) notif1->hide();
-
-    if (auto *profil1 = findChild<QPushButton*>("btnprofil_1")) profil1->hide();
-
-    if (auto *notif5 = findChild<QPushButton*>("btnnotif_5")) notif5->hide();
-
-    if (auto *profil5 = findChild<QPushButton*>("btnprofil_5")) profil5->hide();
-
-
-
-    // Produit top bar: ensure add button remains before user.
-
-    moveWidgetBefore(this, "prod_btnAddProduct", "prod_topBarLayout", "prod_frameUser");
-
-
-
-    if (auto *clientPage = findChild<QWidget*>("pageClient")) {
-
-        if (auto *tableLayout = clientPage->findChild<QHBoxLayout*>("horizontalLayout_table")) {
-
-            tableLayout->setContentsMargins(0, 0, 0, 0);
-
-            tableLayout->setSpacing(10);
-
-        }
-
-        if (auto *sidepanel = clientPage->findChild<QWidget*>("sidepanel")) {
-
-            sidepanel->setAttribute(Qt::WA_StyledBackground, true);
-
-            sidepanel->setMinimumWidth(300);
-
-            sidepanel->setMaximumWidth(350);
-
-            sidepanel->setStyleSheet(
-
-                "QWidget#sidepanel {"
-
-                " background-color: #ffffff;"
-
-                " border: 1px solid #dce1e6;"
-
-                " border-radius: 14px;"
-
-                "}"
-
-            );
-
-        }
-
-        if (auto *sidepanelLayout = clientPage->findChild<QVBoxLayout*>("verticalLayout_sidepanel")) {
-
-            sidepanelLayout->setContentsMargins(10, 2, 10, 10);
-
-            sidepanelLayout->setSpacing(10);
-
-        }
-
-        if (auto *pilotage = clientPage->findChild<QLabel*>("pilotage")) {
-
-            pilotage->setStyleSheet("color: #1f2d3d; font-size: 16px; font-weight: 700;");
-
-        }
-
-        if (auto *growth = clientPage->findChild<QWidget*>("growthWidget")) {
-
-            growth->setAttribute(Qt::WA_StyledBackground, true);
-
-            growth->setStyleSheet(
-
-                "QWidget#growthWidget {"
-
-                " background-color: #f4f6f9;"
-
-                " border: 1px solid #dce1e6;"
-
-                " border-radius: 10px;"
-
-                "}"
-
-            );
-
-        }
-
-
-
-        for (const QString &btnName : {QStringLiteral("facture"), QStringLiteral("score"), QStringLiteral("exportclient")}) {
-
-            if (auto *btn = clientPage->findChild<QPushButton*>(btnName)) {
-
-                btn->setMinimumHeight(56);
-
-                btn->setCursor(Qt::PointingHandCursor);
-
-            }
-
-        }
-
-    }
-
-
-
-    if (auto *clientTop = findChild<QHBoxLayout*>("horizontalLayout_header_Client")) {
-
-        clientTop->setContentsMargins(16, 6, 12, 6);
-
-        clientTop->setSpacing(4);
-
-    }
-
-    if (auto *cmdPage = findChild<QWidget*>("pageCmdDashboard")) {
-
-        if (auto *homeLayout = cmdPage->findChild<QHBoxLayout*>("pageHomeLayout")) {
-
-            homeLayout->setContentsMargins(0, 0, 0, 0);
-
-            homeLayout->setSpacing(12);
-
-        }
-
-        if (auto *cmdRight = cmdPage->findChild<QVBoxLayout*>("rightLayout")) {
-
-            cmdRight->setContentsMargins(0, 0, 0, 0);
-
-            cmdRight->setSpacing(10);
-
-        }
-
-    }
-
-
-
-    auto styleRightSidebarButton = [](QPushButton *button) {
-
-        if (!button) return;
-
-        button->setEnabled(true);
-
-        button->setFlat(false);
-
-        button->setMinimumHeight(56);
-
-        button->setCursor(Qt::PointingHandCursor);
-
-        button->setStyleSheet(
-
-            "QPushButton {"
-
-            "   background: qlineargradient(spread:pad, x1:0, y1:0, x2:1, y2:1, stop:0 #0f2b4c, stop:1 #2a5298);"
-
-            "   color: white; border-radius: 12px; padding: 12px; font-weight: 700; font-size: 13px;"
-
-            "   border: 1px solid #1e40af;"
-
-            "}"
-
-            "QPushButton:hover {"
-
-            "   background: qlineargradient(spread:pad, x1:0, y1:0, x2:1, y2:1, stop:0 #1e40af, stop:1 #3b82f6);"
-
-            "   border-color: #60a5fa;"
-
-            "}"
-
-        );
-
-    };
-
-
-
-    auto styleRightSidebarButtonCompact = [](QPushButton *button) {
-
-        if (!button) return;
-
-        button->setEnabled(true);
-
-        button->setFlat(false);
-
-        button->setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Fixed);
-
-        button->setMinimumHeight(42);
-
-        button->setMaximumHeight(46);
-
-        button->setCursor(Qt::PointingHandCursor);
-
-        button->setStyleSheet(
-
-            "QPushButton {"
-
-            " background-color: #ffffff;"
-
-            " color: #1f2d3d;"
-
-            " border: 1px solid #dcdcdc;"
-
-            " border-radius: 8px;"
-
-            " padding: 8px 12px;"
-
-            " font-size: 13px;"
-
-            " font-weight: 700;"
-
-            " text-align: center;"
-
-            "}"
-
-            "QPushButton:hover {"
-
-            " background-color: #f0f8ff;"
-
-            " border: 1px solid #3498db;"
-
-            " color: #000000;"
-
-            "}"
-
-            "QPushButton:pressed {"
-
-            " background-color: #e1ecf4;"
-
-            " border: 1px solid #2980b9;"
-
-            "}"
-
-            "QPushButton:disabled {"
-
-            " background-color: #ffffff;"
-
-            " color: #1f2d3d;"
-
-            " border: 1px solid #dcdcdc;"
-
-            "}"
-
-        );
-
-    };
-
-
-
-    auto styleButtonsIn = [&](QWidget *container) {
-
-        if (!container) return;
-
-        const auto buttons = container->findChildren<QPushButton*>();
-
-        for (QPushButton *btn : buttons)
-
-            styleRightSidebarButton(btn);
-
-    };
-
-
-
-    // All right-side panels across modules
-
-    if (auto *empRight = findChild<QWidget*>("sidePanel_Employe")) styleButtonsIn(empRight);
-
-    if (auto *clientRight = findChild<QWidget*>("sidepanel")) styleButtonsIn(clientRight);
-
-    if (auto *prodRight = findChild<QWidget*>("prod_rightSidebar")) {
-
-        prodRight->setMinimumWidth(300);
-
-        prodRight->setMaximumWidth(350);
-
-        styleButtonsIn(prodRight);
-
-
-
-        // Product sidebar: keep the same visual style but with compact button size.
-
-        if (auto *prodRightLayout = prodRight->findChild<QVBoxLayout*>("prod_rightLayout")) {
-
-            prodRightLayout->setSpacing(8);
-
-        }
-
-        for (const QString &btnName : {
-
-                 QStringLiteral("prod_btnOpenStats"),
-
-                 QStringLiteral("prod_btnMap3D"),
-
-                 QStringLiteral("prod_btnVideo3D"),
-
-                 QStringLiteral("prod_btnPdf")
-
-             }) {
-
-            styleRightSidebarButtonCompact(prodRight->findChild<QPushButton*>(btnName));
-
-        }
-
-    }
-
-    const auto rightPanels = findChildren<QWidget*>("rightSidebar");
-
-    for (QWidget *panel : rightPanels) {
-
-        panel->setMinimumWidth(300);
-
-        panel->setMaximumWidth(350);
-
-        
-
-        // Force Inverted Style
-
-        panel->setStyleSheet(
-
-            "QWidget#rightSidebar {"
-
-            "   background-color: #ffffff;"
-
-            "   border-radius: 20px;"
-
-            "   border: 1px solid #e2e8f0;"
-
-            "}"
-
-        );
-
-
-
-        // Force clean labels
-
-        QList<QLabel*> labels = panel->findChildren<QLabel*>();
-
-        for (QLabel *lbl : labels) {
-
-            lbl->setStyleSheet("background: transparent; color: #0f2b4c; border: none; padding: 2px;");
-
-        }
-
-
-
-        // Apply Premium Buttons
-
-        styleButtonsIn(panel);
-
-    }
-
-
-
-    // Stock right-side buttons are not inside a dedicated rightSidebar frame
-
-    styleRightSidebarButton(findChild<QPushButton*>("btnOrder"));
-
-    styleRightSidebarButton(findChild<QPushButton*>("btnPrediction"));
-
-    styleRightSidebarButton(findChild<QPushButton*>("btnAlerts"));
-
-    styleRightSidebarButton(findChild<QPushButton*>("btnGoStats_Stock"));
-
-}
-
-
-
-void MainWindow::showDashboardHome()
-
-{
-
-    if (auto *sw = mainStacked()) {
-
-        if (homeDashboardPage) {
-
-            sw->setCurrentWidget(homeDashboardPage);
-
-        } else if (auto *page = sw->findChild<QWidget*>("dashboardAccueil", Qt::FindDirectChildrenOnly)) {
-
-            sw->setCurrentWidget(page);
-
-        } else {
-
-            sw->setCurrentIndex(0);
-
-        }
-
-    }
-
-
-
-    // --- APPLY STYLE TO EMPLOYEE DASHBOARD SIDEBAR (Inverted) ---
-
-    QTimer::singleShot(100, this, [this]() {
-
-        // 1. Sidebar Container (White)
-
-        if (QWidget *side = this->findChild<QWidget*>("sideDashboard")) {
-
-            side->setStyleSheet(
-
-                "QWidget#sideDashboard {"
-
-                "   background-color: #ffffff;"
-
-                "   border-radius: 20px;"
-
-                "   border: 1px solid #e2e8f0;"
-
-                "}"
-
-            );
-
-        }
-
-
-
-        // 2. Buttons (Gradient)
-
-        QString style = 
-
-            "QPushButton {"
-
-            "   background: qlineargradient(spread:pad, x1:0, y1:0, x2:1, y2:1, stop:0 #0f2b4c, stop:1 #2a5298);"
-
-            "   color: white; border-radius: 12px; padding: 15px; font-weight: 700; font-size: 14px;"
-
-            "   border: 1px solid #1e40af;"
-
-            "}"
-
-            "QPushButton:hover {"
-
-            "   background: qlineargradient(spread:pad, x1:0, y1:0, x2:1, y2:1, stop:0 #1e40af, stop:1 #3b82f6);"
-
-            "   border-color: #60a5fa;"
-
-            "}";
-
-            
-
-        if (auto *b = this->findChild<QPushButton*>("btnGoMission")) b->setStyleSheet(style);
-
-        if (auto *b = this->findChild<QPushButton*>("btnGoPointage")) b->setStyleSheet(style);
-
-        if (auto *b = this->findChild<QPushButton*>("btnGoStats")) b->setStyleSheet(style);
-
-        if (auto *b = this->findChild<QPushButton*>("btnFichePaie")) b->setStyleSheet(style);
-
-        if (auto *b = this->findChild<QPushButton*>("btnExport")) b->setStyleSheet(style);
-
-
-
-        // 3. Clean Labels (Aggressive Fix)
-
-        if (QWidget *side = this->findChild<QWidget*>("sideDashboard")) {
-
-            QList<QLabel*> labels = side->findChildren<QLabel*>();
-
-            for (QLabel *lbl : labels) {
-
-                // Force background to transparent even if previously set
-
-                lbl->setStyleSheet(lbl->styleSheet() + " background: transparent; color: #0f2b4c; border: none;");
-
-            }
-
-        }
-
-    });
-
-}
-
-
-
-void MainWindow::showEmployesPage()
-
-{
-
-    if (auto *sw = mainStacked()) {
-
-        if (auto *page = sw->findChild<QWidget*>("affichage", Qt::FindDirectChildrenOnly)) {
-
-            sw->setCurrentWidget(page);
-
-        }
-
-    }
-
-
-
-    // --- APPLY STYLE TO EMPLOYEE SIDEBAR (Inverted & Clean) ---
-
-    QTimer::singleShot(100, this, [this]() {
-
-        // 1. Sidebar Container (White)
-
-        if (QWidget *side = this->findChild<QWidget*>("sidePanel_Employe")) {
-
-            side->setStyleSheet(
-
-                "QWidget#sidePanel_Employe {"
-
-                "   background-color: #ffffff;"
-
-                "   border-radius: 20px;"
-
-                "   border: 1px solid #e2e8f0;"
-
-                "}"
-
-            );
-
-
-
-            // 2. Stat Cards (White/Transparent)
-
-            QList<QFrame*> cards = side->findChildren<QFrame*>();
-
-            for (QFrame *card : cards) {
-
-                if (card->objectName().startsWith("statCard") || card->objectName() == "actionCard") {
-
-                    card->setStyleSheet("background-color: #ffffff; border: 1px solid #edf2f7; border-radius: 12px;");
-
-                }
-
-            }
-
-
-
-            // 3. Labels (Aggressive Transparency Fix)
-
-            QList<QLabel*> labels = side->findChildren<QLabel*>();
-
-            for (QLabel *lbl : labels) {
-
-                lbl->setStyleSheet(lbl->styleSheet() + " background: transparent; color: #0f2b4c; border: none;");
-
-            }
-
-
-
-            // 4. Buttons (Blue Gradient)
-
-            QString btnStyle = 
-
-                "QPushButton {"
-
-                "   background: qlineargradient(spread:pad, x1:0, y1:0, x2:1, y2:1, stop:0 #0f2b4c, stop:1 #2a5298);"
-
-                "   color: white; border-radius: 12px; padding: 12px; font-weight: 700; font-size: 13px;"
-
-                "   border: 1px solid #1e40af;"
-
-                "}"
-
-                "QPushButton:hover {"
-
-                "   background: qlineargradient(spread:pad, x1:0, y1:0, x2:1, y2:1, stop:0 #1e40af, stop:1 #3b82f6);"
-
-                "   border-color: #60a5fa;"
-
-                "}";
-
-            
-
-            if (auto *b = side->findChild<QPushButton*>("btnFichePaie")) b->setStyleSheet(btnStyle);
-
-            if (auto *b = side->findChild<QPushButton*>("btnGoMission")) b->setStyleSheet(btnStyle);
-
-            if (auto *b = side->findChild<QPushButton*>("btnGoPointage")) b->setStyleSheet(btnStyle);
-
-            if (auto *b = side->findChild<QPushButton*>("btnGoStats")) b->setStyleSheet(btnStyle);
-
-            if (auto *b = side->findChild<QPushButton*>("btnExport")) b->setStyleSheet(btnStyle);
-
-        }
-
-    });
-
-}
-
-
-
-void MainWindow::updateTaskChart(const QString &projectName)
-
-{
-
-    QLineSeries *series = new QLineSeries();
-
-    series->setName("Tâches accomplies - " + projectName);
-
-
-
-    if (projectName == "Projet A") {
-
-        series->append(0, 12);
-
-        series->append(1, 18);
-
-        series->append(2, 10);
-
-        series->append(3, 22);
-
-        series->append(4, 15);
-
-    } else if (projectName == "Projet B") {
-
-        series->append(0, 5);
-
-        series->append(1, 8);
-
-        series->append(2, 12);
-
-        series->append(3, 10);
-
-        series->append(4, 20);
-
-    } else {
-
-        series->append(0, 8);
-
-        series->append(1, 15);
-
-        series->append(2, 18);
-
-        series->append(3, 12);
-
-        series->append(4, 25);
-
-    }
-
-
-
-    QChart *chart = new QChart();
-
-    chart->addSeries(series);
-
-    chart->setTitle("Progression : " + projectName);
-
-    chart->setTitleFont(QFont("Segoe UI", 12, QFont::Bold));
-
-    chart->setAnimationOptions(QChart::SeriesAnimations);
-
-    chart->legend()->setAlignment(Qt::AlignBottom);
-
-
-
-    QValueAxis *axisX = new QValueAxis();
-
-    axisX->setTitleText("Jours");
-
-    axisX->setLabelFormat("%d");
-
-    axisX->setTickCount(6);
-
-    chart->addAxis(axisX, Qt::AlignBottom);
-
-    series->attachAxis(axisX);
-
-
-
-    QValueAxis *axisY = new QValueAxis();
-
-    axisY->setTitleText("Tâches");
-
-    axisY->setLabelFormat("%d");
-
-    chart->addAxis(axisY, Qt::AlignLeft);
-
-    series->attachAxis(axisY);
-
-
-
-    ui->chartViewTasks->setChart(chart);
-
-    ui->chartViewTasks->setRenderHint(QPainter::Antialiasing);
-
-}
-
-
-
-void MainWindow::on_cbProjetStats_currentIndexChanged(const QString &arg1)
-
-{
-
-    updateTaskChart(arg1);
-
-}
 
 
 
@@ -5111,7 +2017,71 @@ void MainWindow::setupProduitModule()
 
         connect(b, &QPushButton::clicked, this, &MainWindow::goAffichage);
 
+    // NOTE: Do NOT manually connect prod_btnSave_Add / prod_btnSave_Mod here.
+    // Their slots (on_prod_btnSave_Add_clicked / on_prod_btnSave_Mod_clicked)
+    // follow Qt's auto-connect naming convention and are already connected
+    // by connectSlotsByName() in setupUi(). Adding a manual connection causes
+    // the slot to fire twice, leading to spurious validation warnings.
 
+    // ── Photo upload buttons ──
+    if (auto *b = root->findChild<QPushButton*>("prod_btnUpload_Add"))
+        connect(b, &QPushButton::clicked, this, &MainWindow::onUploadImageAdd);
+
+    // ── Stock Map 3D: make prod_l5 clickable ──
+    if (auto *lblMap = root->findChild<QLabel*>("prod_l5")) {
+        lblMap->setText("🗺️  Plan du Dépôt — Cliquer ici pour ouvrir");
+        lblMap->setCursor(Qt::PointingHandCursor);
+        lblMap->setStyleSheet(
+            "color: #3B82F6;"
+            "font-size: 13px;"
+            "font-weight: 700;"
+            "padding: 10px 16px;"
+            "background: rgba(59,130,246,0.08);"
+            "border: 1px solid rgba(59,130,246,0.25);"
+            "border-radius: 10px;"
+        );
+        // Use event filter for click
+        lblMap->installEventFilter(this);
+        lblMap->setProperty("stockMapTrigger", true);
+    }
+
+    // ── Real-time slider → label updates ──
+    // Battery slider (Ajout)
+    if (ui->prod_slider_bat_add && ui->prod_l_bat) {
+        auto updateBatAdd = [this](int val) {
+            ui->prod_l_bat->setText(QString("🔋 Batterie : %1 mAh").arg(QString::number(val)));
+        };
+        disconnect(ui->prod_slider_bat_add, nullptr, ui->prod_l_bat, nullptr);
+        connect(ui->prod_slider_bat_add, &QSlider::valueChanged, this, updateBatAdd);
+        updateBatAdd(ui->prod_slider_bat_add->value());
+    }
+    // Capacity slider (Ajout)
+    if (ui->prod_slider_cap_add && ui->prod_l_cap) {
+        auto updateCapAdd = [this](int val) {
+            ui->prod_l_cap->setText(QString("📦 Capacité : %1 L").arg(val));
+        };
+        disconnect(ui->prod_slider_cap_add, nullptr, ui->prod_l_cap, nullptr);
+        connect(ui->prod_slider_cap_add, &QSlider::valueChanged, this, updateCapAdd);
+        updateCapAdd(ui->prod_slider_cap_add->value());
+    }
+    // Battery slider (Modifier)
+    if (ui->prod_slider_bat_mod && ui->prod_l_bat_m) {
+        auto updateBatMod = [this](int val) {
+            ui->prod_l_bat_m->setText(QString("🔋 Batterie : %1 mAh").arg(QString::number(val)));
+        };
+        disconnect(ui->prod_slider_bat_mod, nullptr, ui->prod_l_bat_m, nullptr);
+        connect(ui->prod_slider_bat_mod, &QSlider::valueChanged, this, updateBatMod);
+        updateBatMod(ui->prod_slider_bat_mod->value());
+    }
+    // Capacity slider (Modifier)
+    if (ui->prod_slider_cap_mod && ui->prod_l_cap_m) {
+        auto updateCapMod = [this](int val) {
+            ui->prod_l_cap_m->setText(QString("📦 Capacité : %1 L").arg(val));
+        };
+        disconnect(ui->prod_slider_cap_mod, nullptr, ui->prod_l_cap_m, nullptr);
+        connect(ui->prod_slider_cap_mod, &QSlider::valueChanged, this, updateCapMod);
+        updateCapMod(ui->prod_slider_cap_mod->value());
+    }
 
     if (QTableWidget *t = produitTable()) {
         QPushButton *btnToggle = root->findChild<QPushButton*>("prod_btnToggleView");
@@ -5123,9 +2093,13 @@ void MainWindow::setupProduitModule()
             btnToggle->setCursor(Qt::PointingHandCursor);
         }
 
-        if (t->columnCount() < 8)
+        if (t->columnCount() != 7)
 
-            t->setColumnCount(8);
+            t->setColumnCount(7);
+
+        t->setHorizontalHeaderLabels({
+            "Reference", "Modele", "Capacite", "Prix (TND)", "Stock", "Etat", "Actions"
+        });
 
 
 
@@ -5139,11 +2113,9 @@ void MainWindow::setupProduitModule()
 
         t->horizontalHeader()->setSectionResizeMode(QHeaderView::Stretch);
 
-        // ACTIONS_COL is defined as 7
+        t->horizontalHeader()->setSectionResizeMode(ACTIONS_COL, QHeaderView::Fixed);
 
-        t->horizontalHeader()->setSectionResizeMode(7, QHeaderView::Fixed);
-
-        t->setColumnWidth(7, 180);
+        t->setColumnWidth(ACTIONS_COL, 180);
 
 
 
@@ -5465,37 +2437,60 @@ void MainWindow::addExampleRow()
     QTableWidget *t = produitTable();
     if (!t) return;
 
-    t->setRowCount(0); // Clear old ones
+    t->setRowCount(0);
 
-    auto setCell = [&](int r, int col, const QString &txt) {
-        auto *it = new QTableWidgetItem(txt);
-        it->setForeground(QBrush(Qt::black));
-        t->setItem(r, col, it);
-    };
-
-    struct Proto { QString ref; QString model; QString type; QString cap; QString price; QString stock; QString etat; QString cur; QString max; QString aisle; };
-    QList<Proto> data = {
-        {"WG-101", "Bac Intelligent 120L",   "Extérieur", "120 L",  "850",  "45", "Actif",       "40", "120", "A1"},
-        {"WG-102", "Bac Connecté 240L",       "Capteur",   "240 L",  "1200", "25", "Actif",       "25",  "40", "B3"},
-        {"WG-103", "Colonne Enterrée 3 FLUX", "Industriel","3 Flux", "3400",  "0", "Maintenance",  "0", "100", "C2"},
-        {"WG-104", "Bac Solaire Compacteur",  "Urbain",    "150 L",  "1800", "12", "Actif",       "12",  "30", "A4"},
-        {"WG-105", "BioCollector Pro",        "Organique", "45 L",    "380", "60", "Stock",       "45",  "45", "D1"}
-    };
-
-    for (int i = 0; i < data.size(); ++i) {
-        t->insertRow(i);
-        setCell(i, 0, data[i].ref);
-        setCell(i, 1, data[i].model);
-        setCell(i, 2, data[i].type);
-        setCell(i, 3, data[i].cap);
-        setCell(i, 4, data[i].price);
-        setCell(i, 5, data[i].stock);
-        setCell(i, 6, data[i].etat);
-        // Store hidden capacity + aisle data in UserRole
-        t->item(i, 0)->setData(Qt::UserRole,     data[i].cur);
-        t->item(i, 0)->setData(Qt::UserRole + 1, data[i].max);
-        t->item(i, 0)->setData(Qt::UserRole + 2, data[i].aisle);
+    QSqlQueryModel *model = Ptmp.afficher();
+    if (!model) {
+        showFriendlySqlError(this, "charger les produits", "Modele SQL indisponible.");
+        return;
     }
+
+    if (model->lastError().isValid()) {
+        showFriendlySqlError(this, "charger les produits", model->lastError().text());
+        delete model;
+        return;
+    }
+
+    for (int i = 0; i < model->rowCount(); ++i) {
+        const int id = model->data(model->index(i, 0)).toInt();
+        const QString reference = model->data(model->index(i, 1)).toString().trimmed();
+        const QString modele = model->data(model->index(i, 2)).toString().trimmed();
+        const int quantite = model->data(model->index(i, 3)).toInt();
+        const int capacite = model->data(model->index(i, 4)).toInt();
+        const double prix = model->data(model->index(i, 5)).toDouble();
+        const int battery = model->data(model->index(i, 6)).toInt();
+        const QString imagePath = model->data(model->index(i, 7)).toString().trimmed();
+
+        const QString etat = productStatusFromQty(quantite);
+        const QString aisle = QString("A%1").arg((i % 6) + 1);
+
+        const int row = t->rowCount();
+        t->insertRow(row);
+
+        auto setCell = [&](int col, const QString &txt) {
+            auto *it = new QTableWidgetItem(txt);
+            it->setForeground(QBrush(Qt::black));
+            t->setItem(row, col, it);
+        };
+
+        setCell(0, reference);
+        setCell(1, modele);
+        setCell(2, QString("%1 L").arg(capacite));
+        setCell(3, QString::number(prix, 'f', 2));
+        setCell(4, QString::number(quantite));
+        setCell(5, etat);
+
+        if (auto *refItem = t->item(row, 0)) {
+            refItem->setData(PROD_ROLE_CUR, quantite);
+            refItem->setData(PROD_ROLE_MAX, qMax(1, capacite));
+            refItem->setData(PROD_ROLE_AISLE, aisle);
+            refItem->setData(PROD_ROLE_ID, id);
+            refItem->setData(PROD_ROLE_BATTERY, battery > 0 ? battery : 12000);
+            refItem->setData(PROD_ROLE_IMAGE, imagePath);
+        }
+    }
+
+    delete model;
 }
 
 
@@ -5632,8 +2627,7 @@ void MainWindow::handleEditClicked()
 
     if (row < 0 || row >= t->rowCount()) return;
 
-
-
+    loadProduitToModificationForm(row);
     goModification();
 
 }
@@ -5666,12 +2660,276 @@ void MainWindow::handleDeleteClicked()
 
         return;
 
+    int idProduit = -1;
+    QString reference;
+    if (auto *refItem = t->item(row, 0)) {
+        idProduit = refItem->data(PROD_ROLE_ID).toInt();
+        reference = refItem->text().trimmed();
+    }
 
+    if (idProduit <= 0 && !reference.isEmpty()) {
+        int foundId = -1;
+        if (Ptmp.findIdByReference(reference, foundId)) {
+            idProduit = foundId;
+        }
+    }
 
-    t->removeRow(row);
+    if (idProduit <= 0) {
+        QMessageBox::warning(this, "Suppression", "ID produit introuvable, suppression annulee.");
+        return;
+    }
 
+    if (!Ptmp.supprimer(idProduit)) {
+        showFriendlySqlError(this, "supprimer le produit", Ptmp.lastError());
+        return;
+    }
+
+    addExampleRow();
+    refreshActionButtons();
+    if (m_isCardView) refreshCardView();
+
+}
+
+void MainWindow::loadProduitToModificationForm(int row)
+{
+    QTableWidget *t = produitTable();
+    if (!t || row < 0 || row >= t->rowCount()) return;
+
+    currentProduitRow = row;
+    t->selectRow(row);
+
+    const QString reference = t->item(row, 0) ? t->item(row, 0)->text().trimmed() : QString();
+    const QString modele = t->item(row, 1) ? t->item(row, 1)->text().trimmed() : QString();
+    const QString status = t->item(row, 5) ? t->item(row, 5)->text().trimmed() : QString("En Stock");
+    const int quantite = t->item(row, 4) ? t->item(row, 4)->text().trimmed().toInt() : 0;
+    const double prix = t->item(row, 3) ? t->item(row, 3)->text().trimmed().toDouble() : 0.0;
+    const int capacite = t->item(row, 0) ? t->item(row, 0)->data(PROD_ROLE_MAX).toInt() : 100;
+    const int battery = t->item(row, 0) ? t->item(row, 0)->data(PROD_ROLE_BATTERY).toInt() : 12000;
+    const QString imagePath = t->item(row, 0) ? t->item(row, 0)->data(PROD_ROLE_IMAGE).toString() : QString();
+
+    if (ui->prod_ln_ref_mod) ui->prod_ln_ref_mod->setText(reference);
+    if (ui->prod_dsb_price_mod) ui->prod_dsb_price_mod->setValue(prix);
+    if (ui->prod_sb_qty_mod) ui->prod_sb_qty_mod->setValue(quantite);
+    if (ui->prod_slider_cap_mod) ui->prod_slider_cap_mod->setValue(qMax(ui->prod_slider_cap_mod->minimum(), qMin(ui->prod_slider_cap_mod->maximum(), capacite)));
+    if (ui->prod_slider_bat_mod) ui->prod_slider_bat_mod->setValue(qMax(ui->prod_slider_bat_mod->minimum(), qMin(ui->prod_slider_bat_mod->maximum(), battery)));
+
+    if (ui->prod_cb_model_mod) ui->prod_cb_model_mod->setText(modele);
+    setComboTextSafe(ui->prod_cb_status_mod, status);
+    if (ui->prod_lstCharacteristics_mod) ui->prod_lstCharacteristics_mod->clearSelection();
+
+    // Load image for modification
+    m_modImagePath = imagePath;
+    if (auto *imgLabel = findChild<QLabel*>("prod_imgBin")) {
+        if (!imagePath.isEmpty() && QFile::exists(imagePath)) {
+            QPixmap pix(imagePath);
+            imgLabel->setPixmap(pix.scaled(imgLabel->size(), Qt::KeepAspectRatio, Qt::SmoothTransformation));
+        } else {
+            imgLabel->setText("[ Image Actuelle ]");
+        }
+    }
+}
+
+void MainWindow::on_prod_btnSave_Add_clicked()
+{
+    QTableWidget *t = produitTable();
+    if (!t) return;
+
+    QString reference = ui->prod_ln_ref_add ? ui->prod_ln_ref_add->text().trimmed() : QString();
+    if (reference.isEmpty()) {
+        QWidget *scope = produitRoot();
+        if (auto *sw = produitStacked()) {
+            if (QWidget *current = sw->currentWidget()) scope = current;
+        }
+        reference = firstNonEmptyLineEditText(scope, {"prod_ln_ref_add", "inputRef_add", "ln_ref_add_2", "ln_ref_add_4"});
+    }
+    const QString modele = ui->prod_cb_model_add ? ui->prod_cb_model_add->text().trimmed() : QString();
+    const int quantite = ui->prod_sb_qty_add ? ui->prod_sb_qty_add->value() : 0;
+    const int capacite = ui->prod_slider_cap_add ? ui->prod_slider_cap_add->value() : 100;
+    const double prix = ui->prod_dsb_price_add ? ui->prod_dsb_price_add->value() : 0.0;
+    const int battery = ui->prod_slider_bat_add ? ui->prod_slider_bat_add->value() : 12000;
+    const QString status = ui->prod_cb_status_add ? ui->prod_cb_status_add->currentText().trimmed() : QString("En Stock");
+
+    if (reference.isEmpty()) {
+        QMessageBox::warning(this, "Ajout Produit", "La reference est obligatoire.");
+        return;
+    }
+    if (modele.isEmpty()) {
+        QMessageBox::warning(this, "Ajout Produit", "Le modele est obligatoire.");
+        return;
+    }
+    if (prix <= 0.0) {
+        QMessageBox::warning(this, "Ajout Produit", "Le prix doit etre strictement positif.");
+        return;
+    }
+
+    Ptmp.setIdMp(0);
+    Ptmp.setReference(reference);
+    Ptmp.setNom(modele);
+    Ptmp.setQuantite(quantite);
+    Ptmp.setCapacite(capacite);
+    Ptmp.setPrix(prix);
+    Ptmp.setCapaciteBatterie(battery);
+    Ptmp.setImage(m_addImagePath);
+
+    if (!Ptmp.ajouter()) {
+        showFriendlySqlError(this, "ajouter le produit", Ptmp.lastError());
+        return;
+    }
+
+    addExampleRow();
     refreshActionButtons();
 
+    for (int r = 0; r < t->rowCount(); ++r) {
+        if (auto *it = t->item(r, 0)) {
+            if (it->text().trimmed() == reference) {
+                it->setData(PROD_ROLE_BATTERY, battery);
+                setComboTextSafe(ui->prod_cb_status_add, status);
+                if (auto *statusItem = t->item(r, 5)) {
+                    statusItem->setText(productStatusFromQty(quantite));
+                }
+                t->selectRow(r);
+                currentProduitRow = r;
+                break;
+            }
+        }
+    }
+
+    if (m_isCardView) refreshCardView();
+
+    if (ui->prod_ln_ref_add) ui->prod_ln_ref_add->clear();
+    if (ui->prod_cb_model_add) ui->prod_cb_model_add->clear();
+    m_addImagePath.clear();
+    if (auto *imgLabel = findChild<QLabel*>("prod_lblImgPreview_Add")) {
+        imgLabel->setPixmap(QPixmap());
+        imgLabel->setText("Glisser Image Ici");
+    }
+    if (ui->prod_dsb_price_add) ui->prod_dsb_price_add->setValue(0.0);
+    if (ui->prod_sb_qty_add) ui->prod_sb_qty_add->setValue(0);
+    if (ui->prod_slider_cap_add) ui->prod_slider_cap_add->setValue(qMax(0, ui->prod_slider_cap_add->maximum() / 2));
+    if (ui->prod_slider_bat_add) ui->prod_slider_bat_add->setValue(10000);
+    if (ui->prod_lstCharacteristics) ui->prod_lstCharacteristics->clearSelection();
+
+    goAffichage();
+}
+
+void MainWindow::on_prod_btnSave_Mod_clicked()
+{
+    QTableWidget *t = produitTable();
+    if (!t) return;
+
+    int row = currentProduitRow;
+    if (row < 0 || row >= t->rowCount()) {
+        row = t->currentRow();
+    }
+    if (row < 0 || row >= t->rowCount()) {
+        QMessageBox::warning(this, "Modification Produit", "Aucun produit selectionne.");
+        return;
+    }
+
+    QString reference = ui->prod_ln_ref_mod ? ui->prod_ln_ref_mod->text().trimmed() : QString();
+    if (reference.isEmpty()) {
+        QWidget *scope = produitRoot();
+        if (auto *sw = produitStacked()) {
+            if (QWidget *current = sw->currentWidget()) scope = current;
+        }
+        reference = firstNonEmptyLineEditText(scope, {"prod_ln_ref_mod", "inputRef_mod"});
+    }
+    const QString modele = ui->prod_cb_model_mod ? ui->prod_cb_model_mod->text().trimmed() : QString();
+    const int quantite = ui->prod_sb_qty_mod ? ui->prod_sb_qty_mod->value() : 0;
+    const int capacite = ui->prod_slider_cap_mod ? ui->prod_slider_cap_mod->value() : 100;
+    const double prix = ui->prod_dsb_price_mod ? ui->prod_dsb_price_mod->value() : 0.0;
+    const int battery = ui->prod_slider_bat_mod ? ui->prod_slider_bat_mod->value() : 12000;
+    const QString status = ui->prod_cb_status_mod ? ui->prod_cb_status_mod->currentText().trimmed() : QString("En Stock");
+
+    if (reference.isEmpty()) {
+        QMessageBox::warning(this, "Modification Produit", "La reference est obligatoire.");
+        return;
+    }
+    if (modele.isEmpty()) {
+        QMessageBox::warning(this, "Modification Produit", "Le modele est obligatoire.");
+        return;
+    }
+    if (prix <= 0.0) {
+        QMessageBox::warning(this, "Modification Produit", "Le prix doit etre strictement positif.");
+        return;
+    }
+
+    int idProduit = -1;
+    if (auto *it = t->item(row, 0)) {
+        idProduit = it->data(PROD_ROLE_ID).toInt();
+    }
+    if (idProduit <= 0 && !reference.isEmpty()) {
+        int foundId = -1;
+        if (Ptmp.findIdByReference(reference, foundId)) {
+            idProduit = foundId;
+        }
+    }
+    if (idProduit <= 0) {
+        QMessageBox::warning(this, "Modification Produit", "ID produit introuvable.");
+        return;
+    }
+
+    Ptmp.setIdMp(idProduit);
+    Ptmp.setReference(reference);
+    Ptmp.setNom(modele);
+    Ptmp.setQuantite(quantite);
+    Ptmp.setCapacite(capacite);
+    Ptmp.setPrix(prix);
+    Ptmp.setCapaciteBatterie(battery);
+    Ptmp.setImage(m_modImagePath);
+
+    if (!Ptmp.modifier()) {
+        showFriendlySqlError(this, "modifier le produit", Ptmp.lastError());
+        return;
+    }
+
+    addExampleRow();
+    refreshActionButtons();
+
+    for (int r = 0; r < t->rowCount(); ++r) {
+        if (auto *it = t->item(r, 0)) {
+            if (it->data(PROD_ROLE_ID).toInt() == idProduit || it->text().trimmed() == reference) {
+                it->setData(PROD_ROLE_BATTERY, battery);
+                if (auto *statusItem = t->item(r, 5)) {
+                    statusItem->setText(productStatusFromQty(quantite));
+                }
+                t->selectRow(r);
+                currentProduitRow = r;
+                break;
+            }
+        }
+    }
+
+    if (m_isCardView) refreshCardView();
+    setComboTextSafe(ui->prod_cb_status_mod, status);
+    goAffichage();
+}
+
+// ── Photo Upload Handlers ──
+void MainWindow::onUploadImageAdd()
+{
+    QString filePath = QFileDialog::getOpenFileName(this, "Choisir une image", QString(),
+        "Images (*.png *.jpg *.jpeg *.bmp *.gif)");
+    if (filePath.isEmpty()) return;
+
+    m_addImagePath = filePath;
+    if (auto *imgLabel = findChild<QLabel*>("prod_lblImgPreview_Add")) {
+        QPixmap pix(filePath);
+        imgLabel->setPixmap(pix.scaled(imgLabel->size(), Qt::KeepAspectRatio, Qt::SmoothTransformation));
+    }
+}
+
+void MainWindow::onUploadImageMod()
+{
+    QString filePath = QFileDialog::getOpenFileName(this, "Choisir une image", QString(),
+        "Images (*.png *.jpg *.jpeg *.bmp *.gif)");
+    if (filePath.isEmpty()) return;
+
+    m_modImagePath = filePath;
+    if (auto *imgLabel = findChild<QLabel*>("prod_imgBin")) {
+        QPixmap pix(filePath);
+        imgLabel->setPixmap(pix.scaled(imgLabel->size(), Qt::KeepAspectRatio, Qt::SmoothTransformation));
+    }
 }
 
 
@@ -8081,14 +5339,12 @@ QWidget* MainWindow::createProductCard(int row)
     if (!t || row >= t->rowCount()) return nullptr;
 
     QString model = t->item(row, 1) ? t->item(row, 1)->text() : "";
-    QString type  = t->item(row, 2) ? t->item(row, 2)->text() : "";
-    QString cap   = t->item(row, 3) ? t->item(row, 3)->text() : "";
-    QString price = t->item(row, 4) ? t->item(row, 4)->text() : "";
-    QString stock = t->item(row, 5) ? t->item(row, 5)->text() : "";
+    QString price = t->item(row, 3) ? t->item(row, 3)->text() : "";
+    QString stock = t->item(row, 4) ? t->item(row, 4)->text() : "";
 
-    int cur = t->item(row, 0)->data(Qt::UserRole).toInt();
-    int max = t->item(row, 0)->data(Qt::UserRole + 1).toInt();
-    QString aisle = t->item(row, 0)->data(Qt::UserRole + 2).toString();
+    int cur = t->item(row, 0)->data(PROD_ROLE_CUR).toInt();
+    int max = t->item(row, 0)->data(PROD_ROLE_MAX).toInt();
+    QString aisle = t->item(row, 0)->data(PROD_ROLE_AISLE).toString();
     if (max == 0) max = 100;
     int stockVal = stock.toInt();
 
@@ -8133,9 +5389,6 @@ QWidget* MainWindow::createProductCard(int row)
     imgLabel->setStyleSheet("background: transparent;");
 
     QString resPath = ":/assets/bin.png";
-    if (type.contains("Capteur"))    resPath = ":/assets/sensor.png";
-    else if (type.contains("Industriel")) resPath = ":/assets/landscape_bin.png";
-    else if (type.contains("Urbain"))     resPath = ":/assets/compactor.png";
 
     QPixmap pix(resPath);
     if (!pix.isNull())
@@ -8320,400 +5573,6 @@ void MainWindow::on_pagination_btnNext_clicked()
     if (m_currentPage < maxPages - 1) {
         m_currentPage++;
         refreshCardView();
-    }
-}
-
-// ============================================================
-// EMPLOYEE CARD VIEW MODULE
-// ============================================================
-
-void MainWindow::setupEmployeModule()
-{
-    QTimer::singleShot(200, this, [this]() {
-        if (findChild<QPushButton*>("emp_btnToggleView")) return;
-
-        QTableWidget *t = ui->tableEmployes;
-        if (!t) return;
-
-        // The table lives inside a widget whose layout is verticalLayout_Left
-        // Walk up to find the widget that has horizontalLayout_Search as a child layout
-        QWidget *pageWidget = t->parentWidget();
-        if (!pageWidget) return;
-
-        // Find the search row layout by name within the page widget
-        QHBoxLayout *searchLayout = pageWidget->findChild<QHBoxLayout*>("horizontalLayout_Search");
-        QVBoxLayout *leftLayout   = pageWidget->findChild<QVBoxLayout*>("verticalLayout_Left");
-
-        // If not found directly, try the grandparent
-        if (!searchLayout || !leftLayout) {
-            pageWidget = pageWidget->parentWidget();
-            if (!pageWidget) return;
-            searchLayout = pageWidget->findChild<QHBoxLayout*>("horizontalLayout_Search");
-            leftLayout   = pageWidget->findChild<QVBoxLayout*>("verticalLayout_Left");
-        }
-
-        if (!searchLayout || !leftLayout) return;
-
-        // ── Toggle button → add to search row (next to cbSort) ────────────
-        QPushButton *btnToggle = new QPushButton("⊞");
-        btnToggle->setObjectName("emp_btnToggleView");
-        btnToggle->setFixedSize(40, 40);
-        btnToggle->setCursor(Qt::PointingHandCursor);
-        btnToggle->setToolTip("Vue cartes / tableau");
-        btnToggle->setStyleSheet(
-            "QPushButton { background: #2563eb; color: white; border-radius: 10px;"
-            "  font-size: 18px; border: none; font-weight: 700; }"
-            "QPushButton:hover { background: #1d4ed8; }"
-        );
-        connect(btnToggle, &QPushButton::clicked, this, &MainWindow::slot_toggleEmpView);
-        searchLayout->addWidget(btnToggle);
-
-        // ── Card scroll area → add to verticalLayout_Left ─────────────────
-        QScrollArea *cardScroll = new QScrollArea();
-        cardScroll->setObjectName("emp_cardScrollArea");
-        cardScroll->setWidgetResizable(true);
-        cardScroll->setFrameShape(QFrame::NoFrame);
-        cardScroll->setStyleSheet("background: transparent; border: none;");
-        cardScroll->setVisible(false);
-
-        QWidget *cardContainer = new QWidget();
-        cardContainer->setObjectName("emp_cardContainer");
-        cardContainer->setStyleSheet("background: transparent;");
-        QGridLayout *gridLayout = new QGridLayout(cardContainer);
-        gridLayout->setObjectName("emp_cardLayout");
-        gridLayout->setSpacing(16);
-        gridLayout->setContentsMargins(8, 8, 8, 8);
-        cardScroll->setWidget(cardContainer);
-        m_empCardLayout = gridLayout;
-
-        leftLayout->addWidget(cardScroll);
-
-        // ── Pagination bar ─────────────────────────────────────────────────
-        QWidget *pBar = new QWidget();
-        pBar->setObjectName("emp_paginationBar");
-        pBar->setFixedHeight(60);
-        pBar->setVisible(false);
-        pBar->setStyleSheet("background: #f8fafc; border-top: 1px solid #e2e8f0; border-radius: 12px;");
-
-        QHBoxLayout *pLayout = new QHBoxLayout(pBar);
-        pLayout->setContentsMargins(20, 0, 20, 0);
-
-        QLabel *lblSize = new QLabel("Items par page:");
-        lblSize->setStyleSheet("font-size: 13px; color: #64748b; font-weight: 600;");
-
-        QComboBox *cbSize = new QComboBox();
-        cbSize->setObjectName("emp_pagination_cbSize");
-        cbSize->addItems({"4", "6", "12"});
-        cbSize->setCurrentText("6");
-        cbSize->setFixedWidth(70);
-        cbSize->setStyleSheet("background: white; border: 1px solid #cbd5e1; border-radius: 8px; padding: 4px;");
-        connect(cbSize, SIGNAL(currentIndexChanged(int)), this, SLOT(on_emp_pagination_cbSize_currentIndexChanged(int)));
-
-        QPushButton *btnPrev = new QPushButton("← Précédent");
-        btnPrev->setObjectName("emp_pagination_btnPrev");
-        btnPrev->setFixedWidth(110);
-        btnPrev->setCursor(Qt::PointingHandCursor);
-        btnPrev->setEnabled(false);
-        btnPrev->setStyleSheet("QPushButton { background: white; border: 1px solid #cbd5e1; border-radius: 8px; font-weight: 700; color: #475569; padding: 8px; } QPushButton:disabled { color: #cbd5e1; }");
-        connect(btnPrev, &QPushButton::clicked, this, &MainWindow::on_emp_pagination_btnPrev_clicked);
-
-        QLabel *lblPage = new QLabel("Page 1 sur 1");
-        lblPage->setObjectName("emp_pagination_lblPage");
-        lblPage->setStyleSheet("font-size: 13px; color: #1e293b; font-weight: 700;");
-
-        QPushButton *btnNext = new QPushButton("Suivant →");
-        btnNext->setObjectName("emp_pagination_btnNext");
-        btnNext->setFixedWidth(110);
-        btnNext->setCursor(Qt::PointingHandCursor);
-        btnNext->setStyleSheet("QPushButton { background: white; border: 1px solid #cbd5e1; border-radius: 8px; font-weight: 700; color: #475569; padding: 8px; } QPushButton:disabled { color: #cbd5e1; }");
-        connect(btnNext, &QPushButton::clicked, this, &MainWindow::on_emp_pagination_btnNext_clicked);
-
-        pLayout->addWidget(lblSize);
-        pLayout->addWidget(cbSize);
-        pLayout->addStretch();
-        pLayout->addWidget(btnPrev);
-        pLayout->addWidget(lblPage);
-        pLayout->addWidget(btnNext);
-
-        leftLayout->addWidget(pBar);
-    });
-}
-
-void MainWindow::setupEmpCardViewContainer()
-{
-    m_empCardLayout = findChild<QGridLayout*>("emp_cardLayout");
-}
-
-void MainWindow::slot_toggleEmpView()
-{
-    m_isEmpCardView = !m_isEmpCardView;
-
-    if (ui->tableEmployes)
-        ui->tableEmployes->setVisible(!m_isEmpCardView);
-
-    QScrollArea *cardScroll = findChild<QScrollArea*>("emp_cardScrollArea");
-    if (cardScroll) cardScroll->setVisible(m_isEmpCardView);
-
-    QWidget *pBar = findChild<QWidget*>("emp_paginationBar");
-    if (pBar) pBar->setVisible(m_isEmpCardView);
-
-    QPushButton *btnToggle = findChild<QPushButton*>("emp_btnToggleView");
-    if (btnToggle) btnToggle->setText(m_isEmpCardView ? "≣" : "⊞");
-
-    if (m_isEmpCardView) {
-        if (!m_empCardLayout) setupEmpCardViewContainer();
-        refreshEmpCardView();
-    }
-}
-
-void MainWindow::refreshEmpCardView()
-{
-    if (!m_isEmpCardView) return;
-    if (!m_empCardLayout) setupEmpCardViewContainer();
-    if (!m_empCardLayout) return;
-
-    QLayoutItem *child;
-    while ((child = m_empCardLayout->takeAt(0)) != nullptr) {
-        if (child->widget()) delete child->widget();
-        delete child;
-    }
-
-    QTableWidget *t = ui->tableEmployes;
-    if (!t) return;
-
-    int totalItems = t->rowCount();
-    int startIdx = m_empCurrentPage * m_empItemsPerPage;
-    int endIdx = qMin(startIdx + m_empItemsPerPage, totalItems);
-
-    int col = 0, row = 0;
-    const int COLS = 2;
-
-    for (int i = startIdx; i < endIdx; ++i) {
-        QWidget *card = createEmployeeCard(i);
-        if (card) {
-            m_empCardLayout->addWidget(card, row, col);
-            ++col;
-            if (col >= COLS) { col = 0; ++row; }
-        }
-    }
-    m_empCardLayout->setRowStretch(row + 1, 1);
-
-    QWidget *pBarRoot = findChild<QWidget*>("emp_paginationBar");
-    if (pBarRoot) {
-        QLabel *lblPage = pBarRoot->findChild<QLabel*>("emp_pagination_lblPage");
-        QPushButton *btnPrev = pBarRoot->findChild<QPushButton*>("emp_pagination_btnPrev");
-        QPushButton *btnNext = pBarRoot->findChild<QPushButton*>("emp_pagination_btnNext");
-        int maxPages = qMax(1, (totalItems + m_empItemsPerPage - 1) / m_empItemsPerPage);
-        if (lblPage) lblPage->setText(QString("Page %1 sur %2").arg(m_empCurrentPage + 1).arg(maxPages));
-        if (btnPrev) btnPrev->setEnabled(m_empCurrentPage > 0);
-        if (btnNext) btnNext->setEnabled(m_empCurrentPage < maxPages - 1);
-    }
-}
-
-QWidget* MainWindow::createEmployeeCard(int row)
-{
-    QTableWidget *t = ui->tableEmployes;
-    if (!t || row >= t->rowCount()) return nullptr;
-
-    QString nom    = t->item(row, 1) ? t->item(row, 1)->text() : "";
-    QString role   = t->item(row, 2) ? t->item(row, 2)->text() : "";
-    QString statut = t->item(row, 3) ? t->item(row, 3)->text() : "";
-    int salaire = t->item(row, 0) ? t->item(row, 0)->data(Qt::UserRole + 3).toInt() : 0;
-    int perf    = t->item(row, 0) ? t->item(row, 0)->data(Qt::UserRole + 4).toInt() : 0;
-
-    QFrame *card = new QFrame();
-    card->setObjectName("empCard");
-    card->setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Fixed);
-    card->setMinimumWidth(280);
-    card->setMaximumWidth(460);
-    card->setStyleSheet(
-        "QFrame#empCard { background-color: white; border-radius: 18px; border: 1px solid #e8edf2; }"
-    );
-    auto *shadow = new QGraphicsDropShadowEffect(card);
-    shadow->setBlurRadius(20);
-    shadow->setColor(QColor(0, 0, 0, 18));
-    shadow->setOffset(0, 5);
-    card->setGraphicsEffect(shadow);
-
-    QVBoxLayout *outerLayout = new QVBoxLayout(card);
-    outerLayout->setContentsMargins(16, 16, 16, 14);
-    outerLayout->setSpacing(12);
-
-    // TOP ROW: Avatar + Name + Status + dots
-    QHBoxLayout *topRow = new QHBoxLayout();
-    topRow->setSpacing(14);
-
-    QLabel *avatar = new QLabel();
-    avatar->setFixedSize(64, 64);
-    avatar->setAlignment(Qt::AlignCenter);
-    avatar->setStyleSheet(
-        "border-radius: 32px;"
-        "background: qlineargradient(x1:0,y1:0,x2:1,y2:1, stop:0 #dbeafe, stop:1 #bfdbfe);"
-        "border: 3px solid #93c5fd; font-size: 24px; font-weight: 700; color: #1e40af;"
-    );
-    QStringList parts = nom.split(' ');
-    QString initials;
-    for (const QString &p : parts) if (!p.isEmpty()) initials += p[0].toUpper();
-    if (initials.length() > 2) initials = initials.left(2);
-    avatar->setText(initials);
-
-    QVBoxLayout *nameCol = new QVBoxLayout();
-    nameCol->setSpacing(3);
-
-    QLabel *lblName = new QLabel(nom);
-    lblName->setStyleSheet("font-size: 15px; font-weight: 800; color: #1e293b; background: transparent;");
-    QLabel *lblRole = new QLabel(role);
-    lblRole->setStyleSheet("font-size: 12px; color: #64748b; background: transparent;");
-
-    QWidget *statusPill = new QWidget();
-    QHBoxLayout *pillL = new QHBoxLayout(statusPill);
-    pillL->setContentsMargins(8, 3, 8, 3);
-    pillL->setSpacing(4);
-    QLabel *pillIco = new QLabel();
-    QLabel *pillTxt = new QLabel(statut);
-    pillIco->setStyleSheet("background: transparent;");
-    if (statut == "Disponible") {
-        pillIco->setText("✅");
-        statusPill->setStyleSheet("background: #dcfce7; border-radius: 10px;");
-        pillTxt->setStyleSheet("color: #15803d; font-size: 11px; font-weight: 700; background: transparent;");
-    } else if (statut == "En mission") {
-        pillIco->setText("🔵");
-        statusPill->setStyleSheet("background: #dbeafe; border-radius: 10px;");
-        pillTxt->setStyleSheet("color: #1d4ed8; font-size: 11px; font-weight: 700; background: transparent;");
-    } else {
-        pillIco->setText("🟠");
-        statusPill->setStyleSheet("background: #fef3c7; border-radius: 10px;");
-        pillTxt->setStyleSheet("color: #92400e; font-size: 11px; font-weight: 700; background: transparent;");
-    }
-    pillL->addWidget(pillIco);
-    pillL->addWidget(pillTxt);
-
-    nameCol->addWidget(lblName);
-    nameCol->addWidget(lblRole);
-    nameCol->addWidget(statusPill);
-
-    QLabel *dots = new QLabel("•••");
-    dots->setStyleSheet("color: #94a3b8; font-size: 16px; background: transparent;");
-
-    topRow->addWidget(avatar);
-    topRow->addLayout(nameCol, 1);
-    topRow->addWidget(dots, 0, Qt::AlignTop);
-
-    // SEPARATOR
-    QFrame *sep = new QFrame();
-    sep->setFrameShape(QFrame::HLine);
-    sep->setStyleSheet("color: #f1f5f9; background: #f1f5f9; border: none; max-height: 1px;");
-
-    // STATS ROW
-    QHBoxLayout *statsRow = new QHBoxLayout();
-    statsRow->setSpacing(8);
-
-    QWidget *perfWidget = new QWidget();
-    perfWidget->setStyleSheet("background: transparent;");
-    QHBoxLayout *perfLayout = new QHBoxLayout(perfWidget);
-    perfLayout->setContentsMargins(0,0,0,0);
-    perfLayout->setSpacing(5);
-    QLabel *perfIcon = new QLabel("⚙");
-    perfIcon->setStyleSheet("font-size: 15px; background: transparent;");
-    QLabel *perfLbl = new QLabel("Performance");
-    perfLbl->setStyleSheet("font-size: 12px; color: #64748b; background: transparent;");
-    QLabel *perfVal = new QLabel(QString("%1%").arg(perf));
-    perfVal->setStyleSheet("font-size: 14px; font-weight: 800; color: #16a34a; background: transparent;");
-    perfLayout->addWidget(perfIcon);
-    perfLayout->addWidget(perfLbl);
-    perfLayout->addWidget(perfVal);
-    perfLayout->addStretch();
-
-    QWidget *intWidget = new QWidget();
-    intWidget->setStyleSheet("background: transparent;");
-    QVBoxLayout *intLayout = new QVBoxLayout(intWidget);
-    intLayout->setContentsMargins(0,0,0,0);
-    intLayout->setSpacing(1);
-    QLabel *intLbl = new QLabel("Interventions");
-    intLbl->setStyleSheet("font-size: 10px; color: #94a3b8; background: transparent;");
-    QLabel *intVal = new QLabel(QString("ce mois: %1%").arg(qMin(perf + 5, 100)));
-    intVal->setStyleSheet("font-size: 11px; font-weight: 700; color: #475569; background: transparent;");
-    intLayout->addWidget(intLbl);
-    intLayout->addWidget(intVal);
-
-    statsRow->addWidget(perfWidget, 1);
-    statsRow->addWidget(intWidget);
-
-    // BOTTOM ROW: Salary + Buttons
-    QHBoxLayout *bottomRow = new QHBoxLayout();
-    bottomRow->setSpacing(8);
-
-    QWidget *salBadge = new QWidget();
-    salBadge->setStyleSheet("background: #f0f9ff; border-radius: 10px; border: 1.5px solid #bae6fd;");
-    QHBoxLayout *salInner = new QHBoxLayout(salBadge);
-    salInner->setContentsMargins(8, 5, 8, 5);
-    salInner->setSpacing(4);
-    QLabel *salIcon = new QLabel("🏦");
-    salIcon->setStyleSheet("background: transparent; font-size: 14px;");
-    QLabel *salVal = new QLabel(QString("%1 TND").arg(salaire));
-    salVal->setStyleSheet("font-size: 15px; font-weight: 900; color: #0f172a; background: transparent;");
-    salInner->addWidget(salIcon);
-    salInner->addWidget(salVal);
-
-    QPushButton *btnProfil = new QPushButton("▷ Voir Profil");
-    btnProfil->setFixedSize(105, 36);
-    btnProfil->setProperty("row", row);
-    btnProfil->setCursor(Qt::PointingHandCursor);
-    btnProfil->setStyleSheet(
-        "QPushButton { background: #2563eb; color: white; border-radius: 9px;"
-        "  font-weight: 700; font-size: 12px; border: none; }"
-        "QPushButton:hover { background: #1d4ed8; }"
-    );
-
-    QPushButton *btnEdit = new QPushButton("Modifier");
-    btnEdit->setFixedSize(85, 36);
-    btnEdit->setProperty("row", row);
-    btnEdit->setCursor(Qt::PointingHandCursor);
-    btnEdit->setStyleSheet(
-        "QPushButton { background: #f97316; color: white; border-radius: 9px;"
-        "  font-weight: 700; font-size: 12px; border: none; }"
-        "QPushButton:hover { background: #ea6c0a; }"
-    );
-    connect(btnEdit, &QPushButton::clicked, this, &MainWindow::on_btnModifier_clicked);
-
-    bottomRow->addWidget(salBadge);
-    bottomRow->addStretch(1);
-    bottomRow->addWidget(btnProfil);
-    bottomRow->addWidget(btnEdit);
-
-    outerLayout->addLayout(topRow);
-    outerLayout->addWidget(sep);
-    outerLayout->addLayout(statsRow);
-    outerLayout->addLayout(bottomRow);
-
-    return card;
-}
-
-void MainWindow::on_emp_pagination_cbSize_currentIndexChanged(int index)
-{
-    QComboBox *cb = qobject_cast<QComboBox*>(sender());
-    if (!cb) return;
-    m_empItemsPerPage = cb->currentText().toInt();
-    m_empCurrentPage = 0;
-    refreshEmpCardView();
-}
-
-void MainWindow::on_emp_pagination_btnPrev_clicked()
-{
-    if (m_empCurrentPage > 0) {
-        m_empCurrentPage--;
-        refreshEmpCardView();
-    }
-}
-
-void MainWindow::on_emp_pagination_btnNext_clicked()
-{
-    if (!ui->tableEmployes) return;
-    int totalItems = ui->tableEmployes->rowCount();
-    int maxPages = (totalItems + m_empItemsPerPage - 1) / m_empItemsPerPage;
-    if (m_empCurrentPage < maxPages - 1) {
-        m_empCurrentPage++;
-        refreshEmpCardView();
     }
 }
 
@@ -10367,4 +7226,58 @@ void MainWindow::on_btnPdf_Cmd_clicked()
 
     painter.end();
     QMessageBox::information(this, "Export PDF", "Le rapport PDF a été généré avec succès.");
+}
+
+// ════════════════════════════════════════════════
+//  3D Stock Map – Event Filter & Dialog Launcher
+// ════════════════════════════════════════════════
+
+bool MainWindow::eventFilter(QObject *obj, QEvent *event)
+{
+    // Intercept mouse-press on the "prod_l5" label (stockMapTrigger)
+    if (event->type() == QEvent::MouseButtonPress) {
+        QWidget *w = qobject_cast<QWidget*>(obj);
+        if (w && w->property("stockMapTrigger").toBool()) {
+            openStockMap3D();
+            return true;  // event consumed
+        }
+    }
+    return QMainWindow::eventFilter(obj, event);
+}
+
+void MainWindow::openStockMap3D()
+{
+    StockMapDialog dlg(this);
+
+    // Mock occupied slots (temporary – will be replaced by SQL later)
+    QStringList occupied;
+    occupied << "A1-N1" << "A2-N2" << "B1-N1" << "B3-N3"
+             << "C2-N1" << "C4-N2" << "D1-N3" << "D3-N1"
+             << "E2-N2" << "E4-N1" << "F1-N1" << "F3-N2"
+             << "A3-N1" << "B2-N3" << "C1-N2" << "D4-N1"
+             << "E1-N3" << "F2-N1" << "A4-N3" << "B4-N2"
+             << "C3-N3" << "D2-N2" << "E3-N1" << "F4-N3";
+    dlg.setOccupiedSlots(occupied);
+
+    if (dlg.exec() == QDialog::Accepted) {
+        m_selectedEmplacement = dlg.selectedCode();
+
+        // Update the label to show the selected location
+        QWidget *root = produitRoot();
+        if (root) {
+            if (auto *lbl = root->findChild<QLabel*>("prod_l5")) {
+                lbl->setText(QString("📍  Emplacement sélectionné : %1  (cliquer pour changer)")
+                                 .arg(m_selectedEmplacement));
+                lbl->setStyleSheet(
+                    "color: #FFD700;"
+                    "font-size: 13px;"
+                    "font-weight: 700;"
+                    "padding: 10px 16px;"
+                    "background: rgba(255,215,0,0.08);"
+                    "border: 1px solid rgba(255,215,0,0.3);"
+                    "border-radius: 10px;"
+                );
+            }
+        }
+    }
 }
