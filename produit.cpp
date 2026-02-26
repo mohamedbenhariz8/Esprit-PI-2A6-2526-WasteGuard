@@ -25,8 +25,8 @@ Produit::Produit()
 {
 }
 
-Produit::Produit(int id_mp, const QString &reference, const QString &nom, int quantite, int capacite, double prix, int capaciteBatterie, const QString &image)
-    : m_idMp(id_mp), m_reference(reference), m_nom(nom), m_quantite(quantite), m_capacite(capacite), m_prix(prix), m_capaciteBatterie(capaciteBatterie), m_image(image)
+Produit::Produit(int id_mp, const QString &reference, const QString &nom, int quantite, int capacite, double prix, int capaciteBatterie)
+    : m_idMp(id_mp), m_reference(reference), m_nom(nom), m_quantite(quantite), m_capacite(capacite), m_prix(prix), m_capaciteBatterie(capaciteBatterie)
 {
 }
 
@@ -45,8 +45,8 @@ bool Produit::ajouter()
 
     query.prepare(
         "INSERT INTO BAC_INTEL "
-        "(id_bac, num_serie, modele, remplissage, localisation_stock, id_commande, prix, stock, capacite_batterie, image_path) "
-        "VALUES (:id_bac, :num_serie, :modele, :remplissage, :localisation_stock, NULL, :prix, :stock, :capacite_batterie, :image_path)"
+        "(id_bac, num_serie, modele, remplissage, localisation_stock, id_commande, prix, stock, capacite_batterie) "
+        "VALUES (:id_bac, :num_serie, :modele, :remplissage, :localisation_stock, NULL, :prix, :stock, :capacite_batterie)"
     );
 
     query.bindValue(":id_bac", idToUse);
@@ -57,7 +57,6 @@ bool Produit::ajouter()
     query.bindValue(":prix", m_prix);
     query.bindValue(":stock", m_quantite);
     query.bindValue(":capacite_batterie", m_capaciteBatterie);
-    query.bindValue(":image_path", m_image);
 
     const bool ok = query.exec();
     m_lastError = ok ? QString() : query.lastError().text();
@@ -75,8 +74,7 @@ bool Produit::modifier()
         "localisation_stock = :localisation_stock, "
         "prix = :prix, "
         "stock = :stock, "
-        "capacite_batterie = :capacite_batterie, "
-        "image_path = :image_path "
+        "capacite_batterie = :capacite_batterie "
         "WHERE id_bac = :id_bac"
     );
 
@@ -90,7 +88,6 @@ bool Produit::modifier()
     query.bindValue(":prix", m_prix);
     query.bindValue(":stock", m_quantite);
     query.bindValue(":capacite_batterie", m_capaciteBatterie);
-    query.bindValue(":image_path", m_image);
 
     const bool ok = query.exec();
     m_lastError = ok ? QString() : query.lastError().text();
@@ -118,8 +115,7 @@ QSqlQueryModel *Produit::afficher()
         "NVL(stock, NVL(ROUND(remplissage), 0)) AS quantite, "
         "NVL(ROUND(remplissage), 100) AS seuil_critique, "
         "NVL(prix, 0) AS prix, "
-        "NVL(ROUND(capacite_batterie), 10000) AS capacite_batterie, "
-        "image_path "
+        "NVL(ROUND(capacite_batterie), 10000) AS capacite_batterie "
         "FROM BAC_INTEL "
         "ORDER BY id_bac"
     );
@@ -166,5 +162,3 @@ void Produit::setQuantite(int value) { m_quantite = value; }
 void Produit::setCapacite(int value) { m_capacite = value; }
 void Produit::setPrix(double value) { m_prix = value; }
 void Produit::setCapaciteBatterie(int value) { m_capaciteBatterie = value; }
-void Produit::setImage(const QString &value) { m_image = value; }
-QString Produit::getImage() const { return m_image; }

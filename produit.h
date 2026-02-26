@@ -8,7 +8,7 @@ class Produit
 {
 public:
     Produit();
-    Produit(int id_mp, const QString &reference, const QString &nom, int quantite, int capacite, double prix, int capaciteBatterie = 10000, const QString &image = QString());
+    Produit(int id_mp, const QString &reference, const QString &nom, int quantite, int capacite, double prix, int capaciteBatterie = 10000);
 
     bool ajouter();
     bool modifier();
@@ -24,7 +24,6 @@ public:
     int getCapacite() const;
     double getPrix() const;
     int getCapaciteBatterie() const;
-    QString getImage() const;
 
     void setIdMp(int value);
     void setReference(const QString &value);
@@ -33,7 +32,6 @@ public:
     void setCapacite(int value);
     void setPrix(double value);
     void setCapaciteBatterie(int value);
-    void setImage(const QString &value);
 
 private:
     int m_idMp;
@@ -43,7 +41,6 @@ private:
     int m_capacite;
     double m_prix;
     int m_capaciteBatterie;
-    QString m_image;
     QString m_lastError;
 };
 

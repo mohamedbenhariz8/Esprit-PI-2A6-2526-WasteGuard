@@ -1,40 +1,64 @@
+
+
+
+
 #include "connection.h"
+#include <QSqlError>
+#include <QDebug>
 
-// Return the unique instance (Singleton)
-Connection& Connection::createInstance()
-{
-    static Connection instance;   // Created once only
-    return instance;
-}
+// Initialisation du pointeur d'instance
+Connection* Connection::p_instance = nullptr;
 
-// Private constructor
+// Constructeur privé
 Connection::Connection()
 {
+    // Initialisation de la base de données
     db = QSqlDatabase::addDatabase("QODBC");
 }
 
-// Destructor
+// Méthode statique pour obtenir l'instance unique
+Connection* Connection::instance()
+{
+    if (p_instance == nullptr) {
+        p_instance = new Connection();
+    }
+    return p_instance;
+}
+
+// Méthode pour établir la connexion
+bool Connection::createConnect()
+{
+    bool test = false;
+
+    db.setDatabaseName("Source_Projet2A");//inserer le nom de la source de données
+    db.setUserName("wasteguard");//inserer nom de l'utilisateur
+    db.setPassword("123");//inserer mot de passe de cet utilisateur
+
+    if (db.open()) {
+        test = true;
+        qDebug() << "Connexion à la base de données réussie";
+    } else {
+        qDebug() << "Erreur de connexion:" << db.lastError().text();
+    }
+
+    return test;
+}
+
+// Fermer la connexion
+void Connection::closeConnection()
+{
+    if (db.isOpen()) {
+        db.close();
+    }
+}
+
+// Destructeur privé
 Connection::~Connection()
 {
-    if(db.isOpen())
-        db.close();
+    closeConnection();
 }
 
-// Create and open connection
-bool Connection::createConnection()
-{
-    db.setDatabaseName("Source_Projet2A");  // Your ODBC name
-    db.setUserName("Rudy");             // Your username
-    db.setPassword("Rudy");                 // Your password
 
-    if(db.open())
-    {
-        qDebug() << "Connexion réussie !";
-        return true;
-    }
-    else
-    {
-        qDebug() << "Erreur :" << db.lastError().text();
-        return false;
-    }
-}
+
+
+

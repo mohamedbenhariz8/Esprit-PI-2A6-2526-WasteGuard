@@ -17,6 +17,7 @@
 #include <QWidget>
 
 #include <QTime>
+#include <QDate>
 
 #include <QMessageBox>
 
@@ -63,7 +64,11 @@
 
 #include <QLabel>
 
-
+#include <QDialog>
+#include <QEvent>
+#include <QDesktopServices>
+#include <QUrl>
+#include <QStandardPaths>
 
 #include <QtCharts/QPieSeries>
 
@@ -81,13 +86,205 @@
 
 #include <QtCharts/QAreaSeries>
 
+#include <QSqlQuery>
+#include <QSqlError>
+#include <QMessageBox>
+#include <QRegularExpression>
+#include <QRegularExpressionValidator>
 
-
-static constexpr int ACTIONS_COL = 7;
+static constexpr int ACTIONS_COL = 6;
+static constexpr int EMP_ROLE_ID = Qt::UserRole + 1;
+static constexpr int EMP_ROLE_EMAIL = Qt::UserRole + 2;
+static constexpr int EMP_ROLE_CIN = Qt::UserRole + 3;
+static constexpr int EMP_ROLE_SALAIRE = Qt::UserRole + 4;
+static constexpr int EMP_ROLE_PERF = Qt::UserRole + 5;
+static constexpr int PROD_ROLE_CUR = Qt::UserRole;
+static constexpr int PROD_ROLE_MAX = Qt::UserRole + 1;
+static constexpr int PROD_ROLE_AISLE = Qt::UserRole + 2;
+static constexpr int PROD_ROLE_ID = Qt::UserRole + 6;
+static constexpr int PROD_ROLE_BATTERY = Qt::UserRole + 7;
+static constexpr int STOCK_ROLE_ID = Qt::UserRole + 50;
+static constexpr int STOCK_ROLE_SEUIL = Qt::UserRole + 51;
+static constexpr int STOCK_ROLE_ID_FOUR = Qt::UserRole + 52;
 
 
 
 namespace {
+
+const QRegularExpression &emailRegex()
+{
+    static const QRegularExpression re(
+        R"(^[A-Z0-9._%+\-]+@[A-Z0-9.\-]+\.[A-Z]{2,}$)",
+        QRegularExpression::CaseInsensitiveOption
+    );
+    return re;
+}
+
+bool isValidEmail(const QString &email)
+{
+    return emailRegex().match(email.trimmed()).hasMatch();
+}
+
+QString productStatusFromQty(int qty)
+{
+    if (qty <= 0) return "Rupture";
+    if (qty < 20) return "Stock Faible";
+    return "En Stock";
+}
+
+QString resolvedProductStatus(const QString &statusUi, int qty)
+{
+    const QString s = statusUi.trimmed();
+    return s.isEmpty() ? productStatusFromQty(qty) : s;
+}
+
+void setComboTextSafe(QComboBox *combo, const QString &value)
+{
+    if (!combo) return;
+    int idx = combo->findText(value, Qt::MatchFixedString);
+    if (idx < 0) idx = combo->findText(value, Qt::MatchContains);
+    if (idx < 0) {
+        combo->addItem(value);
+        idx = combo->findText(value, Qt::MatchFixedString);
+    }
+    if (idx >= 0) combo->setCurrentIndex(idx);
+}
+
+QString firstNonEmptyLineEditText(QWidget *scope, const QStringList &preferredNames)
+{
+    if (!scope) return QString();
+
+    auto byName = [scope](const QString &name) -> QString {
+        if (auto *le = scope->findChild<QLineEdit*>(name)) {
+            return le->text().trimmed();
+        }
+        return QString();
+    };
+
+    for (const QString &name : preferredNames) {
+        const QString v = byName(name);
+        if (!v.isEmpty()) return v;
+    }
+
+    const auto edits = scope->findChildren<QLineEdit*>();
+    for (QLineEdit *le : edits) {
+        if (!le || !le->isVisible()) continue;
+        const QString v = le->text().trimmed();
+        if (!v.isEmpty()) return v;
+    }
+
+    return QString();
+}
+
+double parseStockPrice(QString text, bool *okOut = nullptr)
+{
+    text = text.trimmed();
+    text.remove("TND", Qt::CaseInsensitive);
+    text.remove("DT", Qt::CaseInsensitive);
+    text.remove(' ');
+    text.replace(',', '.');
+    bool ok = false;
+    const double v = text.toDouble(&ok);
+    if (okOut) *okOut = ok;
+    return v;
+}
+
+QString stockSeuilLabel(int quantite, int seuilCritique)
+{
+    const int seuil = qMax(1, seuilCritique);
+    if (quantite <= seuil) return "CRITIQUE";
+    if (quantite <= (seuil * 2)) return "MOYEN";
+    return "OK";
+}
+
+int defaultSeuilCritique(int quantite)
+{
+    return qMax(5, quantite / 5);
+}
+
+void setStockSeuilBadge(QTableWidget *table, int row, const QString &seuil)
+{
+    if (!table || row < 0 || row >= table->rowCount()) return;
+
+    QLabel *badge = new QLabel(seuil);
+    badge->setAlignment(Qt::AlignCenter);
+    badge->setFixedSize(90, 25);
+
+    QString style = "border-radius: 5px; font-weight: bold;";
+    if (seuil == "CRITIQUE") style += "background-color: #dc3545; color: white;";
+    else if (seuil == "MOYEN") style += "background-color: #ffc107; color: #333;";
+    else style += "background-color: #28a745; color: white;";
+    badge->setStyleSheet(style);
+
+    QWidget *badgeWidget = new QWidget();
+    auto *badgeLayout = new QHBoxLayout(badgeWidget);
+    badgeLayout->addWidget(badge);
+    badgeLayout->setAlignment(Qt::AlignCenter);
+    badgeLayout->setContentsMargins(0, 0, 0, 0);
+    table->setCellWidget(row, 3, badgeWidget);
+}
+
+QString normalizedStatus(QString value)
+{
+    return value.normalized(QString::NormalizationForm_D).toLower().trimmed();
+}
+
+QString toDbDisponibilite(const QString &statusUi)
+{
+    const QString s = normalizedStatus(statusUi);
+    if (s.contains("indispon")) return "INDISPONIBLE";
+    if (s.contains("intervention")) return "INDISPONIBLE";
+    if (s.contains("conge")) return "INDISPONIBLE";
+    if (s.contains("mission")) return "INDISPONIBLE";
+    if (s.contains("disponible")) return "DISPONIBLE";
+    return "INDISPONIBLE";
+}
+
+QString friendlySqlErrorMessage(const QString &rawError, const QString &action)
+{
+    const QString upper = rawError.toUpper();
+
+    if (upper.contains("AUCUN FOURNISSEUR DISPONIBLE")) {
+        return QString("Impossible de %1: aucun fournisseur n'existe dans la base.").arg(action);
+    }
+    if (upper.contains("ORA-00001")) {
+        return QString("Impossible de %1: une valeur unique existe deja.").arg(action);
+    }
+    if (upper.contains("ORA-01400")) {
+        if (upper.contains("ID_FOUR")) {
+            return QString("Impossible de %1: fournisseur obligatoire manquant (ID_FOUR).").arg(action);
+        }
+        return QString("Impossible de %1: un champ obligatoire est vide.").arg(action);
+    }
+    if (upper.contains("ORA-02291")) {
+        if (upper.contains("ID_FOUR")) {
+            return QString("Impossible de %1: le fournisseur selectionne n'existe pas.").arg(action);
+        }
+        return QString("Impossible de %1: reference inexistante.").arg(action);
+    }
+    if (upper.contains("ORA-02292")) {
+        return QString("Impossible de %1: element utilise dans d'autres donnees.").arg(action);
+    }
+    if (upper.contains("DRIVER NOT LOADED")) {
+        return "Connexion base indisponible: driver SQL non charge.";
+    }
+    if (upper.contains("ORA-00942")) {
+        return "Table introuvable dans la base de donnees.";
+    }
+    return QString("Impossible de %1. Verifiez les donnees saisies.").arg(action);
+}
+
+void showFriendlySqlError(QWidget *parent, const QString &action, const QString &rawError)
+{
+    QMessageBox msg(parent);
+    msg.setIcon(QMessageBox::Critical);
+    msg.setWindowTitle("Erreur SQL");
+    msg.setText(friendlySqlErrorMessage(rawError, action));
+    if (!rawError.trimmed().isEmpty()) {
+        msg.setDetailedText(rawError);
+    }
+    msg.exec();
+}
 
 void enableStyledBgRecursive(QWidget *root)
 
@@ -423,6 +620,8 @@ MainWindow::MainWindow(QWidget *parent)
 
     , currentEmployeRow(-1)
 
+    , currentProduitRow(-1)
+
     , currentClientRow(-1)
 
     , currentMaintRow(-1)
@@ -435,6 +634,45 @@ MainWindow::MainWindow(QWidget *parent)
 
     ui->setupUi(this);
 
+    // Initialize Add Commande Date Comboboxes
+    for (int i = 1; i <= 31; ++i) {
+        ui->comboBox_19->addItem(QString("%1").arg(i, 2, 10, QChar('0')));
+    }
+    for (int i = 1; i <= 12; ++i) {
+        ui->comboBox_20->addItem(QString("%1").arg(i, 2, 10, QChar('0')));
+    }
+    for (int i = 2024; i <= 2035; ++i) {
+        ui->comboBox_21->addItem(QString::number(i));
+    }
+    for (int i = 1; i <= 31; ++i) {
+        ui->comboBox_22->addItem(QString("%1").arg(i, 2, 10, QChar('0')));
+    }
+    for (int i = 1; i <= 12; ++i) {
+        ui->comboBox_23->addItem(QString("%1").arg(i, 2, 10, QChar('0')));
+    }
+    for (int i = 2024; i <= 2035; ++i) {
+        ui->comboBox_24->addItem(QString::number(i));
+    }
+    
+    // Initialize Modify Commande Date Comboboxes
+    for (int i = 1; i <= 31; ++i) {
+        ui->comboBox_7->addItem(QString("%1").arg(i, 2, 10, QChar('0')));
+    }
+    for (int i = 1; i <= 12; ++i) {
+        ui->comboBox_8->addItem(QString("%1").arg(i, 2, 10, QChar('0')));
+    }
+    for (int i = 2024; i <= 2035; ++i) {
+        ui->comboBox_9->addItem(QString::number(i));
+    }
+    for (int i = 1; i <= 31; ++i) {
+        ui->comboBox_13->addItem(QString("%1").arg(i, 2, 10, QChar('0')));
+    }
+    for (int i = 1; i <= 12; ++i) {
+        ui->comboBox_14->addItem(QString("%1").arg(i, 2, 10, QChar('0')));
+    }
+    for (int i = 2024; i <= 2035; ++i) {
+        ui->comboBox_15->addItem(QString::number(i));
+    }
 
 
     // --- AGGRESSIVE RELOAD OF STOCK SIDEBAR STYLES ---
@@ -1509,6 +1747,33 @@ MainWindow::MainWindow(QWidget *parent)
 
     }
 
+    // Clear photos when leaving the Add page
+    auto clearPhotos = [this]() {
+        m_photoAvantPath.clear();
+        m_photoApresPath.clear();
+        if (ui->lblImgPreview_Add) {
+            ui->lblImgPreview_Add->setPixmap(QPixmap());
+            ui->lblImgPreview_Add->setText("Cliquez ou déposez vos images ici pour les télécharger");
+        }
+        if (ui->lblImgPreview2_Add) {
+            ui->lblImgPreview2_Add->setPixmap(QPixmap());
+            ui->lblImgPreview2_Add->setText("Cliquez ou déposez vos images ici pour les télécharger");
+        }
+    };
+    if (ui->btnCancel_Add) connect(ui->btnCancel_Add, &QPushButton::clicked, this, clearPhotos);
+    if (ui->btnBack_Ajout) connect(ui->btnBack_Ajout, &QPushButton::clicked, this, clearPhotos);
+
+    // Clear photo when leaving the Modify page
+    auto clearModPhoto = [this]() {
+        m_photoModPath.clear();
+        if (ui->lblImgPreview_Mod) {
+            ui->lblImgPreview_Mod->setPixmap(QPixmap());
+            ui->lblImgPreview_Mod->setText(QString::fromUtf8("📷  Déposez vos images AVANT / APRÈS ici"));
+        }
+    };
+    if (ui->btnCancel_Mod) connect(ui->btnCancel_Mod, &QPushButton::clicked, this, clearModPhoto);
+    if (ui->btnBack_Modif) connect(ui->btnBack_Modif, &QPushButton::clicked, this, clearModPhoto);
+
 
 
     // --- REMPLISSAGE DU TABLEAU ---
@@ -1548,35 +1813,14 @@ MainWindow::MainWindow(QWidget *parent)
         ui->tableEmployes->setColumnWidth(4, 220);
 
 
+    refreshEmployes();
+    }
 
-        struct EmpProto { QString mat; QString nom; QString role; QString statut; QString email; QString cin; int salaire; int perf; };
-        QList<EmpProto> empData = {
-            {"EMP-001", "Ahmed Ben Salah",  "Technicien Maintenance",   "En mission",  "ahmed@wasteguard.tn",  "10234567", 850,  88},
-            {"EMP-002", "Sarah Khalifa",    "Responsable Technique",    "Disponible",  "sarah@wasteguard.tn",  "20345678", 1200, 96},
-            {"EMP-003", "Yassine Allani",   "Agent de Terrain",         "En congé",    "yassine@wasteguard.tn","30456789", 850,  82},
-            {"EMP-004", "Oussama Trabelsi", "Technicien Maintenance",   "Disponible",  "oussama@wasteguard.tn","40567890", 1500, 94},
-            {"EMP-005", "Asma Melliti",     "Assistante Administrative", "En congé",    "asma@wasteguard.tn",   "50678901", 950,  79},
-            {"EMP-006", "Mehdi Bousnina",   "Agent de Maintenance",     "En congé",    "mehdi@wasteguard.tn",  "60789012", 1100, 85},
-        };
-
-        for (int i = 0; i < empData.size(); ++i) {
-            const auto &e = empData[i];
-            int row = ui->tableEmployes->rowCount();
-            ui->tableEmployes->insertRow(row);
-
-            auto *matItem = new QTableWidgetItem(e.mat);
-            matItem->setData(Qt::UserRole + 1, e.email);
-            matItem->setData(Qt::UserRole + 2, e.cin);
-            matItem->setData(Qt::UserRole + 3, e.salaire);
-            matItem->setData(Qt::UserRole + 4, e.perf); // performance score
-
-            ui->tableEmployes->setItem(row, 0, matItem);
-            ui->tableEmployes->setItem(row, 1, new QTableWidgetItem(e.nom));
-            ui->tableEmployes->setItem(row, 2, new QTableWidgetItem(e.role));
-            ui->tableEmployes->setItem(row, 3, new QTableWidgetItem(e.statut));
-            installEmployeActionButtonsForRow(row);
-        }
-
+    if (ui->txtEmailAjout) {
+        ui->txtEmailAjout->setValidator(new QRegularExpressionValidator(emailRegex(), ui->txtEmailAjout));
+    }
+    if (ui->txtEmailModif) {
+        ui->txtEmailModif->setValidator(new QRegularExpressionValidator(emailRegex(), ui->txtEmailModif));
     }
 
 
@@ -1661,7 +1905,7 @@ MainWindow::MainWindow(QWidget *parent)
 
     connectToGlobalStats(findChild<QPushButton*>("btnGoStats_Maint"));
 
-    connectToGlobalStats(findChild<QPushButton*>("btnGoStats_Client"));
+    // btnGoStats_Client is connected separately to client-specific stats
 
     connectToGlobalStats(findChild<QPushButton*>("btnGoStats_Cmd"));
 
@@ -1723,44 +1967,14 @@ MainWindow::MainWindow(QWidget *parent)
 
 
 
-    // --- CLIENT INITIALIZATION ---
-
+    // --- CLIENT INITIALIZATION (from DB) ---
     if (ui->tableWidget_Client) {
-
         ui->tableWidget_Client->setColumnCount(7);
-
-        QStringList headers = { "Matricule", "Nom", "Email", "Bacs", "Score", "Paiement", "Actions" };
-
+        QStringList headers = { "Matricule", "Nom", "Email", "Type Contrat", "Statut Paiement", "", "Actions" };
         ui->tableWidget_Client->setHorizontalHeaderLabels(headers);
-
         ui->tableWidget_Client->horizontalHeader()->setSectionResizeMode(QHeaderView::Stretch);
-
-        
-
-        // Client data
-        struct ClientData { QString mat, nom, email, bacs, score, paiement; };
-        QList<ClientData> clients = {
-            {"CL-001", "Ahmed Ben Salah",   "ahmed.bensalah@gmail.com",  "5",  "92", "Mensuel"},
-            {"CL-002", "Sarah Khalifa",     "sarah.khalifa@outlook.com", "3",  "78", "Trimestriel"},
-            {"CL-003", "Mohamed Trabelsi",  "m.trabelsi@yahoo.fr",       "8",  "65", "Annuel"},
-            {"CL-004", "Leila Mansouri",    "leila.mansouri@gmail.com",  "2",  "88", "Mensuel"},
-            {"CL-005", "Karim Bouazizi",    "k.bouazizi@hotmail.com",    "12", "55", "Trimestriel"},
-            {"CL-006", "Fatma Chaabane",    "fatma.chaabane@gmail.com",  "6",  "95", "Mensuel"},
-            {"CL-007", "Youssef Hamdi",     "y.hamdi@entreprise.tn",     "4",  "72", "Annuel"},
-            {"CL-008", "Nadia Belhaj",      "nadia.belhaj@gmail.com",    "9",  "81", "Mensuel"},
-            {"CL-009", "Sami Jebali",       "sami.jebali@outlook.com",   "1",  "60", "Trimestriel"}
-        };
-        for (const auto &c : clients) {
-            int row = ui->tableWidget_Client->rowCount();
-            ui->tableWidget_Client->insertRow(row);
-            ui->tableWidget_Client->setItem(row, 0, new QTableWidgetItem(c.mat));
-            ui->tableWidget_Client->setItem(row, 1, new QTableWidgetItem(c.nom));
-            ui->tableWidget_Client->setItem(row, 2, new QTableWidgetItem(c.email));
-            ui->tableWidget_Client->setItem(row, 3, new QTableWidgetItem(c.bacs));
-            ui->tableWidget_Client->setItem(row, 4, new QTableWidgetItem(c.score));
-            ui->tableWidget_Client->setItem(row, 5, new QTableWidgetItem(c.paiement));
-            addClientActionButtons(row);
-        }
+        ui->tableWidget_Client->setColumnHidden(5, true); // hidden column for internal ID
+        refreshClients();
     }
 
     if (ui->btn_save_ajouter) connect(ui->btn_save_ajouter, &QPushButton::clicked, this, &MainWindow::on_btn_ajouter_client_clicked);
@@ -1772,6 +1986,17 @@ MainWindow::MainWindow(QWidget *parent)
     if (ui->btn_annuler_modifier) connect(ui->btn_annuler_modifier, &QPushButton::clicked, this, &MainWindow::on_btn_annuler_client_clicked);
 
     if (ui->btnNouveau_Client) connect(ui->btnNouveau_Client, &QPushButton::clicked, this, &MainWindow::on_btnNouveau_client_clicked);
+
+    // Search & Filter
+    if (ui->recherche) connect(ui->recherche, &QLineEdit::textChanged, this, &MainWindow::filterClients);
+    if (ui->cbTrier) connect(ui->cbTrier, &QComboBox::currentTextChanged, this, &MainWindow::filterClients);
+
+    // Export PDF and Stats buttons
+    if (ui->exportclient) connect(ui->exportclient, &QPushButton::clicked, this, &MainWindow::exportClientPdf);
+    if (ui->btnGoStats_Client) connect(ui->btnGoStats_Client, &QPushButton::clicked, this, &MainWindow::showClientStats);
+    if (ui->btnRetour_stats_client) connect(ui->btnRetour_stats_client, &QPushButton::clicked, this, [this]() {
+        if (ui->stackedWidget_Client) ui->stackedWidget_Client->setCurrentIndex(0);
+    });
 
 
 
@@ -1814,7 +2039,60 @@ MainWindow::~MainWindow()
 }
 
 
+void MainWindow::refreshEmployes()
+{
+    if (!ui->tableEmployes) return;
 
+    ui->tableEmployes->setRowCount(0);
+
+    QSqlQueryModel *model = Etmp.afficher();
+    if (!model) {
+        QMessageBox::critical(this, "Erreur SQL", "Impossible de charger les employes.");
+        return;
+    }
+
+    if (model->lastError().isValid()) {
+        showFriendlySqlError(this, "charger les employes", model->lastError().text());
+        delete model;
+        return;
+    }
+
+    for (int i = 0; i < model->rowCount(); ++i) {
+        int id_emp = model->data(model->index(i, 0)).toInt();
+        QString matricule = model->data(model->index(i, 1)).toString();
+        QString cin = model->data(model->index(i, 2)).toString().trimmed();
+        QString nom = model->data(model->index(i, 3)).toString();
+        QString email = model->data(model->index(i, 4)).toString().trimmed();
+        QString specialite = model->data(model->index(i, 5)).toString();
+        QString dispoDb = model->data(model->index(i, 6)).toString().trimmed();
+
+        QString dispoUi = dispoDb;
+        if (dispoDb.compare("DISPONIBLE", Qt::CaseInsensitive) == 0) {
+            dispoUi = "Disponible";
+        } else if (dispoDb.compare("INDISPONIBLE", Qt::CaseInsensitive) == 0) {
+            dispoUi = "Indisponible";
+        }
+
+        int row = ui->tableEmployes->rowCount();
+        ui->tableEmployes->insertRow(row);
+
+        auto *matItem = new QTableWidgetItem(matricule);
+        matItem->setData(EMP_ROLE_ID, id_emp);
+        matItem->setData(EMP_ROLE_EMAIL, email);
+        matItem->setData(EMP_ROLE_CIN, cin);
+        matItem->setData(EMP_ROLE_SALAIRE, 1200);
+        matItem->setData(EMP_ROLE_PERF, 0);
+
+        ui->tableEmployes->setItem(row, 0, matItem);
+        ui->tableEmployes->setItem(row, 1, new QTableWidgetItem(nom));
+        ui->tableEmployes->setItem(row, 2, new QTableWidgetItem(specialite));
+        ui->tableEmployes->setItem(row, 3, new QTableWidgetItem(dispoUi));
+
+        installEmployeActionButtonsForRow(row); // garde ton système de boutons
+    }
+
+    delete model;
+}
 // --- NAVIGATION ---
 
 void MainWindow::on_btnNouveau_clicked()
@@ -2035,43 +2313,48 @@ void MainWindow::on_btnAjouter_clicked()
 
     const QString email = ui->txtEmailAjout ? ui->txtEmailAjout->text().trimmed() : QString();
 
+    if (email.isEmpty()) {
+        QMessageBox::warning(this, "Ajout", "L'email est obligatoire.");
+        return;
+    }
+
+    if (!isValidEmail(email)) {
+        QMessageBox::warning(this, "Ajout", "Format d'email invalide. Exemple: nom@domaine.com");
+        return;
+    }
+
     const QString cin = ui->txtCIN_Ajout ? ui->txtCIN_Ajout->text().trimmed() : QString();
 
-    const int salaire = ui->sliderSalaire_Ajout ? ui->sliderSalaire_Ajout->value() : 1200;
+    const QString disponibiliteDb = toDbDisponibilite(statut);
 
+    Etmp.setIdEmp(0);
+    Etmp.setMatricule(matricule);
+    Etmp.setCin(cin);
+    Etmp.setNom(nom);
+    Etmp.setEmail(email);
+    Etmp.setSpecialite(specialite);
+    Etmp.setDisponibilite(disponibiliteDb);
+    if (!Etmp.ajouter()) {
+        showFriendlySqlError(this, "ajouter l'employe", Etmp.lastError());
+        return;
+    }
 
+    refreshEmployes();
 
-    const int row = ui->tableEmployes->rowCount();
+    int insertedRow = -1;
+    for (int r = 0; r < ui->tableEmployes->rowCount(); ++r) {
+        if (auto *item = ui->tableEmployes->item(r, 0)) {
+            if (item->text().trimmed() == matricule) {
+                insertedRow = r;
+                break;
+            }
+        }
+    }
 
-    ui->tableEmployes->insertRow(row);
-
-
-
-    auto *matItem = new QTableWidgetItem(matricule);
-
-    matItem->setData(Qt::UserRole + 1, email);
-
-    matItem->setData(Qt::UserRole + 2, cin);
-
-    matItem->setData(Qt::UserRole + 3, salaire);
-
-
-
-    ui->tableEmployes->setItem(row, 0, matItem);
-
-    ui->tableEmployes->setItem(row, 1, new QTableWidgetItem(nom));
-
-    ui->tableEmployes->setItem(row, 2, new QTableWidgetItem(specialite));
-
-    ui->tableEmployes->setItem(row, 3, new QTableWidgetItem(statut));
-
-
-
-    installEmployeActionButtonsForRow(row);
-
-    currentEmployeRow = row;
-
-    ui->tableEmployes->selectRow(row);
+    if (insertedRow >= 0) {
+        currentEmployeRow = insertedRow;
+        ui->tableEmployes->selectRow(insertedRow);
+    }
 
 
 
@@ -2092,6 +2375,9 @@ void MainWindow::on_btnAjouter_clicked()
         ui->sliderSalaire_Ajout->setValue(resetSalaire);
 
     }
+
+    if (m_isEmpCardView)
+        refreshEmpCardView();
 
 
 
@@ -2291,17 +2577,28 @@ void MainWindow::on_btnModifier_clicked()
 
         setComboValue(ui->cbSpecialite, specialite);
 
-        setComboValue(ui->cbStatut, statut);
+        if (ui->cbStatut) {
+            const QString statusNorm = normalizedStatus(statut);
+            int idx = -1;
+            if (statusNorm.contains("indispon")) {
+                idx = ui->cbStatut->findText("En intervention", Qt::MatchContains);
+                if (idx < 0) idx = ui->cbStatut->findText("Conge", Qt::MatchContains);
+            } else {
+                idx = ui->cbStatut->findText("Disponible", Qt::MatchContains);
+            }
+            if (idx < 0 && ui->cbStatut->count() > 0) idx = 0;
+            if (idx >= 0) ui->cbStatut->setCurrentIndex(idx);
+        }
 
 
 
         if (auto *matItem = ui->tableEmployes->item(row, 0)) {
 
-            const QString email = matItem->data(Qt::UserRole + 1).toString().trimmed();
+            const QString email = matItem->data(EMP_ROLE_EMAIL).toString().trimmed();
 
-            const QString cin = matItem->data(Qt::UserRole + 2).toString().trimmed();
+            const QString cin = matItem->data(EMP_ROLE_CIN).toString().trimmed();
 
-            const QVariant salaireData = matItem->data(Qt::UserRole + 3);
+            const QVariant salaireData = matItem->data(EMP_ROLE_SALAIRE);
 
 
 
@@ -2398,106 +2695,107 @@ void MainWindow::on_btnSave_clicked()
 {
 
     if (!ui->tableEmployes)
-
         return;
-
-
 
     int row = currentEmployeRow;
 
     if (row < 0 || row >= ui->tableEmployes->rowCount()) {
-
         // Fallback: find row by matricule in case the tracked row was reset.
-
         const QString matriculeFromForm = ui->txtMatricule ? ui->txtMatricule->text().trimmed() : QString();
-
         if (!matriculeFromForm.isEmpty()) {
-
             for (int r = 0; r < ui->tableEmployes->rowCount(); ++r) {
-
                 if (auto *item = ui->tableEmployes->item(r, 0)) {
-
                     if (item->text().trimmed() == matriculeFromForm) {
-
                         row = r;
-
                         break;
-
                     }
-
                 }
-
             }
-
         }
-
     }
 
-
-
     if (row < 0 || row >= ui->tableEmployes->rowCount())
-
         return;
 
-
-
-    auto ensureItem = [this, row](int col) -> QTableWidgetItem* {
-
-        QTableWidgetItem *item = ui->tableEmployes->item(row, col);
-
-        if (!item) {
-
-            item = new QTableWidgetItem();
-
-            ui->tableEmployes->setItem(row, col, item);
-
-        }
-
-        return item;
-
-    };
-
-
-
     const QString matricule = ui->txtMatricule ? ui->txtMatricule->text().trimmed() : QString();
-
     const QString nom = ui->txtNom ? ui->txtNom->text().trimmed() : QString();
-
     const QString specialite = ui->cbSpecialite ? ui->cbSpecialite->currentText().trimmed() : QString();
-
     const QString statut = ui->cbStatut ? ui->cbStatut->currentText().trimmed() : QString();
-
     const QString email = ui->txtEmailModif ? ui->txtEmailModif->text().trimmed() : QString();
-
     const QString cin = ui->txtCIN_Modif ? ui->txtCIN_Modif->text().trimmed() : QString();
+    const int salaire = ui->sliderSalaire_Modif ? ui->sliderSalaire_Modif->value() : 1200;
 
-    const int salaire = ui->sliderSalaire_Modif ? ui->sliderSalaire_Modif->value() : 0;
+    if (nom.isEmpty()) {
+        QMessageBox::warning(this, "Modification", "Le nom est obligatoire.");
+        return;
+    }
 
+    if (email.isEmpty()) {
+        QMessageBox::warning(this, "Modification", "L'email est obligatoire.");
+        return;
+    }
 
+    if (!isValidEmail(email)) {
+        QMessageBox::warning(this, "Modification", "Format d'email invalide. Exemple: nom@domaine.com");
+        return;
+    }
 
-    QTableWidgetItem *matItem = ensureItem(0);
+    int idEmp = -1;
+    int perf = 0;
+    if (auto *matItem = ui->tableEmployes->item(row, 0)) {
+        idEmp = matItem->data(EMP_ROLE_ID).toInt();
+        perf = matItem->data(EMP_ROLE_PERF).toInt();
+    }
 
-    matItem->setText(matricule);
+    if (idEmp <= 0 && !matricule.isEmpty()) {
+        int foundId = -1;
+        if (Etmp.findIdByMatricule(matricule, foundId)) {
+            idEmp = foundId;
+        }
+    }
 
-    matItem->setData(Qt::UserRole + 1, email);
+    if (idEmp <= 0) {
+        QMessageBox::warning(this, "Modification", "ID employe introuvable, modification annulee.");
+        return;
+    }
 
-    matItem->setData(Qt::UserRole + 2, cin);
+    const QString disponibiliteDb = toDbDisponibilite(statut);
 
-    matItem->setData(Qt::UserRole + 3, salaire);
+    Etmp.setIdEmp(idEmp);
+    Etmp.setMatricule(matricule);
+    Etmp.setCin(cin);
+    Etmp.setNom(nom);
+    Etmp.setEmail(email);
+    Etmp.setSpecialite(specialite);
+    Etmp.setDisponibilite(disponibiliteDb);
+    if (!Etmp.modifier()) {
+        showFriendlySqlError(this, "modifier l'employe", Etmp.lastError());
+        return;
+    }
 
+    refreshEmployes();
 
+    int updatedRow = -1;
+    for (int r = 0; r < ui->tableEmployes->rowCount(); ++r) {
+        if (auto *item = ui->tableEmployes->item(r, 0)) {
+            if (item->data(EMP_ROLE_ID).toInt() == idEmp) {
+                updatedRow = r;
+                item->setData(EMP_ROLE_SALAIRE, salaire);
+                item->setData(EMP_ROLE_PERF, perf);
+                break;
+            }
+        }
+    }
 
-    ensureItem(1)->setText(nom);
+    if (updatedRow >= 0) {
+        ui->tableEmployes->selectRow(updatedRow);
+        currentEmployeRow = updatedRow;
+    } else {
+        currentEmployeRow = -1;
+    }
 
-    ensureItem(2)->setText(specialite);
-
-    ensureItem(3)->setText(statut);
-
-
-
-    ui->tableEmployes->selectRow(row);
-
-    currentEmployeRow = row;
+    if (m_isEmpCardView)
+        refreshEmpCardView();
 
     showEmployesPage();
 
@@ -2579,25 +2877,32 @@ void MainWindow::on_btnSupprimer_clicked()
 
         return;
 
+    int idEmp = -1;
+    if (auto *matItem = ui->tableEmployes->item(row, 0)) {
+        idEmp = matItem->data(EMP_ROLE_ID).toInt();
+    }
 
+    if (idEmp <= 0) {
+        QMessageBox::warning(this, "Suppression", "ID employe introuvable, suppression annulee.");
+        return;
+    }
 
-    ui->tableEmployes->removeRow(row);
+    if (!Etmp.supprimer(idEmp)) {
+        showFriendlySqlError(this, "supprimer l'employe", Etmp.lastError());
+        return;
+    }
 
-    refreshEmployeActionButtons();
-
-
+    refreshEmployes();
 
     currentEmployeRow = -1;
 
-
-
     if (ui->tableEmployes->rowCount() > 0) {
-
         const int rowToSelect = qMax(0, qMin(row, ui->tableEmployes->rowCount() - 1));
-
         ui->tableEmployes->selectRow(rowToSelect);
-
     }
+
+    if (m_isEmpCardView)
+        refreshEmpCardView();
 
 
 
@@ -2775,67 +3080,117 @@ void MainWindow::setupStatistics()
 
 {
 
-    QPieSeries *absenceSeries = new QPieSeries();
+    // --- GRAPHIQUE 1 : Répartition des interventions par STATUT (Pie Chart) ---
 
-    absenceSeries->append("Présent", 85);
+    QPieSeries *statutSeries = new QPieSeries();
 
-    absenceSeries->append("Absent", 15);
+    QSqlQuery queryStatut;
+
+    queryStatut.exec("SELECT STATUT, COUNT(*) FROM INTERVENTION GROUP BY STATUT ORDER BY STATUT");
+
+    QStringList pieColors;
+
+    pieColors << "#27ae60" << "#e67e22" << "#c0392b" << "#3498db" << "#9b59b6";
+
+    int colorIdx = 0;
+
+    while (queryStatut.next()) {
+
+        QString statut = queryStatut.value(0).toString();
+
+        int count = queryStatut.value(1).toInt();
+
+        statutSeries->append(statut, count);
+
+    }
+
+    for (auto *slice : statutSeries->slices()) {
+
+        slice->setLabelVisible(true);
+
+        slice->setBrush(QColor(pieColors.at(colorIdx % pieColors.size())));
+
+        slice->setLabelColor(Qt::black);
+
+        colorIdx++;
+
+    }
+
+    if (statutSeries->slices().size() == 0) {
+
+        statutSeries->append("Aucune donnée", 1);
+
+        statutSeries->slices().at(0)->setLabelVisible(true);
+
+        statutSeries->slices().at(0)->setBrush(QColor("#bdc3c7"));
+
+    }
 
 
 
-    QPieSlice *presentSlice = absenceSeries->slices().at(0);
+    QChart *statutChart = new QChart();
 
-    presentSlice->setLabelVisible(true);
+    statutChart->addSeries(statutSeries);
 
-    presentSlice->setBrush(QColor("#27ae60"));
+    statutChart->setTitle("Répartition des Interventions par Statut");
 
-    presentSlice->setLabelColor(Qt::black);
+    statutChart->setTitleFont(QFont("Segoe UI", 12, QFont::Bold));
 
+    statutChart->legend()->setAlignment(Qt::AlignBottom);
 
-
-    QPieSlice *absentSlice = absenceSeries->slices().at(1);
-
-    absentSlice->setLabelVisible(true);
-
-    absentSlice->setExploded(true);
-
-    absentSlice->setBrush(QColor("#c0392b"));
-
-    absentSlice->setLabelColor(Qt::black);
+    statutChart->setAnimationOptions(QChart::SeriesAnimations);
 
 
 
-    QChart *absenceChart = new QChart();
-
-    absenceChart->addSeries(absenceSeries);
-
-    absenceChart->setTitle("Taux de Présence Global");
-
-    absenceChart->setTitleFont(QFont("Segoe UI", 12, QFont::Bold));
-
-    absenceChart->legend()->setAlignment(Qt::AlignBottom);
-
-    absenceChart->setAnimationOptions(QChart::SeriesAnimations);
-
-
-
-    ui->chartViewAbsence->setChart(absenceChart);
+    ui->chartViewAbsence->setChart(statutChart);
 
     ui->chartViewAbsence->setRenderHint(QPainter::Antialiasing);
 
 
 
-    QBarSet *set0 = new QBarSet("Heures Travaillées");
+    // --- GRAPHIQUE 2 : Durée totale (heures) par TYPE d'intervention (Bar Chart) ---
 
-    *set0 << 40 << 35 << 42 << 38 << 45;
+    QBarSet *setDuree = new QBarSet("Durée totale (h)");
 
-    set0->setColor(QColor("#3498db"));
+    setDuree->setColor(QColor("#3498db"));
+
+    QStringList typeCategories;
+
+    double maxDuree = 0;
+
+
+
+    QSqlQuery queryType;
+
+    queryType.exec("SELECT TYPE, SUM(DUREE) FROM INTERVENTION GROUP BY TYPE ORDER BY TYPE");
+
+    while (queryType.next()) {
+
+        QString type = queryType.value(0).toString();
+
+        double totalDuree = queryType.value(1).toDouble();
+
+        typeCategories << type;
+
+        *setDuree << totalDuree;
+
+        if (totalDuree > maxDuree) maxDuree = totalDuree;
+
+    }
+
+    if (typeCategories.isEmpty()) {
+
+        typeCategories << "Aucune donnée";
+
+        *setDuree << 0;
+
+    }
 
 
 
     QBarSeries *workloadSeries = new QBarSeries();
 
-    workloadSeries->append(set0);
+    workloadSeries->append(setDuree);
 
 
 
@@ -2843,7 +3198,7 @@ void MainWindow::setupStatistics()
 
     workloadChart->addSeries(workloadSeries);
 
-    workloadChart->setTitle("Charge de Travail par Employé (Semaine)");
+    workloadChart->setTitle("Charge de Travail par Type d'Intervention");
 
     workloadChart->setTitleFont(QFont("Segoe UI", 12, QFont::Bold));
 
@@ -2853,13 +3208,9 @@ void MainWindow::setupStatistics()
 
 
 
-    QStringList categories;
-
-    categories << "Ali" << "Sara" << "Mohamed" << "Rania" << "Karim";
-
     QBarCategoryAxis *axisX = new QBarCategoryAxis();
 
-    axisX->append(categories);
+    axisX->append(typeCategories);
 
     workloadChart->addAxis(axisX, Qt::AlignBottom);
 
@@ -2869,9 +3220,9 @@ void MainWindow::setupStatistics()
 
     QValueAxis *axisY = new QValueAxis();
 
-    axisY->setRange(0, 50);
+    axisY->setRange(0, maxDuree > 0 ? maxDuree * 1.2 : 10);
 
-    axisY->setTitleText("Heures / Semaine");
+    axisY->setTitleText("Durée totale (heures)");
 
     workloadChart->addAxis(axisY, Qt::AlignLeft);
 
@@ -2885,7 +3236,33 @@ void MainWindow::setupStatistics()
 
 
 
-    updateTaskChart("Projet A");
+    // --- Remplir le ComboBox dynamiquement depuis les TYPES d'interventions ---
+
+    ui->cbProjetStats->blockSignals(true);
+
+    ui->cbProjetStats->clear();
+
+    QSqlQuery queryTypes;
+
+    queryTypes.exec("SELECT DISTINCT TYPE FROM INTERVENTION ORDER BY TYPE");
+
+    while (queryTypes.next()) {
+
+        ui->cbProjetStats->addItem(queryTypes.value(0).toString());
+
+    }
+
+    if (ui->cbProjetStats->count() == 0) {
+
+        ui->cbProjetStats->addItem("Aucun type");
+
+    }
+
+    ui->cbProjetStats->blockSignals(false);
+
+
+
+    updateTaskChart(ui->cbProjetStats->currentText());
 
 }
 
@@ -4801,45 +5178,49 @@ void MainWindow::updateTaskChart(const QString &projectName)
 
     QLineSeries *series = new QLineSeries();
 
-    series->setName("Tâches accomplies - " + projectName);
+    series->setName("Coût cumulé - " + projectName);
 
 
 
-    if (projectName == "Projet A") {
+    // Query interventions of this TYPE ordered by date
 
-        series->append(0, 12);
+    QSqlQuery query;
 
-        series->append(1, 18);
+    query.prepare("SELECT DATE_INTER, COUT FROM INTERVENTION WHERE UPPER(TYPE) = UPPER(:type) ORDER BY DATE_INTER");
 
-        series->append(2, 10);
+    query.bindValue(":type", projectName.trimmed());
 
-        series->append(3, 22);
+    double cumCost = 0;
 
-        series->append(4, 15);
+    int idx = 0;
 
-    } else if (projectName == "Projet B") {
+    QStringList dateLabels;
 
-        series->append(0, 5);
+    if (query.exec()) {
 
-        series->append(1, 8);
+        while (query.next()) {
 
-        series->append(2, 12);
+            double cout = query.value(1).toDouble();
 
-        series->append(3, 10);
+            cumCost += cout;
 
-        series->append(4, 20);
+            series->append(idx, cumCost);
 
-    } else {
+            dateLabels << query.value(0).toDate().toString("dd/MM");
 
-        series->append(0, 8);
+            idx++;
 
-        series->append(1, 15);
+        }
 
-        series->append(2, 18);
+    }
 
-        series->append(3, 12);
+    if (idx == 0) {
 
-        series->append(4, 25);
+        series->append(0, 0);
+
+        dateLabels << "N/A";
+
+        idx = 1;
 
     }
 
@@ -4849,7 +5230,7 @@ void MainWindow::updateTaskChart(const QString &projectName)
 
     chart->addSeries(series);
 
-    chart->setTitle("Progression : " + projectName);
+    chart->setTitle("Coût Cumulé : " + projectName);
 
     chart->setTitleFont(QFont("Segoe UI", 12, QFont::Bold));
 
@@ -4861,11 +5242,13 @@ void MainWindow::updateTaskChart(const QString &projectName)
 
     QValueAxis *axisX = new QValueAxis();
 
-    axisX->setTitleText("Jours");
+    axisX->setTitleText("Interventions");
 
     axisX->setLabelFormat("%d");
 
-    axisX->setTickCount(6);
+    axisX->setRange(0, idx > 1 ? idx - 1 : 1);
+
+    axisX->setTickCount(idx > 10 ? 10 : (idx > 1 ? idx : 2));
 
     chart->addAxis(axisX, Qt::AlignBottom);
 
@@ -4875,9 +5258,11 @@ void MainWindow::updateTaskChart(const QString &projectName)
 
     QValueAxis *axisY = new QValueAxis();
 
-    axisY->setTitleText("Tâches");
+    axisY->setTitleText("Coût cumulé (DT)");
 
-    axisY->setLabelFormat("%d");
+    axisY->setLabelFormat("%.0f");
+
+    axisY->setRange(0, cumCost > 0 ? cumCost * 1.2 : 10);
 
     chart->addAxis(axisY, Qt::AlignLeft);
 
@@ -5111,6 +5496,16 @@ void MainWindow::setupProduitModule()
 
         connect(b, &QPushButton::clicked, this, &MainWindow::goAffichage);
 
+    if (auto *b = root->findChild<QPushButton*>("prod_btnSave_Add")) {
+        disconnect(b, &QPushButton::clicked, this, &MainWindow::on_prod_btnSave_Add_clicked);
+        connect(b, &QPushButton::clicked, this, &MainWindow::on_prod_btnSave_Add_clicked);
+    }
+
+    if (auto *b = root->findChild<QPushButton*>("prod_btnSave_Mod")) {
+        disconnect(b, &QPushButton::clicked, this, &MainWindow::on_prod_btnSave_Mod_clicked);
+        connect(b, &QPushButton::clicked, this, &MainWindow::on_prod_btnSave_Mod_clicked);
+    }
+
 
 
     if (QTableWidget *t = produitTable()) {
@@ -5123,9 +5518,13 @@ void MainWindow::setupProduitModule()
             btnToggle->setCursor(Qt::PointingHandCursor);
         }
 
-        if (t->columnCount() < 8)
+        if (t->columnCount() != 7)
 
-            t->setColumnCount(8);
+            t->setColumnCount(7);
+
+        t->setHorizontalHeaderLabels({
+            "Reference", "Modele", "Capacite", "Prix (TND)", "Stock", "Etat", "Actions"
+        });
 
 
 
@@ -5139,11 +5538,9 @@ void MainWindow::setupProduitModule()
 
         t->horizontalHeader()->setSectionResizeMode(QHeaderView::Stretch);
 
-        // ACTIONS_COL is defined as 7
+        t->horizontalHeader()->setSectionResizeMode(ACTIONS_COL, QHeaderView::Fixed);
 
-        t->horizontalHeader()->setSectionResizeMode(7, QHeaderView::Fixed);
-
-        t->setColumnWidth(7, 180);
+        t->setColumnWidth(ACTIONS_COL, 180);
 
 
 
@@ -5465,37 +5862,58 @@ void MainWindow::addExampleRow()
     QTableWidget *t = produitTable();
     if (!t) return;
 
-    t->setRowCount(0); // Clear old ones
+    t->setRowCount(0);
 
-    auto setCell = [&](int r, int col, const QString &txt) {
-        auto *it = new QTableWidgetItem(txt);
-        it->setForeground(QBrush(Qt::black));
-        t->setItem(r, col, it);
-    };
-
-    struct Proto { QString ref; QString model; QString type; QString cap; QString price; QString stock; QString etat; QString cur; QString max; QString aisle; };
-    QList<Proto> data = {
-        {"WG-101", "Bac Intelligent 120L",   "Extérieur", "120 L",  "850",  "45", "Actif",       "40", "120", "A1"},
-        {"WG-102", "Bac Connecté 240L",       "Capteur",   "240 L",  "1200", "25", "Actif",       "25",  "40", "B3"},
-        {"WG-103", "Colonne Enterrée 3 FLUX", "Industriel","3 Flux", "3400",  "0", "Maintenance",  "0", "100", "C2"},
-        {"WG-104", "Bac Solaire Compacteur",  "Urbain",    "150 L",  "1800", "12", "Actif",       "12",  "30", "A4"},
-        {"WG-105", "BioCollector Pro",        "Organique", "45 L",    "380", "60", "Stock",       "45",  "45", "D1"}
-    };
-
-    for (int i = 0; i < data.size(); ++i) {
-        t->insertRow(i);
-        setCell(i, 0, data[i].ref);
-        setCell(i, 1, data[i].model);
-        setCell(i, 2, data[i].type);
-        setCell(i, 3, data[i].cap);
-        setCell(i, 4, data[i].price);
-        setCell(i, 5, data[i].stock);
-        setCell(i, 6, data[i].etat);
-        // Store hidden capacity + aisle data in UserRole
-        t->item(i, 0)->setData(Qt::UserRole,     data[i].cur);
-        t->item(i, 0)->setData(Qt::UserRole + 1, data[i].max);
-        t->item(i, 0)->setData(Qt::UserRole + 2, data[i].aisle);
+    QSqlQueryModel *model = Ptmp.afficher();
+    if (!model) {
+        showFriendlySqlError(this, "charger les produits", "Modele SQL indisponible.");
+        return;
     }
+
+    if (model->lastError().isValid()) {
+        showFriendlySqlError(this, "charger les produits", model->lastError().text());
+        delete model;
+        return;
+    }
+
+    for (int i = 0; i < model->rowCount(); ++i) {
+        const int id = model->data(model->index(i, 0)).toInt();
+        const QString reference = model->data(model->index(i, 1)).toString().trimmed();
+        const QString modele = model->data(model->index(i, 2)).toString().trimmed();
+        const int quantite = model->data(model->index(i, 3)).toInt();
+        const int capacite = model->data(model->index(i, 4)).toInt();
+        const double prix = model->data(model->index(i, 5)).toDouble();
+        const int battery = model->data(model->index(i, 6)).toInt();
+
+        const QString etat = productStatusFromQty(quantite);
+        const QString aisle = QString("A%1").arg((i % 6) + 1);
+
+        const int row = t->rowCount();
+        t->insertRow(row);
+
+        auto setCell = [&](int col, const QString &txt) {
+            auto *it = new QTableWidgetItem(txt);
+            it->setForeground(QBrush(Qt::black));
+            t->setItem(row, col, it);
+        };
+
+        setCell(0, reference);
+        setCell(1, modele);
+        setCell(2, QString("%1 L").arg(capacite));
+        setCell(3, QString::number(prix, 'f', 2));
+        setCell(4, QString::number(quantite));
+        setCell(5, etat);
+
+        if (auto *refItem = t->item(row, 0)) {
+            refItem->setData(PROD_ROLE_CUR, quantite);
+            refItem->setData(PROD_ROLE_MAX, qMax(1, capacite));
+            refItem->setData(PROD_ROLE_AISLE, aisle);
+            refItem->setData(PROD_ROLE_ID, id);
+            refItem->setData(PROD_ROLE_BATTERY, battery > 0 ? battery : 12000);
+        }
+    }
+
+    delete model;
 }
 
 
@@ -5632,8 +6050,7 @@ void MainWindow::handleEditClicked()
 
     if (row < 0 || row >= t->rowCount()) return;
 
-
-
+    loadProduitToModificationForm(row);
     goModification();
 
 }
@@ -5666,12 +6083,229 @@ void MainWindow::handleDeleteClicked()
 
         return;
 
+    int idProduit = -1;
+    QString reference;
+    if (auto *refItem = t->item(row, 0)) {
+        idProduit = refItem->data(PROD_ROLE_ID).toInt();
+        reference = refItem->text().trimmed();
+    }
 
+    if (idProduit <= 0 && !reference.isEmpty()) {
+        int foundId = -1;
+        if (Ptmp.findIdByReference(reference, foundId)) {
+            idProduit = foundId;
+        }
+    }
 
-    t->removeRow(row);
+    if (idProduit <= 0) {
+        QMessageBox::warning(this, "Suppression", "ID produit introuvable, suppression annulee.");
+        return;
+    }
 
+    if (!Ptmp.supprimer(idProduit)) {
+        showFriendlySqlError(this, "supprimer le produit", Ptmp.lastError());
+        return;
+    }
+
+    addExampleRow();
+    refreshActionButtons();
+    if (m_isCardView) refreshCardView();
+
+}
+
+void MainWindow::loadProduitToModificationForm(int row)
+{
+    QTableWidget *t = produitTable();
+    if (!t || row < 0 || row >= t->rowCount()) return;
+
+    currentProduitRow = row;
+    t->selectRow(row);
+
+    const QString reference = t->item(row, 0) ? t->item(row, 0)->text().trimmed() : QString();
+    const QString modele = t->item(row, 1) ? t->item(row, 1)->text().trimmed() : QString();
+    const QString status = t->item(row, 5) ? t->item(row, 5)->text().trimmed() : QString("En Stock");
+    const int quantite = t->item(row, 4) ? t->item(row, 4)->text().trimmed().toInt() : 0;
+    const double prix = t->item(row, 3) ? t->item(row, 3)->text().trimmed().toDouble() : 0.0;
+    const int capacite = t->item(row, 0) ? t->item(row, 0)->data(PROD_ROLE_MAX).toInt() : 100;
+    const int battery = t->item(row, 0) ? t->item(row, 0)->data(PROD_ROLE_BATTERY).toInt() : 12000;
+
+    if (ui->prod_ln_ref_mod) ui->prod_ln_ref_mod->setText(reference);
+    if (ui->prod_dsb_price_mod) ui->prod_dsb_price_mod->setValue(prix);
+    if (ui->prod_sb_qty_mod) ui->prod_sb_qty_mod->setValue(quantite);
+    if (ui->prod_slider_cap_mod) ui->prod_slider_cap_mod->setValue(qMax(ui->prod_slider_cap_mod->minimum(), qMin(ui->prod_slider_cap_mod->maximum(), capacite)));
+    if (ui->prod_slider_bat_mod) ui->prod_slider_bat_mod->setValue(qMax(ui->prod_slider_bat_mod->minimum(), qMin(ui->prod_slider_bat_mod->maximum(), battery)));
+
+    setComboTextSafe(ui->prod_cb_model_mod, modele);
+    setComboTextSafe(ui->prod_cb_status_mod, status);
+    if (ui->prod_lstCharacteristics_mod) ui->prod_lstCharacteristics_mod->clearSelection();
+}
+
+void MainWindow::on_prod_btnSave_Add_clicked()
+{
+    QTableWidget *t = produitTable();
+    if (!t) return;
+
+    QString reference = ui->prod_ln_ref_add ? ui->prod_ln_ref_add->text().trimmed() : QString();
+    if (reference.isEmpty()) {
+        QWidget *scope = produitRoot();
+        if (auto *sw = produitStacked()) {
+            if (QWidget *current = sw->currentWidget()) scope = current;
+        }
+        reference = firstNonEmptyLineEditText(scope, {"prod_ln_ref_add", "inputRef_add", "ln_ref_add_2", "ln_ref_add_4"});
+    }
+    const QString modele = ui->prod_cb_model_add ? ui->prod_cb_model_add->currentText().trimmed() : QString();
+    const int quantite = ui->prod_sb_qty_add ? ui->prod_sb_qty_add->value() : 0;
+    const int capacite = ui->prod_slider_cap_add ? ui->prod_slider_cap_add->value() : 100;
+    const double prix = ui->prod_dsb_price_add ? ui->prod_dsb_price_add->value() : 0.0;
+    const int battery = ui->prod_slider_bat_add ? ui->prod_slider_bat_add->value() : 12000;
+    const QString status = ui->prod_cb_status_add ? ui->prod_cb_status_add->currentText().trimmed() : QString("En Stock");
+
+    if (reference.isEmpty()) {
+        QMessageBox::warning(this, "Ajout Produit", "La reference est obligatoire.");
+        return;
+    }
+    if (modele.isEmpty()) {
+        QMessageBox::warning(this, "Ajout Produit", "Le modele est obligatoire.");
+        return;
+    }
+    if (prix <= 0.0) {
+        QMessageBox::warning(this, "Ajout Produit", "Le prix doit etre strictement positif.");
+        return;
+    }
+
+    Ptmp.setIdMp(0);
+    Ptmp.setReference(reference);
+    Ptmp.setNom(modele);
+    Ptmp.setQuantite(quantite);
+    Ptmp.setCapacite(capacite);
+    Ptmp.setPrix(prix);
+    Ptmp.setCapaciteBatterie(battery);
+
+    if (!Ptmp.ajouter()) {
+        showFriendlySqlError(this, "ajouter le produit", Ptmp.lastError());
+        return;
+    }
+
+    addExampleRow();
     refreshActionButtons();
 
+    for (int r = 0; r < t->rowCount(); ++r) {
+        if (auto *it = t->item(r, 0)) {
+            if (it->text().trimmed() == reference) {
+                it->setData(PROD_ROLE_BATTERY, battery);
+                setComboTextSafe(ui->prod_cb_status_add, status);
+                if (auto *statusItem = t->item(r, 5)) {
+                    statusItem->setText(resolvedProductStatus(status, quantite));
+                }
+                t->selectRow(r);
+                currentProduitRow = r;
+                break;
+            }
+        }
+    }
+
+    if (m_isCardView) refreshCardView();
+
+    if (ui->prod_ln_ref_add) ui->prod_ln_ref_add->clear();
+    if (ui->prod_dsb_price_add) ui->prod_dsb_price_add->setValue(0.0);
+    if (ui->prod_sb_qty_add) ui->prod_sb_qty_add->setValue(0);
+    if (ui->prod_slider_cap_add) ui->prod_slider_cap_add->setValue(qMax(0, ui->prod_slider_cap_add->maximum() / 2));
+    if (ui->prod_slider_bat_add) ui->prod_slider_bat_add->setValue(10000);
+    if (ui->prod_lstCharacteristics) ui->prod_lstCharacteristics->clearSelection();
+
+    goAffichage();
+}
+
+void MainWindow::on_prod_btnSave_Mod_clicked()
+{
+    QTableWidget *t = produitTable();
+    if (!t) return;
+
+    int row = currentProduitRow;
+    if (row < 0 || row >= t->rowCount()) {
+        row = t->currentRow();
+    }
+    if (row < 0 || row >= t->rowCount()) {
+        QMessageBox::warning(this, "Modification Produit", "Aucun produit selectionne.");
+        return;
+    }
+
+    QString reference = ui->prod_ln_ref_mod ? ui->prod_ln_ref_mod->text().trimmed() : QString();
+    if (reference.isEmpty()) {
+        QWidget *scope = produitRoot();
+        if (auto *sw = produitStacked()) {
+            if (QWidget *current = sw->currentWidget()) scope = current;
+        }
+        reference = firstNonEmptyLineEditText(scope, {"prod_ln_ref_mod", "inputRef_mod"});
+    }
+    const QString modele = ui->prod_cb_model_mod ? ui->prod_cb_model_mod->currentText().trimmed() : QString();
+    const int quantite = ui->prod_sb_qty_mod ? ui->prod_sb_qty_mod->value() : 0;
+    const int capacite = ui->prod_slider_cap_mod ? ui->prod_slider_cap_mod->value() : 100;
+    const double prix = ui->prod_dsb_price_mod ? ui->prod_dsb_price_mod->value() : 0.0;
+    const int battery = ui->prod_slider_bat_mod ? ui->prod_slider_bat_mod->value() : 12000;
+    const QString status = ui->prod_cb_status_mod ? ui->prod_cb_status_mod->currentText().trimmed() : QString("En Stock");
+
+    if (reference.isEmpty()) {
+        QMessageBox::warning(this, "Modification Produit", "La reference est obligatoire.");
+        return;
+    }
+    if (modele.isEmpty()) {
+        QMessageBox::warning(this, "Modification Produit", "Le modele est obligatoire.");
+        return;
+    }
+    if (prix <= 0.0) {
+        QMessageBox::warning(this, "Modification Produit", "Le prix doit etre strictement positif.");
+        return;
+    }
+
+    int idProduit = -1;
+    if (auto *it = t->item(row, 0)) {
+        idProduit = it->data(PROD_ROLE_ID).toInt();
+    }
+    if (idProduit <= 0 && !reference.isEmpty()) {
+        int foundId = -1;
+        if (Ptmp.findIdByReference(reference, foundId)) {
+            idProduit = foundId;
+        }
+    }
+    if (idProduit <= 0) {
+        QMessageBox::warning(this, "Modification Produit", "ID produit introuvable.");
+        return;
+    }
+
+    Ptmp.setIdMp(idProduit);
+    Ptmp.setReference(reference);
+    Ptmp.setNom(modele);
+    Ptmp.setQuantite(quantite);
+    Ptmp.setCapacite(capacite);
+    Ptmp.setPrix(prix);
+    Ptmp.setCapaciteBatterie(battery);
+
+    if (!Ptmp.modifier()) {
+        showFriendlySqlError(this, "modifier le produit", Ptmp.lastError());
+        return;
+    }
+
+    addExampleRow();
+    refreshActionButtons();
+
+    for (int r = 0; r < t->rowCount(); ++r) {
+        if (auto *it = t->item(r, 0)) {
+            if (it->data(PROD_ROLE_ID).toInt() == idProduit || it->text().trimmed() == reference) {
+                it->setData(PROD_ROLE_BATTERY, battery);
+                if (auto *statusItem = t->item(r, 5)) {
+                    statusItem->setText(resolvedProductStatus(status, quantite));
+                }
+                t->selectRow(r);
+                currentProduitRow = r;
+                break;
+            }
+        }
+    }
+
+    if (m_isCardView) refreshCardView();
+    setComboTextSafe(ui->prod_cb_status_mod, status);
+    goAffichage();
 }
 
 
@@ -5692,42 +6326,24 @@ void MainWindow::setupMaintenanceModule() {
 
     if (auto* table = maintenanceTable()) {
 
-        table->setColumnCount(7);
+        table->setColumnCount(10);
 
-        QStringList headers = { "Reference", "Date", "Technicien", "Coût", "Durée", "Priorité", "Actions" };
+        QStringList headers = { "", "Reference", "Date", "Statut", "Coût", "Durée", "Priorité", "Actions", "", "" };
 
         table->setHorizontalHeaderLabels(headers);
 
         table->horizontalHeader()->setSectionResizeMode(QHeaderView::Stretch);
 
+        table->horizontalHeader()->setSectionResizeMode(0, QHeaderView::Fixed);
+        table->setColumnWidth(0, 40);
+
+        table->setColumnHidden(8, true); // hidden column for ID_INTER
+
+        table->setColumnHidden(9, true); // hidden column for TYPE
+
         table->setRowCount(0);
 
-        
-
-        // Maintenance interventions data
-        struct MaintData { QString ref, date, tech, cout, duree, priorite; };
-        QList<MaintData> items = {
-            {"INT-001", "2024-01-15", "Ahmed Ali",       "150 TND", "2h",   "Normale"},
-            {"INT-002", "2024-01-22", "Sami Jebali",     "320 TND", "5h",   "Urgente"},
-            {"INT-003", "2024-02-03", "Karim Bouazizi",  "85 TND",  "1h30", "Normale"},
-            {"INT-004", "2024-02-10", "Mohamed Trabelsi","500 TND", "8h",   "Critique"},
-            {"INT-005", "2024-02-18", "Ahmed Ali",       "200 TND", "3h",   "Urgente"},
-            {"INT-006", "2024-03-01", "Youssef Hamdi",   "120 TND", "2h",   "Normale"},
-            {"INT-007", "2024-03-12", "Sami Jebali",     "450 TND", "6h",   "Critique"},
-            {"INT-008", "2024-03-20", "Karim Bouazizi",  "75 TND",  "1h",   "Normale"},
-            {"INT-009", "2024-04-05", "Mohamed Trabelsi","280 TND", "4h",   "Urgente"}
-        };
-        for (const auto &m : items) {
-            int row = table->rowCount();
-            table->insertRow(row);
-            table->setItem(row, 0, new QTableWidgetItem(m.ref));
-            table->setItem(row, 1, new QTableWidgetItem(m.date));
-            table->setItem(row, 2, new QTableWidgetItem(m.tech));
-            table->setItem(row, 3, new QTableWidgetItem(m.cout));
-            table->setItem(row, 4, new QTableWidgetItem(m.duree));
-            table->setItem(row, 5, new QTableWidgetItem(m.priorite));
-        }
-        refreshMaintActionButtons();
+        refreshInterventions();
 
     }
 
@@ -5737,6 +6353,174 @@ void MainWindow::setupMaintenanceModule() {
 
     if (ui->btnSave_Mod) connect(ui->btnSave_Mod, &QPushButton::clicked, this, &MainWindow::on_btnSave_Mod_clicked);
 
+    // Make photo labels clickable via event filter
+    if (ui->lblImgPreview_Add) {
+        ui->lblImgPreview_Add->setCursor(Qt::PointingHandCursor);
+        ui->lblImgPreview_Add->installEventFilter(this);
+    }
+    if (ui->lblImgPreview2_Add) {
+        ui->lblImgPreview2_Add->setCursor(Qt::PointingHandCursor);
+        ui->lblImgPreview2_Add->installEventFilter(this);
+    }
+    if (ui->lblImgPreview_Mod) {
+        ui->lblImgPreview_Mod->setCursor(Qt::PointingHandCursor);
+        ui->lblImgPreview_Mod->installEventFilter(this);
+    }
+
+    // Connect Rapport PDF button
+    if (ui->btnPdf) connect(ui->btnPdf, &QPushButton::clicked, this, &MainWindow::generateMaintenancePdf);
+
+}
+
+bool MainWindow::eventFilter(QObject *obj, QEvent *event) {
+    if (event->type() == QEvent::MouseButtonPress) {
+        // --- Photos Avant label ---
+        if (obj == ui->lblImgPreview_Add) {
+            if (!m_photoAvantPath.isEmpty()) {
+                // Photo already loaded → show fullscreen preview dialog
+                QDialog dlg(this);
+                dlg.setWindowTitle("Photos Avant");
+                dlg.setMinimumSize(600, 500);
+                QVBoxLayout *lay = new QVBoxLayout(&dlg);
+                QLabel *imgLbl = new QLabel(&dlg);
+                QPixmap pix(m_photoAvantPath);
+                imgLbl->setPixmap(pix.scaled(580, 460, Qt::KeepAspectRatio, Qt::SmoothTransformation));
+                imgLbl->setAlignment(Qt::AlignCenter);
+                lay->addWidget(imgLbl);
+                QPushButton *btnClose = new QPushButton("Fermer", &dlg);
+                btnClose->setStyleSheet("background-color:#e74c3c; color:white; border-radius:6px; padding:8px 20px; font-weight:bold;");
+                connect(btnClose, &QPushButton::clicked, &dlg, &QDialog::accept);
+                lay->addWidget(btnClose, 0, Qt::AlignCenter);
+                QPushButton *btnChange = new QPushButton("Changer la photo", &dlg);
+                btnChange->setStyleSheet("background-color:#3498db; color:white; border-radius:6px; padding:8px 20px; font-weight:bold;");
+                connect(btnChange, &QPushButton::clicked, [&]() { dlg.done(2); });
+                lay->addWidget(btnChange, 0, Qt::AlignCenter);
+                int result = dlg.exec();
+                if (result == 2) {
+                    // User wants to change the photo
+                    QString file = QFileDialog::getOpenFileName(this, "Sélectionner Photo Avant",
+                        QString(), "Images (*.png *.jpg *.jpeg *.bmp *.gif)");
+                    if (!file.isEmpty()) {
+                        m_photoAvantPath = file;
+                        QPixmap pm(file);
+                        ui->lblImgPreview_Add->setPixmap(pm.scaled(
+                            ui->lblImgPreview_Add->width() - 10,
+                            ui->lblImgPreview_Add->height() - 10,
+                            Qt::KeepAspectRatio, Qt::SmoothTransformation));
+                    }
+                }
+            } else {
+                // No photo yet → open file dialog
+                QString file = QFileDialog::getOpenFileName(this, "Sélectionner Photo Avant",
+                    QString(), "Images (*.png *.jpg *.jpeg *.bmp *.gif)");
+                if (!file.isEmpty()) {
+                    m_photoAvantPath = file;
+                    QPixmap pm(file);
+                    ui->lblImgPreview_Add->setPixmap(pm.scaled(
+                        ui->lblImgPreview_Add->width() - 10,
+                        ui->lblImgPreview_Add->height() - 10,
+                        Qt::KeepAspectRatio, Qt::SmoothTransformation));
+                }
+            }
+            return true;
+        }
+        // --- Photos Après label ---
+        if (obj == ui->lblImgPreview2_Add) {
+            if (!m_photoApresPath.isEmpty()) {
+                // Photo already loaded → show fullscreen preview dialog
+                QDialog dlg(this);
+                dlg.setWindowTitle("Photos Après");
+                dlg.setMinimumSize(600, 500);
+                QVBoxLayout *lay = new QVBoxLayout(&dlg);
+                QLabel *imgLbl = new QLabel(&dlg);
+                QPixmap pix(m_photoApresPath);
+                imgLbl->setPixmap(pix.scaled(580, 460, Qt::KeepAspectRatio, Qt::SmoothTransformation));
+                imgLbl->setAlignment(Qt::AlignCenter);
+                lay->addWidget(imgLbl);
+                QPushButton *btnClose = new QPushButton("Fermer", &dlg);
+                btnClose->setStyleSheet("background-color:#e74c3c; color:white; border-radius:6px; padding:8px 20px; font-weight:bold;");
+                connect(btnClose, &QPushButton::clicked, &dlg, &QDialog::accept);
+                lay->addWidget(btnClose, 0, Qt::AlignCenter);
+                QPushButton *btnChange = new QPushButton("Changer la photo", &dlg);
+                btnChange->setStyleSheet("background-color:#3498db; color:white; border-radius:6px; padding:8px 20px; font-weight:bold;");
+                connect(btnChange, &QPushButton::clicked, [&]() { dlg.done(2); });
+                lay->addWidget(btnChange, 0, Qt::AlignCenter);
+                int result = dlg.exec();
+                if (result == 2) {
+                    QString file = QFileDialog::getOpenFileName(this, "Sélectionner Photo Après",
+                        QString(), "Images (*.png *.jpg *.jpeg *.bmp *.gif)");
+                    if (!file.isEmpty()) {
+                        m_photoApresPath = file;
+                        QPixmap pm(file);
+                        ui->lblImgPreview2_Add->setPixmap(pm.scaled(
+                            ui->lblImgPreview2_Add->width() - 10,
+                            ui->lblImgPreview2_Add->height() - 10,
+                            Qt::KeepAspectRatio, Qt::SmoothTransformation));
+                    }
+                }
+            } else {
+                QString file = QFileDialog::getOpenFileName(this, "Sélectionner Photo Après",
+                    QString(), "Images (*.png *.jpg *.jpeg *.bmp *.gif)");
+                if (!file.isEmpty()) {
+                    m_photoApresPath = file;
+                    QPixmap pm(file);
+                    ui->lblImgPreview2_Add->setPixmap(pm.scaled(
+                        ui->lblImgPreview2_Add->width() - 10,
+                        ui->lblImgPreview2_Add->height() - 10,
+                        Qt::KeepAspectRatio, Qt::SmoothTransformation));
+                }
+            }
+            return true;
+        }
+        // --- Photos Avant / Après on Modify page ---
+        if (obj == ui->lblImgPreview_Mod) {
+            if (!m_photoModPath.isEmpty()) {
+                QDialog dlg(this);
+                dlg.setWindowTitle("Photos Avant / Après");
+                dlg.setMinimumSize(600, 500);
+                QVBoxLayout *lay = new QVBoxLayout(&dlg);
+                QLabel *imgLbl = new QLabel(&dlg);
+                QPixmap pix(m_photoModPath);
+                imgLbl->setPixmap(pix.scaled(580, 460, Qt::KeepAspectRatio, Qt::SmoothTransformation));
+                imgLbl->setAlignment(Qt::AlignCenter);
+                lay->addWidget(imgLbl);
+                QPushButton *btnClose = new QPushButton("Fermer", &dlg);
+                btnClose->setStyleSheet("background-color:#e74c3c; color:white; border-radius:6px; padding:8px 20px; font-weight:bold;");
+                connect(btnClose, &QPushButton::clicked, &dlg, &QDialog::accept);
+                lay->addWidget(btnClose, 0, Qt::AlignCenter);
+                QPushButton *btnChange = new QPushButton("Changer la photo", &dlg);
+                btnChange->setStyleSheet("background-color:#3498db; color:white; border-radius:6px; padding:8px 20px; font-weight:bold;");
+                connect(btnChange, &QPushButton::clicked, [&]() { dlg.done(2); });
+                lay->addWidget(btnChange, 0, Qt::AlignCenter);
+                int result = dlg.exec();
+                if (result == 2) {
+                    QString file = QFileDialog::getOpenFileName(this, "Sélectionner Photo",
+                        QString(), "Images (*.png *.jpg *.jpeg *.bmp *.gif)");
+                    if (!file.isEmpty()) {
+                        m_photoModPath = file;
+                        QPixmap pm(file);
+                        ui->lblImgPreview_Mod->setPixmap(pm.scaled(
+                            ui->lblImgPreview_Mod->width() - 10,
+                            ui->lblImgPreview_Mod->height() - 10,
+                            Qt::KeepAspectRatio, Qt::SmoothTransformation));
+                    }
+                }
+            } else {
+                QString file = QFileDialog::getOpenFileName(this, "Sélectionner Photo",
+                    QString(), "Images (*.png *.jpg *.jpeg *.bmp *.gif)");
+                if (!file.isEmpty()) {
+                    m_photoModPath = file;
+                    QPixmap pm(file);
+                    ui->lblImgPreview_Mod->setPixmap(pm.scaled(
+                        ui->lblImgPreview_Mod->width() - 10,
+                        ui->lblImgPreview_Mod->height() - 10,
+                        Qt::KeepAspectRatio, Qt::SmoothTransformation));
+                }
+            }
+            return true;
+        }
+    }
+    return QMainWindow::eventFilter(obj, event);
 }
 
 
@@ -5809,7 +6593,7 @@ void MainWindow::installMaintActionButtonsForRow(int row) {
 
 
 
-    table->setCellWidget(row, 6, pWidget);
+    table->setCellWidget(row, 7, pWidget);
 
 }
 
@@ -5821,27 +6605,55 @@ void MainWindow::on_btnSave_Add_clicked() {
 
     if (!table) return;
 
+    if (ui->editRefAdd->text().trimmed().isEmpty()) {
+        QMessageBox::warning(this, "Champ Manquant", "Veuillez remplir la référence.");
+        return;
+    }
 
+    // Parse duration from combobox ("2 heures" → 2.0)
+    QString durStr = ui->comboDurAdd->currentText();
+    double duree = durStr.split(" ").first().toDouble();
 
-    int row = table->rowCount();
+    // Resolve id_bac: try to match address to a BAC localisation, otherwise use first available BAC
+    int idBac = 0;
+    QString addr = ui->editAddrAdd->text().trimmed();
+    if (!addr.isEmpty()) {
+        QSqlQuery qBac;
+        qBac.prepare("SELECT ID_BAC FROM BAC_INTEL WHERE UPPER(LOCALISATION_STOCK) LIKE '%' || UPPER(:addr) || '%' AND ROWNUM = 1");
+        qBac.bindValue(":addr", addr);
+        if (qBac.exec() && qBac.next()) {
+            idBac = qBac.value(0).toInt();
+        }
+    }
+    if (idBac <= 0) {
+        // Fallback: pick the first available BAC
+        QSqlQuery qFirst;
+        if (qFirst.exec("SELECT ID_BAC FROM BAC_INTEL WHERE ROWNUM = 1") && qFirst.next()) {
+            idBac = qFirst.value(0).toInt();
+        }
+    }
+    if (idBac <= 0) {
+        QMessageBox::warning(this, "Erreur", "Aucun bac intelligent trouvé dans la base.\nVeuillez d'abord ajouter un produit (Bac).");
+        return;
+    }
 
-    table->insertRow(row);
+    INTtmp.setIdInter(0); // auto-generate
+    INTtmp.setReference(ui->editRefAdd->text().trimmed());
+    INTtmp.setDateInter(ui->dateAdd->date());
+    INTtmp.setStatut("En cours");
+    INTtmp.setCout(ui->spinCoutAdd->value());
+    INTtmp.setDuree(duree);
+    INTtmp.setPriorite(ui->comboPrioAdd->currentText());
+    INTtmp.setType(ui->editTechAdd->text().trimmed().isEmpty() ? "Maintenance" : ui->editTechAdd->text().trimmed());
+    INTtmp.setIdBac(idBac);
 
-    table->setItem(row, 0, new QTableWidgetItem(ui->editRefAdd->text()));
-
-    table->setItem(row, 1, new QTableWidgetItem(ui->dateAdd->date().toString("yyyy-MM-dd")));
-
-    table->setItem(row, 2, new QTableWidgetItem(ui->editTechAdd->text()));
-
-    table->setItem(row, 3, new QTableWidgetItem(QString::number(ui->spinCoutAdd->value()) + " DT"));
-
-    table->setItem(row, 4, new QTableWidgetItem(ui->comboDurAdd->currentText()));
-
-    table->setItem(row, 5, new QTableWidgetItem(ui->comboPrioAdd->currentText()));
-
-
-
-    installMaintActionButtonsForRow(row);
+    if (INTtmp.ajouter()) {
+        QMessageBox::information(this, "Succès", "Intervention ajoutée avec succès.");
+        refreshInterventions();
+        setupStatistics();
+    } else {
+        QMessageBox::critical(this, "Erreur", "Echec ajout intervention:\n" + INTtmp.lastError());
+    }
 
     ui->stackedWidget_Maintenance->setCurrentWidget(ui->page_Maint_Dash);
 
@@ -5853,7 +6665,21 @@ void MainWindow::on_btnSave_Add_clicked() {
 
     ui->editTechAdd->clear();
 
+    ui->editAddrAdd->clear();
+
     ui->spinCoutAdd->setValue(0);
+
+    // Reset photo labels
+    m_photoAvantPath.clear();
+    m_photoApresPath.clear();
+    if (ui->lblImgPreview_Add) {
+        ui->lblImgPreview_Add->setPixmap(QPixmap());
+        ui->lblImgPreview_Add->setText("Cliquez ou déposez vos images ici pour les télécharger");
+    }
+    if (ui->lblImgPreview2_Add) {
+        ui->lblImgPreview2_Add->setPixmap(QPixmap());
+        ui->lblImgPreview2_Add->setText("Cliquez ou déposez vos images ici pour les télécharger");
+    }
 
 }
 
@@ -5865,23 +6691,68 @@ void MainWindow::on_btnSave_Mod_clicked() {
 
     if (!table || currentMaintRow < 0) return;
 
+    // Get stored ID from hidden column
+    int idInter = 0;
+    QTableWidgetItem *idItem = table->item(currentMaintRow, 8);
+    if (idItem) idInter = idItem->text().toInt();
 
+    // Parse duration
+    QString durStr = ui->comboDurMod->currentText();
+    double duree = durStr.split(" ").first().toDouble();
 
-    table->item(currentMaintRow, 0)->setText(ui->editRefMod->text());
+    // Resolve id_bac: try to match address, otherwise keep current or use first BAC
+    int idBac = 0;
+    QString addr = ui->editAddrMod->text().trimmed();
+    if (!addr.isEmpty()) {
+        QSqlQuery qBac;
+        qBac.prepare("SELECT ID_BAC FROM BAC_INTEL WHERE UPPER(LOCALISATION_STOCK) LIKE '%' || UPPER(:addr) || '%' AND ROWNUM = 1");
+        qBac.bindValue(":addr", addr);
+        if (qBac.exec() && qBac.next()) {
+            idBac = qBac.value(0).toInt();
+        }
+    }
+    if (idBac <= 0) {
+        // Try to keep the existing id_bac from the current intervention
+        QSqlQuery qCur;
+        qCur.prepare("SELECT ID_BAC FROM INTERVENTION WHERE ID_INTER = :id");
+        qCur.bindValue(":id", idInter);
+        if (qCur.exec() && qCur.next()) {
+            idBac = qCur.value(0).toInt();
+        }
+    }
+    if (idBac <= 0) {
+        QSqlQuery qFirst;
+        if (qFirst.exec("SELECT ID_BAC FROM BAC_INTEL WHERE ROWNUM = 1") && qFirst.next()) {
+            idBac = qFirst.value(0).toInt();
+        }
+    }
 
-    table->item(currentMaintRow, 1)->setText(ui->dateMod->date().toString("yyyy-MM-dd"));
+    INTtmp.setIdInter(idInter);
+    INTtmp.setReference(ui->editRefMod->text().trimmed());
+    INTtmp.setDateInter(ui->dateMod->date());
+    INTtmp.setStatut("En cours");
+    INTtmp.setCout(ui->spinCoutMod->value());
+    INTtmp.setDuree(duree);
+    INTtmp.setPriorite(ui->comboPrioMod->currentText());
+    INTtmp.setType(ui->editTechMod->text().trimmed().isEmpty() ? "Maintenance" : ui->editTechMod->text().trimmed());
+    INTtmp.setIdBac(idBac);
 
-    table->item(currentMaintRow, 2)->setText(ui->editTechMod->text());
-
-    table->item(currentMaintRow, 3)->setText(QString::number(ui->spinCoutMod->value()) + " DT");
-
-    table->item(currentMaintRow, 4)->setText(ui->comboDurMod->currentText());
-
-    table->item(currentMaintRow, 5)->setText(ui->comboPrioMod->currentText());
-
-
+    if (INTtmp.modifier()) {
+        QMessageBox::information(this, "Succès", "Intervention modifiée avec succès.");
+        refreshInterventions();
+        setupStatistics();
+    } else {
+        QMessageBox::critical(this, "Erreur", "Echec modification intervention:\n" + INTtmp.lastError());
+    }
 
     ui->stackedWidget_Maintenance->setCurrentWidget(ui->page_Maint_Dash);
+
+    // Reset modify photo
+    m_photoModPath.clear();
+    if (ui->lblImgPreview_Mod) {
+        ui->lblImgPreview_Mod->setPixmap(QPixmap());
+        ui->lblImgPreview_Mod->setText(QString::fromUtf8("📷  Déposez vos images AVANT / APRÈS ici"));
+    }
 
 }
 
@@ -5905,7 +6776,7 @@ void MainWindow::handleMaintEditClicked() {
 
     ui->dateMod->setDate(QDate::fromString(table->item(row, 1)->text(), "yyyy-MM-dd"));
 
-    ui->editTechMod->setText(table->item(row, 2)->text());
+    ui->editTechMod->setText(table->item(row, 8) ? table->item(row, 8)->text() : ""); // TYPE in "Technicien" field
 
     
 
@@ -5939,14 +6810,409 @@ void MainWindow::handleMaintDeleteClicked() {
 
     if (QMessageBox::question(this, "Supprimer", "Voulez-vous vraiment supprimer cette intervention ?", QMessageBox::Yes|QMessageBox::No) == QMessageBox::Yes) {
 
-        maintenanceTable()->removeRow(row);
+        // Get stored ID from hidden column
+        int idInter = 0;
+        auto* table = maintenanceTable();
+        QTableWidgetItem *idItem = table->item(row, 8);
+        if (idItem) idInter = idItem->text().toInt();
 
-        refreshMaintActionButtons();
+        if (idInter > 0 && INTtmp.supprimer(idInter)) {
+            refreshInterventions();
+            setupStatistics();
+        } else {
+            QMessageBox::critical(this, "Erreur", "Echec suppression intervention:\n" + INTtmp.lastError());
+        }
 
     }
 
 }
 
+
+// ---------- refreshInterventions: load INTERVENTION table from DB ----------
+void MainWindow::refreshInterventions() {
+    auto* table = maintenanceTable();
+    if (!table) return;
+    table->setRowCount(0);
+
+    QSqlQueryModel *model = INTtmp.afficher();
+    // model columns: 0=ID_INTER, 1=REFERENCE, 2=DATE_INTER, 3=DUREE, 4=COUT, 5=STATUT, 6=TYPE, 7=PRIORITE, 8=ID_BAC
+    for (int i = 0; i < model->rowCount(); ++i) {
+        int row = table->rowCount();
+        table->insertRow(row);
+        int idInter = model->data(model->index(i, 0)).toInt();
+        double duree = model->data(model->index(i, 3)).toDouble();
+        double cout  = model->data(model->index(i, 4)).toDouble();
+        QString dureeStr = QString::number(duree) + " heures";
+
+        // Checkbox column 0
+        QTableWidgetItem *chk = new QTableWidgetItem();
+        chk->setFlags(Qt::ItemIsUserCheckable | Qt::ItemIsEnabled);
+        chk->setCheckState(Qt::Unchecked);
+        table->setItem(row, 0, chk);
+
+        table->setItem(row, 1, new QTableWidgetItem(model->data(model->index(i, 1)).toString())); // Reference
+        table->setItem(row, 2, new QTableWidgetItem(model->data(model->index(i, 2)).toDate().toString("yyyy-MM-dd"))); // Date
+        table->setItem(row, 3, new QTableWidgetItem(model->data(model->index(i, 5)).toString())); // Statut
+        table->setItem(row, 4, new QTableWidgetItem(QString::number(cout, 'f', 2) + " DT"));      // Coût
+        table->setItem(row, 5, new QTableWidgetItem(dureeStr));                                     // Durée
+        table->setItem(row, 6, new QTableWidgetItem(model->data(model->index(i, 7)).toString())); // Priorité
+        table->setItem(row, 8, new QTableWidgetItem(QString::number(idInter)));                    // Hidden ID
+        table->setItem(row, 9, new QTableWidgetItem(model->data(model->index(i, 6)).toString()));  // Hidden TYPE
+        installMaintActionButtonsForRow(row);
+    }
+    delete model;
+
+    // --- Update INFOS GLOBALES labels from INTERVENTION table ---
+    QSqlQuery statsQuery;
+
+    // Total Interventions
+    if (statsQuery.exec("SELECT COUNT(*) FROM INTERVENTION") && statsQuery.next()) {
+        int totalInter = statsQuery.value(0).toInt();
+        if (ui->st_val1) ui->st_val1->setText(QLocale(QLocale::French).toString(totalInter));
+    }
+
+    // Total Cout
+    if (statsQuery.exec("SELECT NVL(SUM(COUT), 0) FROM INTERVENTION") && statsQuery.next()) {
+        double totalCout = statsQuery.value(0).toDouble();
+        if (ui->st_val2) ui->st_val2->setText(QLocale(QLocale::French).toString(totalCout, 'f', 0) + " TND");
+    }
+
+    // Total Heures de Maintenance
+    if (statsQuery.exec("SELECT NVL(SUM(DUREE), 0) FROM INTERVENTION") && statsQuery.next()) {
+        double totalHeures = statsQuery.value(0).toDouble();
+        if (ui->st_val3) ui->st_val3->setText(QLocale(QLocale::French).toString(totalHeures, 'f', 1));
+    }
+
+    // --- Update Repartition par Priorite bars from INTERVENTION table ---
+    {
+        int totalCount = 0;
+        QMap<QString, int> prioCounts;
+        QSqlQuery prioQuery;
+        if (prioQuery.exec("SELECT PRIORITE, COUNT(*) FROM INTERVENTION GROUP BY PRIORITE ORDER BY COUNT(*) DESC")) {
+            while (prioQuery.next()) {
+                QString prio = prioQuery.value(0).toString().trimmed();
+                int cnt = prioQuery.value(1).toInt();
+                prioCounts[prio] = cnt;
+                totalCount += cnt;
+            }
+        }
+
+        // Get top 3 priorities (or fewer)
+        QList<QPair<QString, int>> sorted;
+        for (auto it = prioCounts.begin(); it != prioCounts.end(); ++it)
+            sorted.append(qMakePair(it.key(), it.value()));
+        std::sort(sorted.begin(), sorted.end(), [](const QPair<QString,int> &a, const QPair<QString,int> &b){ return a.second > b.second; });
+
+        QLabel* barLabels[] = { ui->lblMiniBar1, ui->lblMiniBar2, ui->lblMiniBar3 };
+        QProgressBar* bars[] = { ui->pbMini1, ui->pbMini2, ui->pbMini3 };
+        QLabel* pctLabels[] = { ui->lblMiniPct1, ui->lblMiniPct2, ui->lblMiniPct3 };
+
+        for (int i = 0; i < 3; ++i) {
+            if (i < sorted.size() && totalCount > 0) {
+                int pct = qRound(100.0 * sorted[i].second / totalCount);
+                if (barLabels[i]) barLabels[i]->setText(sorted[i].first);
+                if (bars[i]) bars[i]->setValue(pct);
+                if (pctLabels[i]) pctLabels[i]->setText(QString::number(pct) + "%");
+            } else {
+                if (barLabels[i]) barLabels[i]->setText("-");
+                if (bars[i]) bars[i]->setValue(0);
+                if (pctLabels[i]) pctLabels[i]->setText("0%");
+            }
+        }
+    }
+}
+
+
+
+// ---------- generateMaintenancePdf: export checked rows as professional PDF ----------
+void MainWindow::generateMaintenancePdf()
+{
+    auto* table = maintenanceTable();
+    if (!table) return;
+
+    // Collect checked rows
+    QList<int> checkedRows;
+    for (int i = 0; i < table->rowCount(); ++i) {
+        QTableWidgetItem *chk = table->item(i, 0);
+        if (chk && chk->checkState() == Qt::Checked)
+            checkedRows.append(i);
+    }
+    if (checkedRows.isEmpty()) {
+        QMessageBox::warning(this, "Rapport PDF", "Veuillez cocher au moins une intervention.");
+        return;
+    }
+
+    // Generate one PDF per checked intervention
+    int generated = 0;
+    for (int row : checkedRows) {
+        QString ref      = table->item(row, 1) ? table->item(row, 1)->text() : "UNKNOWN";
+        QString date     = table->item(row, 2) ? table->item(row, 2)->text() : "";
+        QString statut   = table->item(row, 3) ? table->item(row, 3)->text() : "";
+        QString cout     = table->item(row, 4) ? table->item(row, 4)->text() : "";
+        QString duree    = table->item(row, 5) ? table->item(row, 5)->text() : "";
+        QString priorite = table->item(row, 6) ? table->item(row, 6)->text() : "";
+        QString idStr    = table->item(row, 8) ? table->item(row, 8)->text() : "";
+        QString type     = table->item(row, 9) ? table->item(row, 9)->text() : "";
+
+        // Query additional info from DB
+        QString description, adresse;
+        int idBac = 0;
+        {
+            QSqlQuery q;
+            q.prepare("SELECT ID_BAC FROM INTERVENTION WHERE ID_INTER = :id");
+            q.bindValue(":id", idStr.toInt());
+            if (q.exec() && q.next()) idBac = q.value(0).toInt();
+        }
+        if (idBac > 0) {
+            QSqlQuery q;
+            q.prepare("SELECT LOCALISATION_STOCK FROM BAC_INTEL WHERE ID_BAC = :id");
+            q.bindValue(":id", idBac);
+            if (q.exec() && q.next()) adresse = q.value(0).toString();
+        }
+
+        // File path
+        QString safeRef = ref;
+        safeRef.replace(QRegularExpression("[^a-zA-Z0-9_-]"), "_");
+        QString dir = QStandardPaths::writableLocation(QStandardPaths::DesktopLocation);
+        QString filePath = dir + "/Maintenance_Request_" + safeRef + ".pdf";
+
+        QPdfWriter writer(filePath);
+        writer.setPageSize(QPageSize(QPageSize::A4));
+        writer.setPageMargins(QMarginsF(25, 20, 25, 20), QPageLayout::Millimeter);
+        writer.setResolution(300);
+
+        QPainter p(&writer);
+        int W = writer.width();
+        int pageH = writer.height();
+
+        // Colors
+        QColor headerBg(31, 60, 90);       // #1f3c5a
+        QColor sectionBg(241, 245, 249);    // #f1f5f9
+        QColor textDark(30, 41, 59);        // #1e293b
+        QColor textGray(100, 116, 139);     // #64748b
+        QColor accent(59, 130, 246);        // #3b82f6
+        QColor white(255, 255, 255);
+        QColor borderColor(226, 232, 240);  // #e2e8f0
+        QColor greenBg(220, 252, 231);      // #dcfce7
+        QColor greenText(22, 163, 74);      // #16a34a
+        QColor yellowBg(254, 243, 199);     // #fef3c7
+        QColor yellowText(217, 119, 6);     // #d97706
+        QColor redBg(254, 226, 226);        // #fee2e2
+        QColor redText(220, 38, 38);        // #dc2626
+
+        int y = 0;
+
+        // ═══════════ HEADER BAR ═══════════
+        int headerH = 420;
+        p.fillRect(0, 0, W, headerH, headerBg);
+
+        QFont titleFont("Segoe UI", 16, QFont::Bold);
+        p.setFont(titleFont);
+        p.setPen(white);
+        p.drawText(120, 100, W - 240, 140, Qt::AlignLeft | Qt::AlignVCenter, "DEMANDE DE MAINTENANCE");
+
+        QFont subtitleFont("Segoe UI", 8, QFont::Normal);
+        p.setFont(subtitleFont);
+        p.setPen(QColor(180, 200, 220));
+        p.drawText(120, 240, W - 240, 80, Qt::AlignLeft | Qt::AlignVCenter,
+                   "Document genere automatiquement | WasteGuard System");
+
+        // Reference badge on right side
+        QFont refFont("Segoe UI", 9, QFont::Bold);
+        p.setFont(refFont);
+        QFontMetrics fm(refFont, &writer);
+        int refW = fm.horizontalAdvance(ref) + 120;
+        int refH = 100;
+        int refX = W - refW - 120;
+        int refY = 160;
+        p.setBrush(accent);
+        p.setPen(Qt::NoPen);
+        p.drawRoundedRect(refX, refY, refW, refH, 30, 30);
+        p.setPen(white);
+        p.drawText(refX, refY, refW, refH, Qt::AlignCenter, ref);
+
+        y = headerH + 80;
+
+        // ═══════════ DETAILS DE L'INTERVENTION ═══════════
+        auto drawSectionTitle = [&](const QString &title) {
+            QFont secFont("Segoe UI", 11, QFont::Bold);
+            p.setFont(secFont);
+            p.setPen(headerBg);
+            p.drawText(120, y, W - 240, 100, Qt::AlignLeft | Qt::AlignVCenter, title);
+            y += 120;
+            // Accent line
+            p.fillRect(120, y - 20, 200, 8, accent);
+            y += 20;
+        };
+
+        auto drawInfoRow = [&](const QString &label, const QString &value, bool shaded = false) {
+            int rowH = 120;
+            if (shaded)
+                p.fillRect(80, y, W - 160, rowH, sectionBg);
+            else
+                p.fillRect(80, y, W - 160, rowH, white);
+
+            // Bottom border
+            p.fillRect(80, y + rowH - 2, W - 160, 2, borderColor);
+
+            QFont lblFont("Segoe UI", 8, QFont::Bold);
+            p.setFont(lblFont);
+            p.setPen(textGray);
+            p.drawText(140, y, 600, rowH, Qt::AlignLeft | Qt::AlignVCenter, label);
+
+            QFont valFont("Segoe UI", 8, QFont::Normal);
+            p.setFont(valFont);
+            p.setPen(textDark);
+            p.drawText(750, y, W - 900, rowH, Qt::AlignLeft | Qt::AlignVCenter, value);
+
+            y += rowH;
+        };
+
+        // Priority badge helper
+        auto drawPrioBadge = [&](const QString &prio) {
+            int rowH = 120;
+            p.fillRect(80, y, W - 160, rowH, white);
+            p.fillRect(80, y + rowH - 2, W - 160, 2, borderColor);
+
+            QFont lblFont("Segoe UI", 8, QFont::Bold);
+            p.setFont(lblFont);
+            p.setPen(textGray);
+            p.drawText(140, y, 600, rowH, Qt::AlignLeft | Qt::AlignVCenter, "Priorite");
+
+            // Badge
+            QColor bg = greenBg, fg = greenText;
+            if (prio.contains("lev", Qt::CaseInsensitive) || prio == "Urgente")
+            { bg = yellowBg; fg = yellowText; }
+            else if (prio == "Critique") { bg = redBg; fg = redText; }
+
+            QFont badgeFont("Segoe UI", 7, QFont::Bold);
+            p.setFont(badgeFont);
+            QFontMetrics bfm(badgeFont, &writer);
+            int bw = bfm.horizontalAdvance(prio) + 80;
+            int bh = 80;
+            int bx = 750;
+            int by = y + (rowH - bh) / 2;
+            p.setBrush(bg);
+            p.setPen(Qt::NoPen);
+            p.drawRoundedRect(bx, by, bw, bh, 25, 25);
+            p.setPen(fg);
+            p.drawText(bx, by, bw, bh, Qt::AlignCenter, prio);
+
+            y += rowH;
+        };
+
+        drawSectionTitle("DETAILS DE L'INTERVENTION");
+
+        // Info card with rounded rect background
+        int cardStart = y;
+        drawInfoRow("Reference", ref, true);
+        drawInfoRow("Date", date, false);
+        drawInfoRow("Duree", duree, true);
+        drawInfoRow("Cout", cout, false);
+        drawInfoRow("Statut", statut, true);
+        drawInfoRow("Technicien / Type", type.isEmpty() ? "Non specifie" : type, false);
+        drawPrioBadge(priorite);
+
+        y += 60;
+
+        // ═══════════ INFORMATIONS COMPLEMENTAIRES ═══════════
+        drawSectionTitle("INFORMATIONS COMPLEMENTAIRES");
+
+        drawInfoRow("ID Intervention", idStr, true);
+        drawInfoRow("Adresse / Localisation", adresse.isEmpty() ? "Non renseignee" : adresse, false);
+        drawInfoRow("ID Bac", idBac > 0 ? QString::number(idBac) : "N/A", true);
+
+        y += 60;
+
+        // ═══════════ OBSERVATIONS ═══════════
+        drawSectionTitle("OBSERVATIONS");
+
+        int obsH = 300;
+        p.setBrush(sectionBg);
+        p.setPen(QPen(borderColor, 3));
+        p.drawRoundedRect(80, y, W - 160, obsH, 20, 20);
+
+        QFont obsFont("Segoe UI", 7, QFont::Normal);
+        p.setFont(obsFont);
+        p.setPen(textGray);
+        p.drawText(140, y + 30, W - 300, obsH - 60, Qt::AlignLeft | Qt::TextWordWrap,
+                   "Intervention " + ref + " planifiee le " + date + ".\n"
+                   "Type: " + (type.isEmpty() ? "Maintenance" : type) + " | Priorite: " + priorite + "\n"
+                   "Cout estime: " + cout + " | Duree estimee: " + duree);
+        y += obsH + 40;
+
+        // ═══════════ SIGNATURES ═══════════
+        int sigY = pageH - 500;
+        if (y > sigY - 100) sigY = y + 80;
+
+        p.fillRect(0, sigY - 40, W, 3, borderColor);
+
+        QFont sigLbl("Segoe UI", 7, QFont::Bold);
+        p.setFont(sigLbl);
+        p.setPen(textGray);
+
+        int sigW = (W - 240) / 2;
+        p.drawText(120, sigY, sigW, 80, Qt::AlignLeft | Qt::AlignVCenter, "Responsable Technique");
+        p.drawText(120 + sigW + 40, sigY, sigW, 80, Qt::AlignLeft | Qt::AlignVCenter, "Directeur de Maintenance");
+
+        // Signature lines
+        p.setPen(QPen(textGray, 3));
+        int lineY = sigY + 200;
+        p.drawLine(120, lineY, 120 + sigW - 100, lineY);
+        p.drawLine(120 + sigW + 40, lineY, W - 120, lineY);
+
+        // ═══════════ FOOTER ═══════════
+        int footerY = pageH - 150;
+        p.fillRect(0, footerY, W, 150, headerBg);
+
+        QFont footFont("Segoe UI", 6, QFont::Normal);
+        p.setFont(footFont);
+        p.setPen(QColor(180, 200, 220));
+        p.drawText(120, footerY, W - 240, 150, Qt::AlignLeft | Qt::AlignVCenter,
+                   "WasteGuard - Smart Waste Collection System | Document confidentiel | " +
+                   QDate::currentDate().toString("dd/MM/yyyy"));
+
+        // QR Code placeholder (simple styled square)
+        int qrSize = 200;
+        int qrX = W - qrSize - 120;
+        int qrY = footerY - qrSize - 60;
+        p.setBrush(white);
+        p.setPen(QPen(borderColor, 4));
+        p.drawRoundedRect(qrX, qrY, qrSize, qrSize, 12, 12);
+
+        // Draw a mini QR-like pattern
+        p.setBrush(headerBg);
+        p.setPen(Qt::NoPen);
+        int cellSz = qrSize / 8;
+        int pattern[] = {0,0, 0,1, 0,2, 0,6, 0,7,
+                         1,0, 1,2, 1,4, 1,7,
+                         2,0, 2,1, 2,2, 2,5, 2,6, 2,7,
+                         3,4, 3,5,
+                         4,3, 4,5,
+                         5,0, 5,1, 5,2, 5,4, 5,6,
+                         6,0, 6,2, 6,3, 6,5, 6,7,
+                         7,0, 7,1, 7,2, 7,4, 7,6, 7,7};
+        int patLen = sizeof(pattern) / sizeof(pattern[0]);
+        for (int pi = 0; pi < patLen; pi += 2) {
+            p.drawRect(qrX + 8 + pattern[pi+1] * cellSz, qrY + 8 + pattern[pi] * cellSz, cellSz - 4, cellSz - 4);
+        }
+
+        p.end();
+        generated++;
+
+        // Open the generated PDF
+        QDesktopServices::openUrl(QUrl::fromLocalFile(filePath));
+    }
+
+    // Uncheck all after generation
+    for (int i = 0; i < table->rowCount(); ++i) {
+        QTableWidgetItem *chk = table->item(i, 0);
+        if (chk) chk->setCheckState(Qt::Unchecked);
+    }
+
+    QMessageBox::information(this, "Rapport PDF",
+        QString::number(generated) + " rapport(s) PDF genere(s) sur le Bureau.");
+}
 
 
 // ---------- Produit module stats ----------
@@ -6999,6 +8265,125 @@ void MainWindow::setupStockModule()
 
     }
 
+    if (ui->btnSave_add && !ui->btnSave_add->property("stockCrudConnected").toBool()) {
+        connect(ui->btnSave_add, &QPushButton::clicked, this, [this]() {
+            const QString reference = ui->inputRef_add ? ui->inputRef_add->text().trimmed() : QString();
+            const QString nom = ui->inputNom_add ? ui->inputNom_add->text().trimmed() : QString();
+            const int quantite = ui->inputStock_add ? ui->inputStock_add->text().trimmed().toInt() : 0;
+            bool prixOk = false;
+            const double prix = ui->inputPrix_add ? parseStockPrice(ui->inputPrix_add->text(), &prixOk) : 0.0;
+            const QString fournisseurInput = ui->inputFournisseur_add ? ui->inputFournisseur_add->text().trimmed() : QString();
+
+            if (reference.isEmpty()) {
+                QMessageBox::warning(this, "Ajout Stock", "La reference est obligatoire.");
+                return;
+            }
+            if (nom.isEmpty()) {
+                QMessageBox::warning(this, "Ajout Stock", "Le nom est obligatoire.");
+                return;
+            }
+            if (quantite < 0) {
+                QMessageBox::warning(this, "Ajout Stock", "La quantite doit etre positive.");
+                return;
+            }
+            if (!prixOk || prix <= 0.0) {
+                QMessageBox::warning(this, "Ajout Stock", "Le prix doit etre un nombre strictement positif.");
+                return;
+            }
+
+            Stmp.setIdMp(0);
+            Stmp.setReference(reference);
+            Stmp.setNom(nom);
+            Stmp.setQuantite(quantite);
+            Stmp.setSeuilCritique(defaultSeuilCritique(quantite));
+            Stmp.setPrix(prix);
+            Stmp.setFournisseurInput(fournisseurInput);
+
+            if (!Stmp.ajouter()) {
+                showFriendlySqlError(this, "ajouter le composant stock", Stmp.lastError());
+                return;
+            }
+
+            if (ui->inputRef_add) ui->inputRef_add->clear();
+            if (ui->inputNom_add) ui->inputNom_add->clear();
+            if (ui->inputStock_add) ui->inputStock_add->clear();
+            if (ui->inputPrix_add) ui->inputPrix_add->clear();
+            if (ui->inputFournisseur_add) ui->inputFournisseur_add->clear();
+            if (ui->sliderStock_add) ui->sliderStock_add->setValue(0);
+            if (ui->sliderPrix_add) ui->sliderPrix_add->setValue(0);
+
+            setupStockTableData();
+            applyStockFilterAndSort();
+            if (m_isStockCardView) refreshStockCardView();
+
+            if (ui->stock_stackedWidget) ui->stock_stackedWidget->setCurrentIndex(0);
+        });
+        ui->btnSave_add->setProperty("stockCrudConnected", true);
+    }
+
+    if (ui->btnSave_mod && !ui->btnSave_mod->property("stockCrudConnected").toBool()) {
+        connect(ui->btnSave_mod, &QPushButton::clicked, this, [this]() {
+            const QString reference = ui->inputRef_mod ? ui->inputRef_mod->text().trimmed() : QString();
+            const QString nom = ui->inputNom_mod ? ui->inputNom_mod->text().trimmed() : QString();
+            const int quantite = ui->inputStock_mod ? ui->inputStock_mod->text().trimmed().toInt() : 0;
+            bool prixOk = false;
+            const double prix = ui->inputPrix_mod ? parseStockPrice(ui->inputPrix_mod->text(), &prixOk) : 0.0;
+            const QString fournisseurInput = ui->inputFournisseur_mod ? ui->inputFournisseur_mod->text().trimmed() : QString();
+
+            if (reference.isEmpty()) {
+                QMessageBox::warning(this, "Modification Stock", "La reference est obligatoire.");
+                return;
+            }
+            if (nom.isEmpty()) {
+                QMessageBox::warning(this, "Modification Stock", "Le nom est obligatoire.");
+                return;
+            }
+            if (quantite < 0) {
+                QMessageBox::warning(this, "Modification Stock", "La quantite doit etre positive.");
+                return;
+            }
+            if (!prixOk || prix <= 0.0) {
+                QMessageBox::warning(this, "Modification Stock", "Le prix doit etre un nombre strictement positif.");
+                return;
+            }
+
+            int idMp = ui->stock_stackedWidget ? ui->stock_stackedWidget->property("stockEditId").toInt() : -1;
+            if (idMp <= 0) {
+                if (!Stmp.findIdByReference(reference, idMp)) {
+                    QMessageBox::warning(this, "Modification Stock", "Composant introuvable pour cette reference.");
+                    return;
+                }
+            }
+
+            int seuilCritique = ui->stock_stackedWidget ? ui->stock_stackedWidget->property("stockEditSeuil").toInt() : 0;
+            if (seuilCritique <= 0) seuilCritique = defaultSeuilCritique(quantite);
+
+            Stmp.setIdMp(idMp);
+            Stmp.setReference(reference);
+            Stmp.setNom(nom);
+            Stmp.setQuantite(quantite);
+            Stmp.setSeuilCritique(seuilCritique);
+            Stmp.setPrix(prix);
+            Stmp.setFournisseurInput(fournisseurInput);
+
+            if (!Stmp.modifier()) {
+                showFriendlySqlError(this, "modifier le composant stock", Stmp.lastError());
+                return;
+            }
+
+            setupStockTableData();
+            applyStockFilterAndSort();
+            if (m_isStockCardView) refreshStockCardView();
+
+            if (ui->stock_stackedWidget) {
+                ui->stock_stackedWidget->setProperty("stockEditId", -1);
+                ui->stock_stackedWidget->setProperty("stockEditSeuil", 0);
+                ui->stock_stackedWidget->setCurrentIndex(0);
+            }
+        });
+        ui->btnSave_mod->setProperty("stockCrudConnected", true);
+    }
+
 
 
     applyStockFilterAndSort();
@@ -7108,209 +8493,131 @@ void MainWindow::setupStockTableData()
 
 
 
-    struct Product { QString ref, nom, stock, seuil, prix, fournisseur; };
-
-    QList<Product> items = {
-        {"REF-001", "Capteur Ultrason HC-SR04",   "150", "OK",       "25 TND",  "TechSupply"},
-        {"REF-002", "Batterie Lithium 18650",      "15",  "CRITIQUE", "45 TND",  "PowerPack"},
-        {"REF-003", "Module GPS NEO-6M",           "80",  "MOYEN",    "30 TND",  "GeoTrack"},
-        {"REF-004", "Moteur DC 12V",               "60",  "OK",       "55 TND",  "MotorTech"},
-        {"REF-005", "Capteur Infrarouge IR",       "200", "OK",       "12 TND",  "SensorHub"},
-        {"REF-006", "Raspberry Pi 4 Model B",      "8",   "CRITIQUE", "320 TND", "DigiComp"},
-        {"REF-007", "Servo Moteur SG90",           "45",  "MOYEN",    "18 TND",  "RoboTech"},
-        {"REF-008", "Module WiFi ESP8266",         "120", "OK",       "22 TND",  "IoTStore"},
-        {"REF-009", "Capteur Temp DS18B20",        "35",  "MOYEN",    "15 TND",  "TechSupply"}
-    };
-
-
-
     double totalValue = 0;
 
     int criticalCount = 0;
 
+    QSqlQueryModel *model = Stmp.afficher();
+    if (!model) {
+        showFriendlySqlError(this, "charger le stock", "Modele SQL indisponible.");
+        return;
+    }
+    if (model->lastError().isValid()) {
+        showFriendlySqlError(this, "charger le stock", model->lastError().text());
+        delete model;
+        return;
+    }
 
+    for (int i = 0; i < model->rowCount(); ++i) {
+        const int row = ui->tableWidget->rowCount();
+        ui->tableWidget->insertRow(row);
 
-    ui->tableWidget->setRowCount(items.size());
+        const int idMp = model->data(model->index(i, 0)).toInt();
+        const QString ref = model->data(model->index(i, 1)).toString().trimmed();
+        const QString nom = model->data(model->index(i, 2)).toString().trimmed();
+        const int quantite = model->data(model->index(i, 3)).toInt();
+        const int seuilCritique = model->data(model->index(i, 4)).toInt();
+        const double prix = model->data(model->index(i, 5)).toDouble();
+        const int idFour = model->data(model->index(i, 6)).toInt();
+        const QString fournisseurNom = model->data(model->index(i, 7)).toString().trimmed();
 
+        auto *refItem = new QTableWidgetItem(ref);
+        refItem->setData(STOCK_ROLE_ID, idMp);
+        refItem->setData(STOCK_ROLE_SEUIL, seuilCritique);
+        refItem->setData(STOCK_ROLE_ID_FOUR, idFour);
+        ui->tableWidget->setItem(row, 0, refItem);
 
+        ui->tableWidget->setItem(row, 1, new QTableWidgetItem(nom));
 
-    for(int i = 0; i < items.size(); ++i) {
+        auto *stockItem = new QTableWidgetItem();
+        stockItem->setData(Qt::DisplayRole, quantite);
+        ui->tableWidget->setItem(row, 2, stockItem);
 
-        ui->tableWidget->setItem(i, 0, new QTableWidgetItem(items[i].ref));
+        const QString seuilLabel = stockSeuilLabel(quantite, seuilCritique);
+        setStockSeuilBadge(ui->tableWidget, row, seuilLabel);
+        if (seuilLabel == "CRITIQUE") criticalCount++;
 
-        ui->tableWidget->setItem(i, 1, new QTableWidgetItem(items[i].nom));
+        ui->tableWidget->setItem(row, 4, new QTableWidgetItem(QString("%1 TND").arg(QString::number(prix, 'f', 3))));
+        ui->tableWidget->setItem(row, 5, new QTableWidgetItem(fournisseurNom));
 
-        QTableWidgetItem *stockItem = new QTableWidgetItem();
+        totalValue += (quantite * prix);
 
-        stockItem->setData(Qt::DisplayRole, items[i].stock.toInt());
+        QWidget *container = new QWidget();
+        auto *layout = new QHBoxLayout(container);
+        layout->setContentsMargins(0, 0, 0, 0);
 
-        ui->tableWidget->setItem(i, 2, stockItem);
-
-
-
-        QLabel* badge = new QLabel(items[i].seuil);
-
-        badge->setAlignment(Qt::AlignCenter);
-
-        badge->setFixedSize(90, 25);
-
-        QString style = "border-radius: 5px; font-weight: bold;";
-
-
-
-        if(items[i].seuil == "CRITIQUE") {
-
-            style += "background-color: #dc3545; color: white;";
-
-            criticalCount++;
-
-        }
-
-        else if(items[i].seuil == "MOYEN") style += "background-color: #ffc107; color: #333;";
-
-        else style += "background-color: #28a745; color: white;";
-
-
-
-        badge->setStyleSheet(style);
-
-
-
-        QWidget* badgeWidget = new QWidget();
-
-        QHBoxLayout* badgeLayout = new QHBoxLayout(badgeWidget);
-
-        badgeLayout->addWidget(badge);
-
-        badgeLayout->setAlignment(Qt::AlignCenter);
-
-        badgeLayout->setContentsMargins(0,0,0,0);
-
-        ui->tableWidget->setCellWidget(i, 3, badgeWidget);
-
-
-
-        ui->tableWidget->setItem(i, 4, new QTableWidgetItem(items[i].prix));
-
-        ui->tableWidget->setItem(i, 5, new QTableWidgetItem(items[i].fournisseur));
-
-
-
-        double price = items[i].prix.split(" ")[0].toDouble();
-
-        totalValue += items[i].stock.toInt() * price;
-
-
-
-        QWidget* container = new QWidget();
-
-        QHBoxLayout* layout = new QHBoxLayout(container);
-
-        QPushButton* editBtn = new QPushButton("Modifier");
-
-        QPushButton* delBtn = new QPushButton("Supprimer");
-
-
-
+        auto *editBtn = new QPushButton("Modifier");
+        auto *delBtn = new QPushButton("Supprimer");
         editBtn->setStyleSheet("color: #3182CE; border: none; font-weight: bold;");
-
         delBtn->setStyleSheet("color: #E53E3E; border: none; font-weight: bold;");
 
-
-
         connect(editBtn, &QPushButton::clicked, this, [this, container]() {
-
             if (!ui->tableWidget) return;
-
-
-
             int row = -1;
-
             for (int r = 0; r < ui->tableWidget->rowCount(); ++r) {
-
-                if (ui->tableWidget->cellWidget(r, 6) == container) {
-
-                    row = r;
-
-                    break;
-
-                }
-
+                if (ui->tableWidget->cellWidget(r, 6) == container) { row = r; break; }
             }
-
             if (row < 0) return;
 
+            QTableWidgetItem *refItem = ui->tableWidget->item(row, 0);
+            const int idMp = refItem ? refItem->data(STOCK_ROLE_ID).toInt() : -1;
+            const int seuil = refItem ? refItem->data(STOCK_ROLE_SEUIL).toInt() : 0;
 
+            if (ui->inputRef_mod) ui->inputRef_mod->setText(refItem ? refItem->text() : QString());
+            if (ui->inputNom_mod) ui->inputNom_mod->setText(ui->tableWidget->item(row, 1) ? ui->tableWidget->item(row, 1)->text() : QString());
+            if (ui->inputStock_mod) ui->inputStock_mod->setText(ui->tableWidget->item(row, 2) ? ui->tableWidget->item(row, 2)->text() : QString());
+            if (ui->inputPrix_mod) ui->inputPrix_mod->setText(ui->tableWidget->item(row, 4) ? ui->tableWidget->item(row, 4)->text() : QString());
+            if (ui->inputFournisseur_mod) ui->inputFournisseur_mod->setText(ui->tableWidget->item(row, 5) ? ui->tableWidget->item(row, 5)->text() : QString());
 
-            if (ui->inputRef_mod) ui->inputRef_mod->setText(ui->tableWidget->item(row, 0)->text());
+            if (ui->sliderStock_mod && ui->tableWidget->item(row, 2))
+                ui->sliderStock_mod->setValue(ui->tableWidget->item(row, 2)->text().toInt());
+            if (ui->sliderPrix_mod && ui->tableWidget->item(row, 4))
+                ui->sliderPrix_mod->setValue(static_cast<int>(parseStockPrice(ui->tableWidget->item(row, 4)->text())));
 
-            if (ui->inputNom_mod) ui->inputNom_mod->setText(ui->tableWidget->item(row, 1)->text());
-
-            if (ui->inputStock_mod) ui->inputStock_mod->setText(ui->tableWidget->item(row, 2)->text());
-
-            if (ui->inputPrix_mod) ui->inputPrix_mod->setText(ui->tableWidget->item(row, 4)->text());
-
-            if (ui->inputFournisseur_mod) ui->inputFournisseur_mod->setText(ui->tableWidget->item(row, 5)->text());
-
-
-
-            if (ui->sliderStock_mod) ui->sliderStock_mod->setValue(ui->tableWidget->item(row, 2)->text().toInt());
-
-            if (ui->sliderPrix_mod) ui->sliderPrix_mod->setValue(ui->tableWidget->item(row, 4)->text().split(" ")[0].toInt());
-
-
-
-            if (ui->stock_stackedWidget) ui->stock_stackedWidget->setCurrentIndex(2);
-
+            if (ui->stock_stackedWidget) {
+                ui->stock_stackedWidget->setProperty("stockEditId", idMp);
+                ui->stock_stackedWidget->setProperty("stockEditSeuil", seuil);
+                ui->stock_stackedWidget->setCurrentIndex(2);
+            }
         });
 
         connect(delBtn, &QPushButton::clicked, this, [this, container]() {
-
             if (!ui->tableWidget) return;
-
-
-
             int row = -1;
-
             for (int r = 0; r < ui->tableWidget->rowCount(); ++r) {
-
-                if (ui->tableWidget->cellWidget(r, 6) == container) {
-
-                    row = r;
-
-                    break;
-
-                }
-
+                if (ui->tableWidget->cellWidget(r, 6) == container) { row = r; break; }
             }
-
             if (row < 0) return;
 
-
-
             if (QMessageBox::question(this, "Supprimer", "Etes-vous sur de supprimer cet element ?", QMessageBox::Yes | QMessageBox::No) != QMessageBox::Yes)
-
                 return;
 
+            QTableWidgetItem *refItem = ui->tableWidget->item(row, 0);
+            int idMp = refItem ? refItem->data(STOCK_ROLE_ID).toInt() : -1;
+            if (idMp <= 0 && refItem) {
+                Stmp.findIdByReference(refItem->text(), idMp);
+            }
+            if (idMp <= 0) {
+                QMessageBox::warning(this, "Suppression Stock", "ID composant introuvable.");
+                return;
+            }
 
+            if (!Stmp.supprimer(idMp)) {
+                showFriendlySqlError(this, "supprimer le composant stock", Stmp.lastError());
+                return;
+            }
 
-            ui->tableWidget->removeRow(row);
-
+            setupStockTableData();
             applyStockFilterAndSort();
-
+            if (m_isStockCardView) refreshStockCardView();
         });
 
-
-
         layout->addWidget(editBtn);
-
         layout->addWidget(delBtn);
-
-        layout->setContentsMargins(0,0,0,0);
-
-        ui->tableWidget->setCellWidget(i, 6, container);
-
+        ui->tableWidget->setCellWidget(row, 6, container);
     }
+
+    delete model;
 
 
 
@@ -7454,35 +8761,18 @@ void MainWindow::on_btnClient_clicked() {
 
 
 
-        // 3. Action Buttons (Facture, Score, Export) -> Blue Gradient Style (White Text)
-
+        // 3. Action Buttons (Export, Stats) -> Blue Gradient Style
         QString clientBtnStyle = 
-
             "QPushButton {"
-
             "   background: qlineargradient(spread:pad, x1:0, y1:0, x2:1, y2:1, stop:0 #0f2b4c, stop:1 #2a5298);"
-
-            "   color: white; border-radius: 12px; padding: 12px; font-weight: 700; font-size: 13px;"
-
-            "   border: 1px solid #1e40af;"
-
+            "   color: white; border-radius: 12px; padding: 14px; font-weight: 700; font-size: 13px;"
+            "   border: none;"
             "}"
-
             "QPushButton:hover {"
-
             "   background: qlineargradient(spread:pad, x1:0, y1:0, x2:1, y2:1, stop:0 #1e40af, stop:1 #3b82f6);"
-
-            "   border-color: #60a5fa;"
-
             "}";
-
-            
-
-        if (auto *btn = this->findChild<QPushButton*>("facture")) btn->setStyleSheet(clientBtnStyle);
-
-        if (auto *btn = this->findChild<QPushButton*>("score")) btn->setStyleSheet(clientBtnStyle);
-
         if (auto *btn = this->findChild<QPushButton*>("exportclient")) btn->setStyleSheet(clientBtnStyle);
+        if (auto *btn = this->findChild<QPushButton*>("btnGoStats_Client")) btn->setStyleSheet(clientBtnStyle);
 
 
 
@@ -7536,10 +8826,6 @@ void MainWindow::on_btnNouveau_client_clicked() {
 
         ui->input_email_ajouter->clear();
 
-        ui->input_bacs_ajouter->setValue(0);
-
-        ui->input_score_ajouter->setValue(0);
-
         ui->stackedWidget_Client->setCurrentIndex(1);
 
     }
@@ -7566,19 +8852,19 @@ void MainWindow::on_btn_ajouter_client_clicked() {
 
     }
 
-    onClientAdded(ui->input_matricule_ajouter->text(), 
+    CLtmp.setMatricule(ui->input_matricule_ajouter->text().trimmed());
+    CLtmp.setNom(ui->input_nom_ajouter->text().trimmed());
+    CLtmp.setEmail(ui->input_email_ajouter->text().trimmed());
+    CLtmp.setTypeContrat(ui->input_contrat_ajouter->currentText());
+    CLtmp.setStatutPaiement(ui->input_paiement_ajouter->currentText());
+    CLtmp.setIdClient(0); // auto-generate
 
-                  ui->input_nom_ajouter->text(), 
-
-                  ui->input_email_ajouter->text(), 
-
-                  QString::number(ui->input_bacs_ajouter->value()),
-
-                  QString::number(ui->input_score_ajouter->value()), 
-
-                  ui->input_paiement_ajouter->currentText());
-
-    QMessageBox::information(this, "Succès", "Client ajouté avec succès.");
+    if (CLtmp.ajouter()) {
+        QMessageBox::information(this, "Succès", "Client ajouté avec succès.");
+        refreshClients();
+    } else {
+        QMessageBox::critical(this, "Erreur", "Echec ajout client:\n" + CLtmp.lastError());
+    }
 
     if (ui->stackedWidget_Client) ui->stackedWidget_Client->setCurrentIndex(0);
 
@@ -7596,21 +8882,26 @@ void MainWindow::on_btn_modifier_client_clicked() {
 
     }
 
-    onClientModified(currentClientRow,
+    // Retrieve stored ID from hidden column
+    int idClient = 0;
+    if (currentClientRow >= 0 && currentClientRow < ui->tableWidget_Client->rowCount()) {
+        QTableWidgetItem *idItem = ui->tableWidget_Client->item(currentClientRow, 5);
+        if (idItem) idClient = idItem->text().toInt();
+    }
 
-                     ui->input_matricule_modifier->text(), 
+    CLtmp.setIdClient(idClient);
+    CLtmp.setMatricule(ui->input_matricule_modifier->text().trimmed());
+    CLtmp.setNom(ui->input_nom_modifier->text().trimmed());
+    CLtmp.setEmail(ui->input_email_modifier->text().trimmed());
+    CLtmp.setTypeContrat(ui->input_contrat_modifier->currentText());
+    CLtmp.setStatutPaiement(ui->input_paiement_modifier->currentText());
 
-                     ui->input_nom_modifier->text(), 
-
-                     ui->input_email_modifier->text(), 
-
-                     QString::number(ui->input_bacs_modifier->value()),
-
-                     QString::number(ui->input_score_modifier->value()), 
-
-                     ui->input_paiement_modifier->currentText());
-
-    QMessageBox::information(this, "Succès", "Informations du client modifiées avec succès.");
+    if (CLtmp.modifier()) {
+        QMessageBox::information(this, "Succès", "Informations du client modifiées avec succès.");
+        refreshClients();
+    } else {
+        QMessageBox::critical(this, "Erreur", "Echec modification client:\n" + CLtmp.lastError());
+    }
 
     if (ui->stackedWidget_Client) ui->stackedWidget_Client->setCurrentIndex(0);
 
@@ -7619,47 +8910,19 @@ void MainWindow::on_btn_modifier_client_clicked() {
 
 
 void MainWindow::onClientAdded(QString matricule, QString nom, QString email, QString bacs, QString score, QString paiement) {
-
-    int row = ui->tableWidget_Client->rowCount();
-
-    ui->tableWidget_Client->insertRow(row);
-
-    ui->tableWidget_Client->setItem(row, 0, new QTableWidgetItem(matricule));
-
-    ui->tableWidget_Client->setItem(row, 1, new QTableWidgetItem(nom));
-
-    ui->tableWidget_Client->setItem(row, 2, new QTableWidgetItem(email));
-
-    ui->tableWidget_Client->setItem(row, 3, new QTableWidgetItem(bacs));
-
-    ui->tableWidget_Client->setItem(row, 4, new QTableWidgetItem(score));
-
-    ui->tableWidget_Client->setItem(row, 5, new QTableWidgetItem(paiement));
-
-    addClientActionButtons(row);
-
+    Q_UNUSED(bacs); Q_UNUSED(score);
+    // Now handled by DB - just refresh
+    Q_UNUSED(matricule); Q_UNUSED(nom); Q_UNUSED(email); Q_UNUSED(paiement);
+    refreshClients();
 }
 
 
 
 void MainWindow::onClientModified(int row, QString matricule, QString nom, QString email, QString bacs, QString score, QString paiement) {
-
-    if(row < ui->tableWidget_Client->rowCount()) {
-
-        ui->tableWidget_Client->item(row, 0)->setText(matricule);
-
-        ui->tableWidget_Client->item(row, 1)->setText(nom);
-
-        ui->tableWidget_Client->item(row, 2)->setText(email);
-
-        ui->tableWidget_Client->item(row, 3)->setText(bacs);
-
-        ui->tableWidget_Client->item(row, 4)->setText(score);
-
-        ui->tableWidget_Client->item(row, 5)->setText(paiement);
-
-    }
-
+    Q_UNUSED(row); Q_UNUSED(matricule); Q_UNUSED(nom); Q_UNUSED(email);
+    Q_UNUSED(bacs); Q_UNUSED(score); Q_UNUSED(paiement);
+    // Now handled by DB - just refresh
+    refreshClients();
 }
 
 
@@ -7716,11 +8979,9 @@ void MainWindow::addClientActionButtons(int row) {
 
         ui->input_email_modifier->setText(ui->tableWidget_Client->item(r, 2)->text());
 
-        ui->input_bacs_modifier->setValue(ui->tableWidget_Client->item(r, 3)->text().toInt());
+        ui->input_contrat_modifier->setCurrentText(ui->tableWidget_Client->item(r, 3)->text());
 
-        ui->input_score_modifier->setValue(ui->tableWidget_Client->item(r, 4)->text().toInt());
-
-        ui->input_paiement_modifier->setCurrentText(ui->tableWidget_Client->item(r, 5)->text());
+        ui->input_paiement_modifier->setCurrentText(ui->tableWidget_Client->item(r, 4)->text());
 
         if (ui->stackedWidget_Client) ui->stackedWidget_Client->setCurrentIndex(2);
 
@@ -7734,7 +8995,15 @@ void MainWindow::addClientActionButtons(int row) {
 
         if (QMessageBox::question(this, "Supprimer", "Voulez-vous supprimer ce client ?") == QMessageBox::Yes) {
 
-            ui->tableWidget_Client->removeRow(r);
+            // Get the stored ID from hidden column
+            int idClient = 0;
+            QTableWidgetItem *idItem = ui->tableWidget_Client->item(r, 5);
+            if (idItem) idClient = idItem->text().toInt();
+            if (idClient > 0 && CLtmp.supprimer(idClient)) {
+                refreshClients();
+            } else {
+                QMessageBox::critical(this, "Erreur", "Echec suppression client:\n" + CLtmp.lastError());
+            }
 
         }
 
@@ -7756,6 +9025,358 @@ int MainWindow::getRowForClientWidget(QWidget *widget) {
 
 }
 
+
+// ---------- refreshClients: load CLIENT table from DB ----------
+void MainWindow::refreshClients() {
+    if (!ui->tableWidget_Client) return;
+    ui->tableWidget_Client->setRowCount(0);
+
+    QSqlQueryModel *model = CLtmp.afficher();
+    // model columns: 0=ID_CLIENT, 1=MATRICULE, 2=NOM, 3=EMAIL, 4=TYPE_CONTRAT, 5=STATUT_PAIEMENT
+    for (int i = 0; i < model->rowCount(); ++i) {
+        int row = ui->tableWidget_Client->rowCount();
+        ui->tableWidget_Client->insertRow(row);
+        int idClient = model->data(model->index(i, 0)).toInt();
+        ui->tableWidget_Client->setItem(row, 0, new QTableWidgetItem(model->data(model->index(i, 1)).toString())); // Matricule
+        ui->tableWidget_Client->setItem(row, 1, new QTableWidgetItem(model->data(model->index(i, 2)).toString())); // Nom
+        ui->tableWidget_Client->setItem(row, 2, new QTableWidgetItem(model->data(model->index(i, 3)).toString())); // Email
+        ui->tableWidget_Client->setItem(row, 3, new QTableWidgetItem(model->data(model->index(i, 4)).toString())); // Type Contrat
+        ui->tableWidget_Client->setItem(row, 4, new QTableWidgetItem(model->data(model->index(i, 5)).toString())); // Statut Paiement
+        ui->tableWidget_Client->setItem(row, 5, new QTableWidgetItem(QString::number(idClient)));                  // Hidden ID
+        addClientActionButtons(row);
+    }
+    delete model;
+}
+
+
+// ---------- filterClients: advanced search + filter by Type de Contrat ----------
+void MainWindow::filterClients() {
+    if (!ui->tableWidget_Client) return;
+    QString searchText = ui->recherche ? ui->recherche->text().trimmed().toLower() : QString();
+    QString selectedContrat = ui->cbTrier ? ui->cbTrier->currentText() : "Tous";
+
+    for (int i = 0; i < ui->tableWidget_Client->rowCount(); ++i) {
+        bool matchSearch = true;
+        bool matchContrat = true;
+
+        // Search across Matricule (0), Nom (1), Email (2)
+        if (!searchText.isEmpty()) {
+            matchSearch = false;
+            for (int col : {0, 1, 2}) {
+                QTableWidgetItem *item = ui->tableWidget_Client->item(i, col);
+                if (item && item->text().toLower().contains(searchText)) {
+                    matchSearch = true;
+                    break;
+                }
+            }
+        }
+
+        // Filter by Type de Contrat (column 3)
+        if (selectedContrat != "Tous") {
+            QTableWidgetItem *contratItem = ui->tableWidget_Client->item(i, 3);
+            if (contratItem) {
+                matchContrat = contratItem->text().compare(selectedContrat, Qt::CaseInsensitive) == 0;
+            } else {
+                matchContrat = false;
+            }
+        }
+
+        ui->tableWidget_Client->setRowHidden(i, !(matchSearch && matchContrat));
+    }
+}
+
+
+// ---------- exportClientPdf: PDF export filtered by selected Type de Contrat ----------
+void MainWindow::exportClientPdf() {
+    if (!ui->tableWidget_Client) return;
+
+    // Determine which contrat type to export
+    QString selectedContrat = ui->cbTrier ? ui->cbTrier->currentText() : "Tous";
+
+    // Collect visible rows matching the filter
+    QList<int> rowsToExport;
+    for (int i = 0; i < ui->tableWidget_Client->rowCount(); ++i) {
+        if (!ui->tableWidget_Client->isRowHidden(i)) {
+            rowsToExport.append(i);
+        }
+    }
+
+    if (rowsToExport.isEmpty()) {
+        QMessageBox::warning(this, "Export PDF", "Aucun client à exporter pour le filtre sélectionné.");
+        return;
+    }
+
+    QString defaultName = (selectedContrat == "Tous")
+        ? "Rapport_Clients.pdf"
+        : "Rapport_Clients_" + selectedContrat + ".pdf";
+    QString fileName = QFileDialog::getSaveFileName(this, "Exporter PDF Clients", defaultName, "PDF Files (*.pdf)");
+    if (fileName.isEmpty()) return;
+
+    QPdfWriter writer(fileName);
+    writer.setPageSize(QPageSize::A4);
+    writer.setPageMargins(QMarginsF(25, 25, 25, 25));
+    writer.setResolution(300);
+
+    QPainter painter(&writer);
+    int pageW = writer.width();
+
+    // ── Colors ──
+    QColor headerBg(15, 43, 76);
+    QColor lightGray(245, 247, 250);
+    QColor borderGray(220, 225, 230);
+    QColor textDark(30, 30, 30);
+    QColor white(255, 255, 255);
+    QColor green(39, 174, 96);
+    QColor red(231, 76, 60);
+
+    int y = 0;
+
+    // ── Header banner ──
+    painter.fillRect(0, 0, pageW, 520, headerBg);
+    painter.setPen(white);
+    painter.setFont(QFont("Segoe UI", 24, QFont::Bold));
+    painter.drawText(QRect(200, 60, pageW - 400, 180), Qt::AlignLeft | Qt::AlignVCenter, "WasteGuard");
+    painter.setFont(QFont("Segoe UI", 12));
+    QString subtitle = (selectedContrat == "Tous")
+        ? "Rapport des Clients — Tous les contrats"
+        : "Rapport des Clients — Contrat " + selectedContrat;
+    painter.drawText(QRect(200, 240, pageW - 400, 120), Qt::AlignLeft | Qt::AlignVCenter, subtitle);
+    painter.setFont(QFont("Segoe UI", 9));
+    painter.drawText(QRect(200, 380, pageW - 400, 100), Qt::AlignLeft | Qt::AlignVCenter,
+        "Date : " + QDate::currentDate().toString("dd MMMM yyyy") + "   |   Clients : " + QString::number(rowsToExport.size()));
+    y = 660;
+
+    // ── Summary cards ──
+    int paidCount = 0, lateCount = 0;
+    for (int row : rowsToExport) {
+        QTableWidgetItem *item = ui->tableWidget_Client->item(row, 4);
+        if (item && item->text().contains("Retard", Qt::CaseInsensitive)) lateCount++;
+        else paidCount++;
+    }
+    int totalFiltered = rowsToExport.size();
+
+    int cardW = (pageW - 300) / 3;
+    int cardH = 300;
+    int cardY = y;
+
+    auto drawCard = [&](int idx, int value, const QString &label, QColor valueColor) {
+        int cx = 100 + idx * (cardW + 50);
+        painter.fillRect(cx, cardY, cardW, cardH, white);
+        painter.setPen(QPen(borderGray, 3));
+        painter.drawRoundedRect(cx, cardY, cardW, cardH, 20, 20);
+        painter.setPen(valueColor);
+        painter.setFont(QFont("Segoe UI", 20, QFont::Bold));
+        painter.drawText(QRect(cx, cardY + 30, cardW, 140), Qt::AlignCenter, QString::number(value));
+        painter.setFont(QFont("Segoe UI", 9));
+        painter.setPen(textDark);
+        painter.drawText(QRect(cx, cardY + 170, cardW, 100), Qt::AlignCenter, label);
+    };
+    drawCard(0, totalFiltered, "Total Clients", headerBg);
+    drawCard(1, paidCount, "Payé", green);
+    drawCard(2, lateCount, "En Retard", red);
+
+    y = cardY + cardH + 160;
+
+    // ── Table header ──
+    QStringList headers = {"Matricule", "Nom", "Email", "Type Contrat", "Statut Paiement"};
+    int colCount = headers.size();
+    int colW = (pageW - 200) / colCount;
+    int rowH = 240;
+    int xStart = 100;
+
+    auto drawTableHeader = [&]() {
+        painter.fillRect(xStart, y, pageW - 200, rowH, headerBg);
+        painter.setPen(white);
+        painter.setFont(QFont("Segoe UI", 9, QFont::Bold));
+        for (int c = 0; c < colCount; ++c)
+            painter.drawText(QRect(xStart + c * colW + 40, y, colW - 80, rowH), Qt::AlignVCenter | Qt::AlignLeft, headers[c]);
+        y += rowH;
+    };
+    drawTableHeader();
+
+    // ── Table rows ──
+    int visibleIdx = 0;
+    for (int row : rowsToExport) {
+        if (y + rowH > writer.height() - 400) {
+            painter.setPen(borderGray);
+            painter.drawLine(100, writer.height() - 300, pageW - 100, writer.height() - 300);
+            painter.setPen(QColor(150, 150, 150));
+            painter.setFont(QFont("Segoe UI", 7));
+            painter.drawText(QRect(100, writer.height() - 280, pageW - 200, 200), Qt::AlignCenter,
+                "WasteGuard — Page " + QString::number(writer.logicalDpiX())); // placeholder
+            writer.newPage();
+            y = 200;
+            drawTableHeader();
+        }
+
+        QColor rowBg = (visibleIdx % 2 == 0) ? white : lightGray;
+        painter.fillRect(xStart, y, pageW - 200, rowH, rowBg);
+        painter.setPen(QPen(borderGray, 1));
+        painter.drawRect(xStart, y, pageW - 200, rowH);
+        painter.setPen(textDark);
+        painter.setFont(QFont("Segoe UI", 8));
+
+        for (int c = 0; c < 5; ++c) {
+            QString txt;
+            QTableWidgetItem *item = ui->tableWidget_Client->item(row, c);
+            if (item) txt = item->text();
+
+            if (c == 4) {
+                painter.setPen(txt.contains("Retard", Qt::CaseInsensitive) ? red : green);
+                painter.setFont(QFont("Segoe UI", 8, QFont::Bold));
+            }
+            painter.drawText(QRect(xStart + c * colW + 40, y, colW - 80, rowH), Qt::AlignVCenter | Qt::AlignLeft, txt);
+            if (c == 4) {
+                painter.setPen(textDark);
+                painter.setFont(QFont("Segoe UI", 8));
+            }
+        }
+        y += rowH;
+        visibleIdx++;
+    }
+
+    // ── Footer ──
+    painter.setPen(borderGray);
+    painter.drawLine(100, writer.height() - 300, pageW - 100, writer.height() - 300);
+    painter.setPen(QColor(150, 150, 150));
+    painter.setFont(QFont("Segoe UI", 7));
+    QString footerText = "WasteGuard — Généré le " + QDate::currentDate().toString("dd/MM/yyyy");
+    if (selectedContrat != "Tous") footerText += " — Filtre : " + selectedContrat;
+    painter.drawText(QRect(100, writer.height() - 280, pageW - 200, 200), Qt::AlignCenter, footerText);
+
+    painter.end();
+    QMessageBox::information(this, "Export PDF",
+        "Le rapport PDF (" + QString::number(rowsToExport.size()) + " clients) a été généré avec succès.");
+}
+
+
+// ---------- showClientStats: EcoScore stats based on correct sorting rate ----------
+void MainWindow::showClientStats() {
+    if (!ui->stackedWidget_Client) return;
+
+    // ── Query data from DB ──
+    QSqlQuery query;
+
+    // 1. Pie chart: Statut Paiement distribution
+    query.exec("SELECT STATUT_PAIEMENT, COUNT(*) FROM CLIENT GROUP BY STATUT_PAIEMENT");
+    QPieSeries *pieSeries = new QPieSeries();
+    while (query.next()) {
+        QString statut = query.value(0).toString();
+        int count = query.value(1).toInt();
+        pieSeries->append(statut + " (" + QString::number(count) + ")", count);
+    }
+    // Style pie slices
+    QList<QColor> pieColors = {QColor("#27ae60"), QColor("#e74c3c"), QColor("#f39c12"), QColor("#3498db")};
+    for (int i = 0; i < pieSeries->slices().size(); ++i) {
+        QPieSlice *slice = pieSeries->slices().at(i);
+        slice->setLabelVisible(true);
+        slice->setBrush(pieColors[i % pieColors.size()]);
+        slice->setLabelFont(QFont("Segoe UI", 9, QFont::Bold));
+        if (i == 0) slice->setExploded(true);
+    }
+
+    QChart *pieChart = new QChart();
+    pieChart->addSeries(pieSeries);
+    pieChart->setTitle("Répartition Statut de Paiement");
+    pieChart->setTitleFont(QFont("Segoe UI", 13, QFont::Bold));
+    pieChart->setTitleBrush(QColor("#0f2b4c"));
+    pieChart->legend()->setAlignment(Qt::AlignBottom);
+    pieChart->legend()->setFont(QFont("Segoe UI", 9));
+    pieChart->setAnimationOptions(QChart::SeriesAnimations);
+    pieChart->setBackgroundBrush(Qt::white);
+
+    // Replace old chart
+    if (ui->chartEcoScorePie->chart()) delete ui->chartEcoScorePie->chart();
+    ui->chartEcoScorePie->setChart(pieChart);
+    ui->chartEcoScorePie->setRenderHint(QPainter::Antialiasing);
+
+    // 2. Bar chart: EcoScore per client (simulated from TYPE_CONTRAT + STATUT_PAIEMENT)
+    //    EcoScore = base score per contract type * payment multiplier
+    //    Annuel=90, Trimestriel=70, Mensuel=50; Payé=1.0, En Retard=0.6
+    query.exec("SELECT NOM, TYPE_CONTRAT, STATUT_PAIEMENT FROM CLIENT ORDER BY NOM");
+    QBarSet *ecoScoreSet = new QBarSet("EcoScore");
+    ecoScoreSet->setColor(QColor("#2a5298"));
+    QStringList clientNames;
+    while (query.next()) {
+        QString nom = query.value(0).toString();
+        QString contrat = query.value(1).toString();
+        QString statut = query.value(2).toString();
+
+        double baseScore = 50;
+        if (contrat.contains("Annuel", Qt::CaseInsensitive)) baseScore = 90;
+        else if (contrat.contains("Trimestriel", Qt::CaseInsensitive)) baseScore = 70;
+
+        double multiplier = statut.contains("Retard", Qt::CaseInsensitive) ? 0.6 : 1.0;
+        double score = baseScore * multiplier;
+
+        *ecoScoreSet << score;
+        clientNames << (nom.length() > 10 ? nom.left(10) + ".." : nom);
+    }
+
+    QBarSeries *barSeries = new QBarSeries();
+    barSeries->append(ecoScoreSet);
+    barSeries->setLabelsVisible(true);
+    barSeries->setLabelsPosition(QAbstractBarSeries::LabelsOutsideEnd);
+
+    QChart *barChart = new QChart();
+    barChart->addSeries(barSeries);
+    barChart->setTitle("EcoScore par Client (Taux de Tri Correct)");
+    barChart->setTitleFont(QFont("Segoe UI", 13, QFont::Bold));
+    barChart->setTitleBrush(QColor("#0f2b4c"));
+    barChart->setAnimationOptions(QChart::SeriesAnimations);
+    barChart->setBackgroundBrush(Qt::white);
+    barChart->legend()->setVisible(false);
+
+    QBarCategoryAxis *axisX = new QBarCategoryAxis();
+    axisX->append(clientNames);
+    axisX->setLabelsFont(QFont("Segoe UI", 8));
+    barChart->addAxis(axisX, Qt::AlignBottom);
+    barSeries->attachAxis(axisX);
+
+    QValueAxis *axisY = new QValueAxis();
+    axisY->setRange(0, 100);
+    axisY->setTitleText("Score");
+    axisY->setTitleFont(QFont("Segoe UI", 10, QFont::Bold));
+    axisY->setLabelFormat("%d");
+    barChart->addAxis(axisY, Qt::AlignLeft);
+    barSeries->attachAxis(axisY);
+
+    if (ui->chartEcoScoreBar->chart()) delete ui->chartEcoScoreBar->chart();
+    ui->chartEcoScoreBar->setChart(barChart);
+    ui->chartEcoScoreBar->setRenderHint(QPainter::Antialiasing);
+
+    // 3. Bottom chart: Distribution by Type de Contrat
+    query.exec("SELECT TYPE_CONTRAT, COUNT(*) FROM CLIENT GROUP BY TYPE_CONTRAT");
+    QPieSeries *contratSeries = new QPieSeries();
+    QList<QColor> contratColors = {QColor("#0f2b4c"), QColor("#2a5298"), QColor("#3498db"), QColor("#85c1e9")};
+    int ci = 0;
+    while (query.next()) {
+        QString type = query.value(0).toString();
+        int count = query.value(1).toInt();
+        QPieSlice *slice = contratSeries->append(type + " (" + QString::number(count) + ")", count);
+        slice->setLabelVisible(true);
+        slice->setBrush(contratColors[ci % contratColors.size()]);
+        slice->setLabelFont(QFont("Segoe UI", 9, QFont::Bold));
+        ci++;
+    }
+
+    QChart *contratChart = new QChart();
+    contratChart->addSeries(contratSeries);
+    contratChart->setTitle("Distribution par Type de Contrat");
+    contratChart->setTitleFont(QFont("Segoe UI", 13, QFont::Bold));
+    contratChart->setTitleBrush(QColor("#0f2b4c"));
+    contratChart->legend()->setAlignment(Qt::AlignRight);
+    contratChart->legend()->setFont(QFont("Segoe UI", 9));
+    contratChart->setAnimationOptions(QChart::SeriesAnimations);
+    contratChart->setBackgroundBrush(Qt::white);
+
+    if (ui->chartContratDist->chart()) delete ui->chartContratDist->chart();
+    ui->chartContratDist->setChart(contratChart);
+    ui->chartContratDist->setRenderHint(QPainter::Antialiasing);
+
+    // Navigate to stats page (index 3)
+    ui->stackedWidget_Client->setCurrentWidget(ui->page_stats_client);
+}
 
 
 void MainWindow::forceApplySidebarStyles()
@@ -8081,14 +9702,12 @@ QWidget* MainWindow::createProductCard(int row)
     if (!t || row >= t->rowCount()) return nullptr;
 
     QString model = t->item(row, 1) ? t->item(row, 1)->text() : "";
-    QString type  = t->item(row, 2) ? t->item(row, 2)->text() : "";
-    QString cap   = t->item(row, 3) ? t->item(row, 3)->text() : "";
-    QString price = t->item(row, 4) ? t->item(row, 4)->text() : "";
-    QString stock = t->item(row, 5) ? t->item(row, 5)->text() : "";
+    QString price = t->item(row, 3) ? t->item(row, 3)->text() : "";
+    QString stock = t->item(row, 4) ? t->item(row, 4)->text() : "";
 
-    int cur = t->item(row, 0)->data(Qt::UserRole).toInt();
-    int max = t->item(row, 0)->data(Qt::UserRole + 1).toInt();
-    QString aisle = t->item(row, 0)->data(Qt::UserRole + 2).toString();
+    int cur = t->item(row, 0)->data(PROD_ROLE_CUR).toInt();
+    int max = t->item(row, 0)->data(PROD_ROLE_MAX).toInt();
+    QString aisle = t->item(row, 0)->data(PROD_ROLE_AISLE).toString();
     if (max == 0) max = 100;
     int stockVal = stock.toInt();
 
@@ -8133,9 +9752,6 @@ QWidget* MainWindow::createProductCard(int row)
     imgLabel->setStyleSheet("background: transparent;");
 
     QString resPath = ":/assets/bin.png";
-    if (type.contains("Capteur"))    resPath = ":/assets/sensor.png";
-    else if (type.contains("Industriel")) resPath = ":/assets/landscape_bin.png";
-    else if (type.contains("Urbain"))     resPath = ":/assets/compactor.png";
 
     QPixmap pix(resPath);
     if (!pix.isNull())
@@ -8518,8 +10134,8 @@ QWidget* MainWindow::createEmployeeCard(int row)
     QString nom    = t->item(row, 1) ? t->item(row, 1)->text() : "";
     QString role   = t->item(row, 2) ? t->item(row, 2)->text() : "";
     QString statut = t->item(row, 3) ? t->item(row, 3)->text() : "";
-    int salaire = t->item(row, 0) ? t->item(row, 0)->data(Qt::UserRole + 3).toInt() : 0;
-    int perf    = t->item(row, 0) ? t->item(row, 0)->data(Qt::UserRole + 4).toInt() : 0;
+    int salaire = t->item(row, 0) ? t->item(row, 0)->data(EMP_ROLE_SALAIRE).toInt() : 0;
+    int perf    = t->item(row, 0) ? t->item(row, 0)->data(EMP_ROLE_PERF).toInt() : 0;
 
     QFrame *card = new QFrame();
     card->setObjectName("empCard");
@@ -9640,12 +11256,12 @@ QWidget* MainWindow::createMaintCard(int row)
         return item ? item->text() : QString();
     };
 
-    QString ref      = getText(0);
-    QString date     = getText(1);
-    QString tech     = getText(2);
-    QString cout_    = getText(3);
-    QString duree    = getText(4);
-    QString priorite = getText(5);
+    QString ref      = getText(1);
+    QString date     = getText(2);
+    QString tech     = getText(3);
+    QString cout_    = getText(4);
+    QString duree    = getText(5);
+    QString priorite = getText(6);
 
     // Priority colors
     QString prioColor = "#16a34a";
@@ -10265,8 +11881,8 @@ void MainWindow::setupCommandesModule()
     // Initial stats refresh
     refreshCmdStats();
     
-    // Refresh stats when table changes (if needed, or just rely on manual refresh/module load)
-    // For now, we call it here.
+    updateClientCombos();
+    refreshCommandes();
 }
 
 void MainWindow::refreshCmdStats()
@@ -10367,4 +11983,273 @@ void MainWindow::on_btnPdf_Cmd_clicked()
 
     painter.end();
     QMessageBox::information(this, "Export PDF", "Le rapport PDF a été généré avec succès.");
+}
+
+void MainWindow::updateClientCombos()
+{
+    QSqlQuery query("SELECT ID_CLIENT, MATRICULE, NOM FROM CLIENT ORDER BY NOM");
+    if (ui->cb_client_add) ui->cb_client_add->clear();
+    if (ui->cb_client_mod) ui->cb_client_mod->clear();
+
+    while (query.next()) {
+        QString displayName = query.value(1).toString() + " - " + query.value(2).toString();
+        int id = query.value(0).toInt();
+        
+        if (ui->cb_client_add) ui->cb_client_add->addItem(displayName, id); 
+        if (ui->cb_client_mod) ui->cb_client_mod->addItem(displayName, id);
+    }
+}
+
+void MainWindow::refreshCommandes()
+{
+    if (!ui->tableProduits_2) return;
+    ui->tableProduits_2->setRowCount(0);
+    
+    QSqlQueryModel *model = Ctmp.afficher();
+    if (!model) return;
+    
+    // Change the first header implicitly to 'Reference' dynamically if needed
+    if (ui->tableProduits_2->horizontalHeaderItem(0)) {
+        ui->tableProduits_2->horizontalHeaderItem(0)->setText("Reference");
+    }
+
+    for(int i=0; i<model->rowCount(); ++i) {
+        int row = ui->tableProduits_2->rowCount();
+        ui->tableProduits_2->insertRow(row);
+        
+        QTableWidgetItem *idItem = new QTableWidgetItem(model->data(model->index(i, 0)).toString());
+        // Store ID_CLIENT (index 8) in UserRole for easy retrieval
+        int idClient = model->data(model->index(i, 8)).toInt();
+        idItem->setData(Qt::UserRole, idClient);
+        
+        // Fetch Client Address from new model column (index 9)
+        QString adresse = model->data(model->index(i, 9)).toString();
+
+        // Stock in dashboard is just QTE directly? Or just model->data(model->index(i, 2)) representing QTE
+        QString stockTxt = model->data(model->index(i, 2)).toString();
+
+        ui->tableProduits_2->setItem(row, 0, idItem); // ID / Reference
+        ui->tableProduits_2->setItem(row, 1, new QTableWidgetItem(model->data(model->index(i, 2)).toString())); // Qte
+        ui->tableProduits_2->setItem(row, 2, new QTableWidgetItem(model->data(model->index(i, 3)).toString())); // Prio
+        ui->tableProduits_2->setItem(row, 3, new QTableWidgetItem(model->data(model->index(i, 4)).toString())); // Statut
+        
+        // Populate actual values for Adresse and Stock
+        ui->tableProduits_2->setItem(row, 4, new QTableWidgetItem(adresse.isEmpty() ? "---" : adresse)); 
+        ui->tableProduits_2->setItem(row, 5, new QTableWidgetItem(model->data(model->index(i, 5)).toDate().toString("yyyy-MM-dd"))); // Date Cmd
+        ui->tableProduits_2->setItem(row, 6, new QTableWidgetItem(stockTxt.isEmpty() ? "0" : stockTxt)); 
+        ui->tableProduits_2->setItem(row, 7, new QTableWidgetItem(model->data(model->index(i, 6)).toDate().toString("yyyy-MM-dd"))); // Date Liv
+        ui->tableProduits_2->setItem(row, 8, new QTableWidgetItem(model->data(model->index(i, 7)).toString() + " TND")); // Prix
+        
+        installCmdActions2(row);
+    }
+    delete model;
+    refreshCmdStats();
+}
+
+void MainWindow::on_btnSave_Mod_3_clicked()
+{
+    if (!ui->cb_client_add) return;
+    int idClient = ui->cb_client_add->currentData().toInt();
+    int qte = ui->sb_qty_add_4->value();
+    QString prio = ui->cb_model_add_4->currentText();
+    QString statut = ui->cb_status_add_4->currentText();
+    double prix = ui->dsb_price_add_4->value();
+    
+    // Read dates from the combo boxes instead of defaulting to currentDate
+    QDate dCmd(ui->comboBox_21->currentText().toInt(), ui->comboBox_20->currentText().toInt(), ui->comboBox_19->currentText().toInt());
+    QDate dLiv(ui->comboBox_24->currentText().toInt(), ui->comboBox_23->currentText().toInt(), ui->comboBox_22->currentText().toInt());
+
+    QString adresseUI = ui->textEdit ? ui->textEdit->toPlainText() : "";
+
+    Ctmp.setId(0);
+    Ctmp.setIdClient(idClient);
+    Ctmp.setQte(qte);
+    Ctmp.setPriorite(prio);
+    Ctmp.setStatut(statut);
+    Ctmp.setDateCommande(dCmd);
+    Ctmp.setDateLivraison(dLiv);
+    Ctmp.setPrixTotal(prix);
+    Ctmp.setAdresse(adresseUI);
+
+    if(Ctmp.ajouter()) {
+        QMessageBox::information(this, "Succès", "Commande ajoutée.");
+        refreshCommandes();
+        if (auto *sw = mainStacked()) {
+            if (auto *page = sw->findChild<QWidget*>("pageCmdDashboard", Qt::FindDirectChildrenOnly)) {
+                sw->setCurrentWidget(page);
+            }
+        }
+    } else {
+        QMessageBox::critical(this, "Erreur", "Erreur d'ajout: " + Ctmp.lastError());
+    }
+}
+
+void MainWindow::loadCmdToModificationForm(int row)
+{
+    if (!ui->tableProduits_2) return;
+    currentCmdRow = row;
+    ui->tableProduits_2->selectRow(row);
+
+    // Retrieve data from table
+    int idClient = ui->tableProduits_2->item(row, 0)->data(Qt::UserRole).toInt();
+    int qte = ui->tableProduits_2->item(row, 1)->text().toInt();
+    QString prio = ui->tableProduits_2->item(row, 2)->text();
+    QString statut = ui->tableProduits_2->item(row, 3)->text();
+    QString adresse = ui->tableProduits_2->item(row, 4)->text();
+    // Price string "3200 TND" -> 3200
+    double prix = ui->tableProduits_2->item(row, 8)->text().split(" ").first().toDouble();
+
+    // Populate UI
+    if (ui->cb_client_mod) {
+        int idx = ui->cb_client_mod->findData(idClient);
+        if (idx >= 0) ui->cb_client_mod->setCurrentIndex(idx);
+    }
+    if (ui->sb_qty_add_2) ui->sb_qty_add_2->setValue(qte);
+    if (ui->cb_model_add_2) ui->cb_model_add_2->setCurrentText(prio);
+    if (ui->cb_status_add_2) ui->cb_status_add_2->setCurrentText(statut);
+    if (ui->dsb_price_add_2) ui->dsb_price_add_2->setValue(prix);
+    if (ui->textEdit_2) ui->textEdit_2->setPlainText(adresse == "---" ? "" : adresse);
+
+    QDate dCmd = QDate::fromString(ui->tableProduits_2->item(row, 5)->text(), "yyyy-MM-dd");
+    if (dCmd.isValid()) {
+        ui->comboBox_7->setCurrentText(QString("%1").arg(dCmd.day(), 2, 10, QChar('0')));
+        ui->comboBox_8->setCurrentText(QString("%1").arg(dCmd.month(), 2, 10, QChar('0')));
+        ui->comboBox_9->setCurrentText(QString::number(dCmd.year()));
+    }
+    
+    QDate dLiv = QDate::fromString(ui->tableProduits_2->item(row, 7)->text(), "yyyy-MM-dd");
+    if (dLiv.isValid()) {
+        ui->comboBox_13->setCurrentText(QString("%1").arg(dLiv.day(), 2, 10, QChar('0')));
+        ui->comboBox_14->setCurrentText(QString("%1").arg(dLiv.month(), 2, 10, QChar('0')));
+        ui->comboBox_15->setCurrentText(QString::number(dLiv.year()));
+    }
+}
+
+void MainWindow::on_btnSave_CmdMod_clicked()
+{
+    if (!ui->cb_client_mod || currentCmdRow < 0) return;
+    
+    // Get ID from the currently selected row
+    int idCmd = ui->tableProduits_2->item(currentCmdRow, 0)->text().toInt();
+    int idClient = ui->cb_client_mod->currentData().toInt();
+    int qte = ui->sb_qty_add_2->value();
+    QString prio = ui->cb_model_add_2->currentText();
+    QString statut = ui->cb_status_add_2->currentText();
+    double prix = ui->dsb_price_add_2->value();
+
+    // Reconstruct selected date
+    QDate dCmd(ui->comboBox_9->currentText().toInt(), ui->comboBox_8->currentText().toInt(), ui->comboBox_7->currentText().toInt());
+    QDate dLiv(ui->comboBox_15->currentText().toInt(), ui->comboBox_14->currentText().toInt(), ui->comboBox_13->currentText().toInt());
+    QString adresseUI = ui->textEdit_2 ? ui->textEdit_2->toPlainText() : "";
+    
+    Ctmp.setId(idCmd);
+    Ctmp.setIdClient(idClient);
+    Ctmp.setQte(qte);
+    Ctmp.setPriorite(prio);
+    Ctmp.setStatut(statut);
+    Ctmp.setDateCommande(dCmd);
+    Ctmp.setDateLivraison(dLiv);
+    Ctmp.setPrixTotal(prix);
+    Ctmp.setAdresse(adresseUI);
+    
+    if(Ctmp.modifier()) {
+        QMessageBox::information(this, "Succès", "Commande modifiée.");
+        refreshCommandes();
+        if (auto *sw = mainStacked()) {
+            if (auto *page = sw->findChild<QWidget*>("pageCmdDashboard", Qt::FindDirectChildrenOnly)) {
+                sw->setCurrentWidget(page);
+            }
+        }
+    } else {
+        QMessageBox::critical(this, "Erreur", "Erreur de modification: " + Ctmp.lastError());
+    }
+}
+
+void MainWindow::on_btnCancel_Mod_3_clicked()
+{
+    if (auto *sw = mainStacked()) {
+        if (auto *page = sw->findChild<QWidget*>("pageCmdDashboard", Qt::FindDirectChildrenOnly)) {
+            sw->setCurrentWidget(page);
+        }
+    }
+}
+
+void MainWindow::on_btnCancel_CmdMod_clicked()
+{
+    if (auto *sw = mainStacked()) {
+        if (auto *page = sw->findChild<QWidget*>("pageCmdDashboard", Qt::FindDirectChildrenOnly)) {
+            sw->setCurrentWidget(page);
+        }
+    }
+}
+
+void MainWindow::installCmdActions2(int row)
+{
+    if (!ui->tableProduits_2) return;
+    if (row < 0 || row >= ui->tableProduits_2->rowCount()) return;
+
+    QWidget *cell = new QWidget(ui->tableProduits_2);
+    auto *layout = new QHBoxLayout(cell);
+    layout->setContentsMargins(4, 0, 4, 0);
+    layout->setSpacing(6);
+    layout->setAlignment(Qt::AlignCenter);
+
+    auto *btnEdit = new QPushButton("Modifier", cell);
+    auto *btnDelete = new QPushButton("Supprimer", cell);
+
+    btnEdit->setStyleSheet("QPushButton { background-color: #3498db; color: white; border-radius: 4px; padding: 4px 8px; font-weight: bold; }");
+    btnDelete->setStyleSheet("QPushButton { background-color: #e74c3c; color: white; border-radius: 4px; padding: 4px 8px; font-weight: bold; }");
+    btnEdit->setCursor(Qt::PointingHandCursor);
+    btnDelete->setCursor(Qt::PointingHandCursor);
+    btnEdit->setProperty("row", row);
+    btnDelete->setProperty("row", row);
+
+    layout->addWidget(btnEdit);
+    layout->addWidget(btnDelete);
+
+    ui->tableProduits_2->setCellWidget(row, 9, cell);
+
+    connect(btnEdit, &QPushButton::clicked, this, [this, btnEdit]() {
+        if (auto *sw = mainStacked()) {
+            if (auto *page = sw->findChild<QWidget*>("pageCmdModifier", Qt::FindDirectChildrenOnly)) {
+                sw->setCurrentWidget(page);
+            }
+        }
+        if (ui->tableProduits_2) {
+            const int currentRow = btnEdit->property("row").toInt();
+            if (currentRow >= 0 && currentRow < ui->tableProduits_2->rowCount()) {
+                loadCmdToModificationForm(currentRow);
+            }
+        }
+    });
+
+    connect(btnDelete, &QPushButton::clicked, this, [this, btnDelete]() {
+        if (!ui->tableProduits_2) return;
+        const int currentRow = btnDelete->property("row").toInt();
+        if (currentRow < 0 || currentRow >= ui->tableProduits_2->rowCount()) return;
+
+        if (QMessageBox::question(this, "Supprimer", "Voulez-vous supprimer cette commande ?", QMessageBox::Yes | QMessageBox::No) != QMessageBox::Yes)
+            return;
+
+        // Try to delete from DB if it's a real ID
+        QString idStr = ui->tableProduits_2->item(currentRow, 0)->text();
+        bool ok;
+        int id = idStr.toInt(&ok);
+        if(ok && id > 0) {
+             Ctmp.supprimer(id);
+        }
+
+        ui->tableProduits_2->removeRow(currentRow);
+        
+        // Reindex
+        for (int r = 0; r < ui->tableProduits_2->rowCount(); ++r) {
+            if (QWidget *c = ui->tableProduits_2->cellWidget(r, 9)) {
+                const auto buttons = c->findChildren<QPushButton*>();
+                for (QPushButton *b : buttons) {
+                    b->setProperty("row", r);
+                }
+            }
+        }
+        refreshCmdStats();
+    });
 }

@@ -18,6 +18,8 @@
 #include <QMediaDevices>
 #include <QMessageBox>
 #include "connection.h"
+#include <QSqlDatabase>
+#include <QDebug>
 // Simple Login Dialog
 class LoginDialog : public QDialog
 {
@@ -265,22 +267,33 @@ private:
 int main(int argc, char *argv[])
 {
     QApplication a(argc, argv);
-    Connection& c = Connection::createInstance();
-    if(c.createConnection())
-        qDebug() << "Base connectée";
-    else
-        qDebug() << "Échec connexion";
-    // Show login dialog first
+    qDebug() << "Drivers disponibles:" << QSqlDatabase::drivers();
+
     LoginDialog login;
     if (login.exec() != QDialog::Accepted) {
         return 0; // User cancelled
     }
-    
-    // Login successful, show main window
-    MainWindow w;
-    w.showMaximized();
-    
-    return a.exec();
+
+    Connection* c = Connection::instance();
+    bool test = c->createConnect();
+    if (test)
+    {
+        MainWindow w;
+        w.showMaximized();
+        QMessageBox::information(nullptr, QObject::tr("database is open"),
+                                 QObject::tr("connection successful.\n"
+                                             "Click Cancel to exit."), QMessageBox::Cancel);
+        return a.exec();
+
+    }
+    else
+    {
+        QMessageBox::critical(nullptr, QObject::tr("database is not open"),
+                              QObject::tr("connection failed.\n"
+                                          "Click Cancel to exit."), QMessageBox::Cancel);
+        return 0;
+    }
+
 }
 
 #include "main.moc"

@@ -1,0 +1,13 @@
+release/client.o
+release/connection.o
+release/employe.o
+release/intervention.o
+release/main.o
+release/mainwindow.o
+release/mascotwidget.o
+release/produit.o
+release/stock.o
+release/commande.o
+release/qrc_logo.o
+release/moc_mainwindow.o
+release/moc_mascotwidget.o

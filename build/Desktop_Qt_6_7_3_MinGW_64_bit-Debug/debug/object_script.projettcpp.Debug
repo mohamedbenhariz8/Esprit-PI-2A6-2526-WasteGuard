@@ -1,0 +1,13 @@
+debug/client.o
+debug/connection.o
+debug/commande.o
+debug/employe.o
+debug/intervention.o
+debug/main.o
+debug/mainwindow.o
+debug/mascotwidget.o
+debug/produit.o
+debug/stock.o
+debug/qrc_logo.o
+debug/moc_mainwindow.o
+debug/moc_mascotwidget.o

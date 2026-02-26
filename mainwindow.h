@@ -3,7 +3,7 @@
 
 #include <QMainWindow>
 #include <QButtonGroup>
-
+#include <QGridLayout> 
 #include <QtCharts>
 #include <QChartView>
 #include <QPieSeries>
@@ -11,7 +11,20 @@
 #include <QBarSet>
 #include <QBarCategoryAxis>
 #include <QValueAxis>
+#include <QtCharts/QChartView>
+#include <QtCharts/QPieSeries>
+#include <QtCharts/QBarSeries>
+#include <QtCharts/QBarSet>
+#include <QtCharts/QBarCategoryAxis>
+#include <QtCharts/QValueAxis>
+#include <QtCharts/QChart>
 
+#include "employe.h"
+#include "produit.h"
+#include "stock.h"
+#include "commande.h"
+#include "client.h"
+#include "intervention.h"
 QT_BEGIN_NAMESPACE
 namespace Ui { class MainWindow; }
 QT_END_NAMESPACE
@@ -27,6 +40,7 @@ class MainWindow : public QMainWindow
 public:
     MainWindow(QWidget *parent = nullptr);
     ~MainWindow();
+    bool eventFilter(QObject *obj, QEvent *event) override;
 
 private slots:
     // Employe
@@ -41,7 +55,8 @@ private slots:
     void on_cbProjetStats_currentIndexChanged(const QString &arg1);
     void on_btnFichePaie_clicked();
     void on_btnCommsSend_clicked();
-
+    
+   
     // Client module slots (from mainwindowcl)
     void on_btnClient_clicked();
     void on_btn_ajouter_client_clicked();
@@ -62,6 +77,8 @@ private slots:
     void goAjout();
     void goModification();
     void goStatistiques();
+    void on_prod_btnSave_Add_clicked();
+    void on_prod_btnSave_Mod_clicked();
 
     void handleEditClicked();
     void handleDeleteClicked();
@@ -104,6 +121,12 @@ private slots:
     void on_cmd_pagination_btnPrev_clicked();
     void on_cmd_pagination_btnNext_clicked();
 
+    // Commande CRUD Slots
+    void on_btnSave_Mod_3_clicked(); // Add Commande
+    void on_btnSave_CmdMod_clicked();  // Modify Commande
+    void on_btnCancel_Mod_3_clicked(); 
+    void on_btnCancel_CmdMod_clicked(); 
+
 private:
     // Employe
     void setupStatistics();
@@ -115,13 +138,20 @@ private:
     void updateTaskChart(const QString &projectName);
     void installEmployeActionButtonsForRow(int row);
     void refreshEmployeActionButtons();
-
+    Employe Etmp;
+    Produit Ptmp;
+    Stock Stmp;
+    Commande Ctmp;
+    Client CLtmp;
+    Intervention INTtmp;
+    void refreshEmployes();
     // Produit
     void setupProduitModule();
     void applyStyleFix();
     void refreshActionButtons();
     void buildStatsCharts();
     void addExampleRow();
+    void loadProduitToModificationForm(int row);
     void installActionButtonsForRow(int row);
     void ensureProduitModuleVisible();
     QString productStyleSheet() const;
@@ -167,11 +197,17 @@ private:
     void refreshMaintActionButtons();
     void installMaintActionButtonsForRow(int row);
     QTableWidget* maintenanceTable() const;
+    void generateMaintenancePdf();
 
     // Commande Module
     void setupCommandesModule();
     void refreshCmdStats();
     void on_btnPdf_Cmd_clicked();
+    void refreshCommandes();
+    void installCmdActions2(int row);
+    int currentCmdRow = -1;
+    void updateClientCombos();
+    void loadCmdToModificationForm(int row);
 
 
     // Helpers for merged UI
@@ -186,11 +222,17 @@ private:
     QButtonGroup *sidebarGroup;
     QWidget *homeDashboardPage;
     int currentEmployeRow; // To track which row is being modified in employee table
+    int currentProduitRow; // To track which row is being modified in product table
     int currentClientRow; // To track which row is being modified in client table
     int currentMaintRow;  // To track which row is being modified in maintenance table
     QWidget *globalStatsReturnPage;
     void addClientActionButtons(int row);
     int getRowForClientWidget(QWidget *widget);
+    void refreshClients();
+    void refreshInterventions();
+    void exportClientPdf();
+    void showClientStats();
+    void filterClients();
     void forceApplySidebarStyles();
 
     // Card View state (Produit)
@@ -228,6 +270,11 @@ private:
     QGridLayout *m_cmdCardLayout = nullptr;
     int m_cmdCurrentPage = 0;
     int m_cmdItemsPerPage = 6;
+
+    // Maintenance photo paths
+    QString m_photoAvantPath;
+    QString m_photoApresPath;
+    QString m_photoModPath;
 
 private slots:
     void on_btnToggleSidebar_clicked();

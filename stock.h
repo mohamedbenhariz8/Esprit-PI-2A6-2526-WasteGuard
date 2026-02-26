@@ -1,33 +1,59 @@
-#ifndef MAINWINDOW_H
-#define MAINWINDOW_H
+﻿#ifndef STOCK_H
+#define STOCK_H
 
-#include <QMainWindow>
+#include <QSqlQueryModel>
+#include <QString>
 
-QT_BEGIN_NAMESPACE
-namespace Ui {
-class MainWindow;
-}
-QT_END_NAMESPACE
-
-class MainWindow : public QMainWindow
+class Stock
 {
-    Q_OBJECT
-
 public:
-    MainWindow(QWidget *parent = nullptr);
-    ~MainWindow();
+    Stock();
+    Stock(int idMp,
+          const QString &reference,
+          const QString &nom,
+          int quantite,
+          int seuilCritique,
+          double prix,
+          const QString &fournisseurInput = QString());
 
-private slots:
-    /* Qt's 'on_widget_signal' pattern requires these to be
-       under 'private slots' to work automatically.
-    */
-    void on_btnNew_clicked();
-    void on_btnCancel_add_clicked();
-    void on_btnCancel_mod_clicked();
+    bool ajouter();
+    bool modifier();
+    bool supprimer(int idMp);
+    QSqlQueryModel *afficher();
+    bool findIdByReference(const QString &reference, int &idMp);
+
+    QString lastError() const;
+
+    int idMp() const;
+    QString reference() const;
+    QString nom() const;
+    int quantite() const;
+    int seuilCritique() const;
+    double prix() const;
+    QString fournisseurInput() const;
+
+    void setIdMp(int value);
+    void setReference(const QString &value);
+    void setNom(const QString &value);
+    void setQuantite(int value);
+    void setSeuilCritique(int value);
+    void setPrix(double value);
+    void setFournisseurInput(const QString &value);
 
 private:
-    Ui::MainWindow *ui;
-    void setupTableData();
-    void setupLogo();
+    int resolveNextMpId();
+    int resolveNextFournisseurId();
+    bool resolveFournisseurIdFromInput(const QString &inputRaw, int &idFour, QString &nomFour);
+
+private:
+    int m_idMp;
+    QString m_reference;
+    QString m_nom;
+    int m_quantite;
+    int m_seuilCritique;
+    double m_prix;
+    QString m_fournisseurInput;
+    QString m_lastError;
 };
-#endif // MAINWINDOW_H
+
+#endif // STOCK_H
