@@ -18,6 +18,20 @@
 #include <QtCharts/QBarCategoryAxis>
 #include <QtCharts/QValueAxis>
 #include <QtCharts/QChart>
+#include <QFileDialog>
+#include <QPdfWriter>
+#include <QTextDocument>
+#include <QDesktopServices>
+#include <QBuffer>
+#include <QNetworkAccessManager>
+#include <QNetworkReply>
+#include <QNetworkRequest>
+#include <QJsonDocument>
+#include <QJsonObject>
+#include <QJsonArray>
+#include <QSettings>
+#include <QInputDialog>
+#include <QProgressDialog>
 
 #include "employe.h"
 #include "produit.h"
@@ -25,6 +39,7 @@
 #include "commande.h"
 #include "client.h"
 #include "intervention.h"
+#include "stockmapwidget.h"
 QT_BEGIN_NAMESPACE
 namespace Ui { class MainWindow; }
 QT_END_NAMESPACE
@@ -79,6 +94,13 @@ private slots:
     void goStatistiques();
     void on_prod_btnSave_Add_clicked();
     void on_prod_btnSave_Mod_clicked();
+    void on_prod_btnUpload_Add_clicked();
+    void on_prod_btnUpload_Mod_clicked();
+    void applyProduitFilterAndSort();
+    void on_prod_btnPdf_clicked();
+    void onGeminiPdfReply(QNetworkReply *reply);
+    void onProductImageDownloaded(QNetworkReply *reply, const QString &numSerie);
+    void openStockMap3D();
 
     void handleEditClicked();
     void handleDeleteClicked();
@@ -155,6 +177,7 @@ private:
     void installActionButtonsForRow(int row);
     void ensureProduitModuleVisible();
     QString productStyleSheet() const;
+    QString m_selectedEmplacement;
 
     // Card View implementation (Produit)
     void setupCardViewContainer();
@@ -275,6 +298,18 @@ private:
     QString m_photoAvantPath;
     QString m_photoApresPath;
     QString m_photoModPath;
+
+    // Produit photo paths
+    QString m_prodImagePathAdd;
+    QString m_prodImagePathMod;
+
+    // Gemini PDF attributes
+    QNetworkAccessManager *m_networkManager;
+    QProgressDialog *m_geminiProgressDialog = nullptr;
+    QMap<QString, QString> m_pdfTempImagePaths;
+    int m_pendingImageDownloads = 0;
+    QString m_geminiApiKey;
+    QString m_geminiPrompt;
 
 private slots:
     void on_btnToggleSidebar_clicked();

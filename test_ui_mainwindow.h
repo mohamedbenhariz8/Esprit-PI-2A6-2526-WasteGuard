@@ -286,7 +286,7 @@ public:
     QLabel *prod_l1;
     QLineEdit *prod_ln_ref_add;
     QLabel *prod_l2;
-    QComboBox *prod_cb_model_add;
+    QLineEdit *prod_ln_model_add;
     QLabel *prod_l_px;
     QDoubleSpinBox *prod_dsb_price_add;
     QLabel *prod_l_qty;
@@ -329,7 +329,9 @@ public:
     QHBoxLayout *prod_modifier_hLayout;
     QVBoxLayout *prod_modRightLayout;
     QHBoxLayout *prod_hl_mod_split;
+    QVBoxLayout *prod_vl_img_mod;
     QLabel *prod_imgBin;
+    QPushButton *prod_btnUpload_Mod;
     QFrame *prod_cardMod;
     QVBoxLayout *prod_verticalLayout_Mod;
     QLabel *prod_lblTitleMod;
@@ -337,7 +339,7 @@ public:
     QSpinBox *prod_sb_qty_mod;
     QLabel *prod_l_stat_m;
     QLabel *prod_l_qty_m;
-    QComboBox *prod_cb_model_mod;
+    QLineEdit *prod_ln_model_mod;
     QComboBox *prod_cb_status_mod;
     QDoubleSpinBox *prod_dsb_price_mod;
     QLineEdit *prod_ln_ref_mod;
@@ -2987,11 +2989,10 @@ public:
 
         prod_gl_inputs->addWidget(prod_l2, 0, 2, 1, 1);
 
-        prod_cb_model_add = new QComboBox(prod_cardAdd);
-        prod_cb_model_add->addItem(QString());
-        prod_cb_model_add->setObjectName("prod_cb_model_add");
+        prod_ln_model_add = new QLineEdit(prod_cardAdd);
+        prod_ln_model_add->setObjectName("prod_ln_model_add");
 
-        prod_gl_inputs->addWidget(prod_cb_model_add, 0, 3, 1, 1);
+        prod_gl_inputs->addWidget(prod_ln_model_add, 0, 3, 1, 1);
 
         prod_l_px = new QLabel(prod_cardAdd);
         prod_l_px->setObjectName("prod_l_px");
@@ -3241,12 +3242,21 @@ public:
         prod_hl_mod_split = new QHBoxLayout();
         prod_hl_mod_split->setSpacing(20);
         prod_hl_mod_split->setObjectName("prod_hl_mod_split");
+
+        prod_vl_img_mod = new QVBoxLayout();
+        prod_vl_img_mod->setObjectName("prod_vl_img_mod");
+
         prod_imgBin = new QLabel(prod_modification);
         prod_imgBin->setObjectName("prod_imgBin");
         prod_imgBin->setMaximumSize(QSize(16777215, 250));
         prod_imgBin->setAlignment(Qt::AlignmentFlag::AlignCenter);
+        prod_vl_img_mod->addWidget(prod_imgBin);
 
-        prod_hl_mod_split->addWidget(prod_imgBin);
+        prod_btnUpload_Mod = new QPushButton(prod_modification);
+        prod_btnUpload_Mod->setObjectName("prod_btnUpload_Mod");
+        prod_vl_img_mod->addWidget(prod_btnUpload_Mod);
+
+        prod_hl_mod_split->addLayout(prod_vl_img_mod);
 
         prod_cardMod = new QFrame(prod_modification);
         prod_cardMod->setObjectName("prod_cardMod");
@@ -3278,11 +3288,10 @@ public:
 
         prod_gl_inputs_mod->addWidget(prod_l_qty_m, 1, 2, 1, 1);
 
-        prod_cb_model_mod = new QComboBox(prod_cardMod);
-        prod_cb_model_mod->addItem(QString());
-        prod_cb_model_mod->setObjectName("prod_cb_model_mod");
+        prod_ln_model_mod = new QLineEdit(prod_cardMod);
+        prod_ln_model_mod->setObjectName("prod_ln_model_mod");
 
-        prod_gl_inputs_mod->addWidget(prod_cb_model_mod, 0, 3, 1, 1);
+        prod_gl_inputs_mod->addWidget(prod_ln_model_mod, 0, 3, 1, 1);
 
         prod_cb_status_mod = new QComboBox(prod_cardMod);
         prod_cb_status_mod->addItem(QString());
@@ -3324,10 +3333,20 @@ public:
         prod_hl_sliders_mod->setObjectName("prod_hl_sliders_mod");
         prod_vl_bat_mod = new QVBoxLayout();
         prod_vl_bat_mod->setObjectName("prod_vl_bat_mod");
+        prod_hl_bat_mod = new QHBoxLayout();
+        prod_hl_bat_mod->setObjectName("prod_hl_bat_mod");
         prod_l_bat_m = new QLabel(prod_cardMod);
         prod_l_bat_m->setObjectName("prod_l_bat_m");
 
-        prod_vl_bat_mod->addWidget(prod_l_bat_m);
+        prod_hl_bat_mod->addWidget(prod_l_bat_m);
+
+        prod_lbl_bat_val_mod = new QLabel(prod_cardMod);
+        prod_lbl_bat_val_mod->setObjectName("prod_lbl_bat_val_mod");
+
+        prod_hl_bat_mod->addWidget(prod_lbl_bat_val_mod);
+
+
+        prod_vl_bat_mod->addLayout(prod_hl_bat_mod);
 
         prod_slider_bat_mod = new QSlider(prod_cardMod);
         prod_slider_bat_mod->setObjectName("prod_slider_bat_mod");
@@ -3342,10 +3361,20 @@ public:
 
         prod_vl_cap_mod = new QVBoxLayout();
         prod_vl_cap_mod->setObjectName("prod_vl_cap_mod");
+        prod_hl_cap_mod = new QHBoxLayout();
+        prod_hl_cap_mod->setObjectName("prod_hl_cap_mod");
         prod_l_cap_m = new QLabel(prod_cardMod);
         prod_l_cap_m->setObjectName("prod_l_cap_m");
 
-        prod_vl_cap_mod->addWidget(prod_l_cap_m);
+        prod_hl_cap_mod->addWidget(prod_l_cap_m);
+
+        prod_lbl_cap_val_mod = new QLabel(prod_cardMod);
+        prod_lbl_cap_val_mod->setObjectName("prod_lbl_cap_val_mod");
+
+        prod_hl_cap_mod->addWidget(prod_lbl_cap_val_mod);
+
+
+        prod_vl_cap_mod->addLayout(prod_hl_cap_mod);
 
         prod_slider_cap_mod = new QSlider(prod_cardMod);
         prod_slider_cap_mod->setObjectName("prod_slider_cap_mod");
@@ -6407,7 +6436,7 @@ public:
         prod_l1->setText(QCoreApplication::translate("MainWindow", "Reference", nullptr));
         prod_ln_ref_add->setPlaceholderText(QCoreApplication::translate("MainWindow", "REF-2024", nullptr));
         prod_l2->setText(QCoreApplication::translate("MainWindow", "Modele", nullptr));
-        prod_cb_model_add->setItemText(0, QCoreApplication::translate("MainWindow", "ProBin 240L", nullptr));
+        prod_ln_model_add->setPlaceholderText(QCoreApplication::translate("MainWindow", "Ex: ProBin 240L", nullptr));
 
         prod_l_px->setText(QCoreApplication::translate("MainWindow", "Prix (TND)", nullptr));
         prod_l_qty->setText(QCoreApplication::translate("MainWindow", "Quantite", nullptr));
@@ -6512,7 +6541,8 @@ public:
         prod_lblTitleMod->setText(QCoreApplication::translate("MainWindow", "Modifier Stock", nullptr));
         prod_l_stat_m->setText(QCoreApplication::translate("MainWindow", "Statut", nullptr));
         prod_l_qty_m->setText(QCoreApplication::translate("MainWindow", "Quantite", nullptr));
-        prod_cb_model_mod->setItemText(0, QCoreApplication::translate("MainWindow", "ProBin 240L", nullptr));
+        prod_ln_model_mod->setPlaceholderText(QCoreApplication::translate("MainWindow", "Ex: ProBin 240L", nullptr));
+        prod_btnUpload_Mod->setText(QCoreApplication::translate("MainWindow", "\360\237\223\244 Importer Image", nullptr));
 
         prod_cb_status_mod->setItemText(0, QCoreApplication::translate("MainWindow", "En Stock", nullptr));
 
@@ -6521,7 +6551,9 @@ public:
         prod_l_px_m->setText(QCoreApplication::translate("MainWindow", "Prix (TND)", nullptr));
         prod_l1_m->setText(QCoreApplication::translate("MainWindow", "Reference", nullptr));
         prod_l_bat_m->setText(QCoreApplication::translate("MainWindow", "Batterie", nullptr));
+        prod_lbl_bat_val_mod->setText(QCoreApplication::translate("MainWindow", "12000 mAh", nullptr));
         prod_l_cap_m->setText(QCoreApplication::translate("MainWindow", "Capacite", nullptr));
+        prod_lbl_cap_val_mod->setText(QCoreApplication::translate("MainWindow", "100 L", nullptr));
         prod_gb_characteristics_mod->setStyleSheet(QCoreApplication::translate("MainWindow", "\n"
 "                            QGroupBox {\n"
 "                             font-weight: bold;\n"

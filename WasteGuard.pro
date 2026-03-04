@@ -1,4 +1,4 @@
-QT += core gui widgets sql charts multimedia multimediawidgets
+QT += core gui widgets sql charts multimedia multimediawidgets printsupport network
 greaterThan(QT_MAJOR_VERSION, 4): QT += widgets
 
 CONFIG += c++17
@@ -15,7 +15,8 @@ SOURCES += \
     mascotwidget.cpp \
     produit.cpp \
     stock.cpp \
-    commande.cpp
+    commande.cpp \
+    stockmapwidget.cpp
 
 HEADERS += \
     client.h \
@@ -26,7 +27,8 @@ HEADERS += \
     mascotwidget.h \
     produit.h \
     stock.h \
-    commande.h
+    commande.h \
+    stockmapwidget.h
 
 FORMS += \
     mainwindow.ui

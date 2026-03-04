@@ -98,6 +98,10 @@ constexpr auto qt_meta_stringdata_CLASSMainWindowENDCLASS = QtMocHelpers::string
     "goStatistiques",
     "on_prod_btnSave_Add_clicked",
     "on_prod_btnSave_Mod_clicked",
+    "on_prod_btnUpload_Add_clicked",
+    "on_prod_btnUpload_Mod_clicked",
+    "applyProduitFilterAndSort",
+    "on_prod_btnPdf_clicked",
     "handleEditClicked",
     "handleDeleteClicked",
     "slot_toggleView",
@@ -142,7 +146,7 @@ Q_CONSTINIT static const uint qt_meta_data_CLASSMainWindowENDCLASS[] = {
       12,       // revision
        0,       // classname
        0,    0, // classinfo
-      59,   14, // methods
+      63,   14, // methods
        0,    0, // properties
        0,    0, // enums/sets
        0,    0, // constructors
@@ -150,65 +154,69 @@ Q_CONSTINIT static const uint qt_meta_data_CLASSMainWindowENDCLASS[] = {
        0,       // signalCount
 
  // slots: name, argc, parameters, tag, flags, initial metatype offsets
-       1,    0,  368,    2, 0x08,    1 /* Private */,
-       3,    0,  369,    2, 0x08,    2 /* Private */,
-       4,    0,  370,    2, 0x08,    3 /* Private */,
-       5,    0,  371,    2, 0x08,    4 /* Private */,
-       6,    0,  372,    2, 0x08,    5 /* Private */,
-       7,    0,  373,    2, 0x08,    6 /* Private */,
-       8,    0,  374,    2, 0x08,    7 /* Private */,
-       9,    0,  375,    2, 0x08,    8 /* Private */,
-      10,    1,  376,    2, 0x08,    9 /* Private */,
-      12,    0,  379,    2, 0x08,   11 /* Private */,
-      13,    0,  380,    2, 0x08,   12 /* Private */,
-      14,    0,  381,    2, 0x08,   13 /* Private */,
-      15,    0,  382,    2, 0x08,   14 /* Private */,
-      16,    0,  383,    2, 0x08,   15 /* Private */,
-      17,    0,  384,    2, 0x08,   16 /* Private */,
-      18,    0,  385,    2, 0x08,   17 /* Private */,
-      19,    6,  386,    2, 0x08,   18 /* Private */,
-      26,    7,  399,    2, 0x08,   25 /* Private */,
-      28,    0,  414,    2, 0x08,   33 /* Private */,
-      29,    0,  415,    2, 0x08,   34 /* Private */,
-      30,    0,  416,    2, 0x08,   35 /* Private */,
-      31,    0,  417,    2, 0x08,   36 /* Private */,
-      32,    0,  418,    2, 0x08,   37 /* Private */,
-      33,    0,  419,    2, 0x08,   38 /* Private */,
-      34,    0,  420,    2, 0x08,   39 /* Private */,
-      35,    0,  421,    2, 0x08,   40 /* Private */,
-      36,    0,  422,    2, 0x08,   41 /* Private */,
-      37,    0,  423,    2, 0x08,   42 /* Private */,
-      38,    0,  424,    2, 0x08,   43 /* Private */,
-      39,    0,  425,    2, 0x08,   44 /* Private */,
-      40,    0,  426,    2, 0x08,   45 /* Private */,
-      41,    1,  427,    2, 0x08,   46 /* Private */,
-      43,    0,  430,    2, 0x08,   48 /* Private */,
-      44,    0,  431,    2, 0x08,   49 /* Private */,
-      45,    0,  432,    2, 0x08,   50 /* Private */,
-      46,    1,  433,    2, 0x08,   51 /* Private */,
-      47,    0,  436,    2, 0x08,   53 /* Private */,
-      48,    0,  437,    2, 0x08,   54 /* Private */,
-      49,    0,  438,    2, 0x08,   55 /* Private */,
-      50,    1,  439,    2, 0x08,   56 /* Private */,
-      51,    0,  442,    2, 0x08,   58 /* Private */,
-      52,    0,  443,    2, 0x08,   59 /* Private */,
-      53,    0,  444,    2, 0x08,   60 /* Private */,
-      54,    1,  445,    2, 0x08,   61 /* Private */,
-      55,    0,  448,    2, 0x08,   63 /* Private */,
-      56,    0,  449,    2, 0x08,   64 /* Private */,
-      57,    0,  450,    2, 0x08,   65 /* Private */,
-      58,    1,  451,    2, 0x08,   66 /* Private */,
-      59,    0,  454,    2, 0x08,   68 /* Private */,
-      60,    0,  455,    2, 0x08,   69 /* Private */,
-      61,    0,  456,    2, 0x08,   70 /* Private */,
-      62,    1,  457,    2, 0x08,   71 /* Private */,
-      63,    0,  460,    2, 0x08,   73 /* Private */,
-      64,    0,  461,    2, 0x08,   74 /* Private */,
-      65,    0,  462,    2, 0x08,   75 /* Private */,
-      66,    0,  463,    2, 0x08,   76 /* Private */,
-      67,    0,  464,    2, 0x08,   77 /* Private */,
-      68,    0,  465,    2, 0x08,   78 /* Private */,
-      69,    0,  466,    2, 0x08,   79 /* Private */,
+       1,    0,  392,    2, 0x08,    1 /* Private */,
+       3,    0,  393,    2, 0x08,    2 /* Private */,
+       4,    0,  394,    2, 0x08,    3 /* Private */,
+       5,    0,  395,    2, 0x08,    4 /* Private */,
+       6,    0,  396,    2, 0x08,    5 /* Private */,
+       7,    0,  397,    2, 0x08,    6 /* Private */,
+       8,    0,  398,    2, 0x08,    7 /* Private */,
+       9,    0,  399,    2, 0x08,    8 /* Private */,
+      10,    1,  400,    2, 0x08,    9 /* Private */,
+      12,    0,  403,    2, 0x08,   11 /* Private */,
+      13,    0,  404,    2, 0x08,   12 /* Private */,
+      14,    0,  405,    2, 0x08,   13 /* Private */,
+      15,    0,  406,    2, 0x08,   14 /* Private */,
+      16,    0,  407,    2, 0x08,   15 /* Private */,
+      17,    0,  408,    2, 0x08,   16 /* Private */,
+      18,    0,  409,    2, 0x08,   17 /* Private */,
+      19,    6,  410,    2, 0x08,   18 /* Private */,
+      26,    7,  423,    2, 0x08,   25 /* Private */,
+      28,    0,  438,    2, 0x08,   33 /* Private */,
+      29,    0,  439,    2, 0x08,   34 /* Private */,
+      30,    0,  440,    2, 0x08,   35 /* Private */,
+      31,    0,  441,    2, 0x08,   36 /* Private */,
+      32,    0,  442,    2, 0x08,   37 /* Private */,
+      33,    0,  443,    2, 0x08,   38 /* Private */,
+      34,    0,  444,    2, 0x08,   39 /* Private */,
+      35,    0,  445,    2, 0x08,   40 /* Private */,
+      36,    0,  446,    2, 0x08,   41 /* Private */,
+      37,    0,  447,    2, 0x08,   42 /* Private */,
+      38,    0,  448,    2, 0x08,   43 /* Private */,
+      39,    0,  449,    2, 0x08,   44 /* Private */,
+      40,    0,  450,    2, 0x08,   45 /* Private */,
+      41,    0,  451,    2, 0x08,   46 /* Private */,
+      42,    0,  452,    2, 0x08,   47 /* Private */,
+      43,    0,  453,    2, 0x08,   48 /* Private */,
+      44,    0,  454,    2, 0x08,   49 /* Private */,
+      45,    1,  455,    2, 0x08,   50 /* Private */,
+      47,    0,  458,    2, 0x08,   52 /* Private */,
+      48,    0,  459,    2, 0x08,   53 /* Private */,
+      49,    0,  460,    2, 0x08,   54 /* Private */,
+      50,    1,  461,    2, 0x08,   55 /* Private */,
+      51,    0,  464,    2, 0x08,   57 /* Private */,
+      52,    0,  465,    2, 0x08,   58 /* Private */,
+      53,    0,  466,    2, 0x08,   59 /* Private */,
+      54,    1,  467,    2, 0x08,   60 /* Private */,
+      55,    0,  470,    2, 0x08,   62 /* Private */,
+      56,    0,  471,    2, 0x08,   63 /* Private */,
+      57,    0,  472,    2, 0x08,   64 /* Private */,
+      58,    1,  473,    2, 0x08,   65 /* Private */,
+      59,    0,  476,    2, 0x08,   67 /* Private */,
+      60,    0,  477,    2, 0x08,   68 /* Private */,
+      61,    0,  478,    2, 0x08,   69 /* Private */,
+      62,    1,  479,    2, 0x08,   70 /* Private */,
+      63,    0,  482,    2, 0x08,   72 /* Private */,
+      64,    0,  483,    2, 0x08,   73 /* Private */,
+      65,    0,  484,    2, 0x08,   74 /* Private */,
+      66,    1,  485,    2, 0x08,   75 /* Private */,
+      67,    0,  488,    2, 0x08,   77 /* Private */,
+      68,    0,  489,    2, 0x08,   78 /* Private */,
+      69,    0,  490,    2, 0x08,   79 /* Private */,
+      70,    0,  491,    2, 0x08,   80 /* Private */,
+      71,    0,  492,    2, 0x08,   81 /* Private */,
+      72,    0,  493,    2, 0x08,   82 /* Private */,
+      73,    0,  494,    2, 0x08,   83 /* Private */,
 
  // slots: parameters
     QMetaType::Void,
@@ -242,27 +250,31 @@ Q_CONSTINIT static const uint qt_meta_data_CLASSMainWindowENDCLASS[] = {
     QMetaType::Void,
     QMetaType::Void,
     QMetaType::Void,
-    QMetaType::Void, QMetaType::Int,   42,
     QMetaType::Void,
     QMetaType::Void,
     QMetaType::Void,
-    QMetaType::Void, QMetaType::Int,   42,
+    QMetaType::Void,
+    QMetaType::Void, QMetaType::Int,   46,
     QMetaType::Void,
     QMetaType::Void,
     QMetaType::Void,
-    QMetaType::Void, QMetaType::Int,   42,
+    QMetaType::Void, QMetaType::Int,   46,
     QMetaType::Void,
     QMetaType::Void,
     QMetaType::Void,
-    QMetaType::Void, QMetaType::Int,   42,
+    QMetaType::Void, QMetaType::Int,   46,
     QMetaType::Void,
     QMetaType::Void,
     QMetaType::Void,
-    QMetaType::Void, QMetaType::Int,   42,
+    QMetaType::Void, QMetaType::Int,   46,
     QMetaType::Void,
     QMetaType::Void,
     QMetaType::Void,
-    QMetaType::Void, QMetaType::Int,   42,
+    QMetaType::Void, QMetaType::Int,   46,
+    QMetaType::Void,
+    QMetaType::Void,
+    QMetaType::Void,
+    QMetaType::Void, QMetaType::Int,   46,
     QMetaType::Void,
     QMetaType::Void,
     QMetaType::Void,
@@ -352,6 +364,14 @@ Q_CONSTINIT const QMetaObject MainWindow::staticMetaObject = { {
         // method 'on_prod_btnSave_Add_clicked'
         QtPrivate::TypeAndForceComplete<void, std::false_type>,
         // method 'on_prod_btnSave_Mod_clicked'
+        QtPrivate::TypeAndForceComplete<void, std::false_type>,
+        // method 'on_prod_btnUpload_Add_clicked'
+        QtPrivate::TypeAndForceComplete<void, std::false_type>,
+        // method 'on_prod_btnUpload_Mod_clicked'
+        QtPrivate::TypeAndForceComplete<void, std::false_type>,
+        // method 'applyProduitFilterAndSort'
+        QtPrivate::TypeAndForceComplete<void, std::false_type>,
+        // method 'on_prod_btnPdf_clicked'
         QtPrivate::TypeAndForceComplete<void, std::false_type>,
         // method 'handleEditClicked'
         QtPrivate::TypeAndForceComplete<void, std::false_type>,
@@ -459,37 +479,41 @@ void MainWindow::qt_static_metacall(QObject *_o, QMetaObject::Call _c, int _id, 
         case 25: _t->goStatistiques(); break;
         case 26: _t->on_prod_btnSave_Add_clicked(); break;
         case 27: _t->on_prod_btnSave_Mod_clicked(); break;
-        case 28: _t->handleEditClicked(); break;
-        case 29: _t->handleDeleteClicked(); break;
-        case 30: _t->slot_toggleView(); break;
-        case 31: _t->on_pagination_cbSize_currentIndexChanged((*reinterpret_cast< std::add_pointer_t<int>>(_a[1]))); break;
-        case 32: _t->on_pagination_btnPrev_clicked(); break;
-        case 33: _t->on_pagination_btnNext_clicked(); break;
-        case 34: _t->slot_toggleEmpView(); break;
-        case 35: _t->on_emp_pagination_cbSize_currentIndexChanged((*reinterpret_cast< std::add_pointer_t<int>>(_a[1]))); break;
-        case 36: _t->on_emp_pagination_btnPrev_clicked(); break;
-        case 37: _t->on_emp_pagination_btnNext_clicked(); break;
-        case 38: _t->slot_toggleStockView(); break;
-        case 39: _t->on_stock_pagination_cbSize_currentIndexChanged((*reinterpret_cast< std::add_pointer_t<int>>(_a[1]))); break;
-        case 40: _t->on_stock_pagination_btnPrev_clicked(); break;
-        case 41: _t->on_stock_pagination_btnNext_clicked(); break;
-        case 42: _t->slot_toggleClientView(); break;
-        case 43: _t->on_client_pagination_cbSize_currentIndexChanged((*reinterpret_cast< std::add_pointer_t<int>>(_a[1]))); break;
-        case 44: _t->on_client_pagination_btnPrev_clicked(); break;
-        case 45: _t->on_client_pagination_btnNext_clicked(); break;
-        case 46: _t->slot_toggleMaintView(); break;
-        case 47: _t->on_maint_pagination_cbSize_currentIndexChanged((*reinterpret_cast< std::add_pointer_t<int>>(_a[1]))); break;
-        case 48: _t->on_maint_pagination_btnPrev_clicked(); break;
-        case 49: _t->on_maint_pagination_btnNext_clicked(); break;
-        case 50: _t->slot_toggleCmdView(); break;
-        case 51: _t->on_cmd_pagination_cbSize_currentIndexChanged((*reinterpret_cast< std::add_pointer_t<int>>(_a[1]))); break;
-        case 52: _t->on_cmd_pagination_btnPrev_clicked(); break;
-        case 53: _t->on_cmd_pagination_btnNext_clicked(); break;
-        case 54: _t->on_btnSave_Mod_3_clicked(); break;
-        case 55: _t->on_btnSave_CmdMod_clicked(); break;
-        case 56: _t->on_btnCancel_Mod_3_clicked(); break;
-        case 57: _t->on_btnCancel_CmdMod_clicked(); break;
-        case 58: _t->on_btnToggleSidebar_clicked(); break;
+        case 28: _t->on_prod_btnUpload_Add_clicked(); break;
+        case 29: _t->on_prod_btnUpload_Mod_clicked(); break;
+        case 30: _t->applyProduitFilterAndSort(); break;
+        case 31: _t->on_prod_btnPdf_clicked(); break;
+        case 32: _t->handleEditClicked(); break;
+        case 33: _t->handleDeleteClicked(); break;
+        case 34: _t->slot_toggleView(); break;
+        case 35: _t->on_pagination_cbSize_currentIndexChanged((*reinterpret_cast< std::add_pointer_t<int>>(_a[1]))); break;
+        case 36: _t->on_pagination_btnPrev_clicked(); break;
+        case 37: _t->on_pagination_btnNext_clicked(); break;
+        case 38: _t->slot_toggleEmpView(); break;
+        case 39: _t->on_emp_pagination_cbSize_currentIndexChanged((*reinterpret_cast< std::add_pointer_t<int>>(_a[1]))); break;
+        case 40: _t->on_emp_pagination_btnPrev_clicked(); break;
+        case 41: _t->on_emp_pagination_btnNext_clicked(); break;
+        case 42: _t->slot_toggleStockView(); break;
+        case 43: _t->on_stock_pagination_cbSize_currentIndexChanged((*reinterpret_cast< std::add_pointer_t<int>>(_a[1]))); break;
+        case 44: _t->on_stock_pagination_btnPrev_clicked(); break;
+        case 45: _t->on_stock_pagination_btnNext_clicked(); break;
+        case 46: _t->slot_toggleClientView(); break;
+        case 47: _t->on_client_pagination_cbSize_currentIndexChanged((*reinterpret_cast< std::add_pointer_t<int>>(_a[1]))); break;
+        case 48: _t->on_client_pagination_btnPrev_clicked(); break;
+        case 49: _t->on_client_pagination_btnNext_clicked(); break;
+        case 50: _t->slot_toggleMaintView(); break;
+        case 51: _t->on_maint_pagination_cbSize_currentIndexChanged((*reinterpret_cast< std::add_pointer_t<int>>(_a[1]))); break;
+        case 52: _t->on_maint_pagination_btnPrev_clicked(); break;
+        case 53: _t->on_maint_pagination_btnNext_clicked(); break;
+        case 54: _t->slot_toggleCmdView(); break;
+        case 55: _t->on_cmd_pagination_cbSize_currentIndexChanged((*reinterpret_cast< std::add_pointer_t<int>>(_a[1]))); break;
+        case 56: _t->on_cmd_pagination_btnPrev_clicked(); break;
+        case 57: _t->on_cmd_pagination_btnNext_clicked(); break;
+        case 58: _t->on_btnSave_Mod_3_clicked(); break;
+        case 59: _t->on_btnSave_CmdMod_clicked(); break;
+        case 60: _t->on_btnCancel_Mod_3_clicked(); break;
+        case 61: _t->on_btnCancel_CmdMod_clicked(); break;
+        case 62: _t->on_btnToggleSidebar_clicked(); break;
         default: ;
         }
     }
@@ -514,13 +538,13 @@ int MainWindow::qt_metacall(QMetaObject::Call _c, int _id, void **_a)
     if (_id < 0)
         return _id;
     if (_c == QMetaObject::InvokeMetaMethod) {
-        if (_id < 59)
+        if (_id < 63)
             qt_static_metacall(this, _c, _id, _a);
-        _id -= 59;
+        _id -= 63;
     } else if (_c == QMetaObject::RegisterMethodArgumentMetaType) {
-        if (_id < 59)
+        if (_id < 63)
             *reinterpret_cast<QMetaType *>(_a[0]) = QMetaType();
-        _id -= 59;
+        _id -= 63;
     }
     return _id;
 }

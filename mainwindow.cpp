@@ -6,11 +6,14 @@
 #include <QPageSize>
 #include <QMarginsF>
 #include <QFileDialog>
+#include <QFile>
+#include <QUrlQuery>
 
 
 
 
 #include <QPushButton>
+#include <QRegularExpression>
 
 #include <QHBoxLayout>
 
@@ -103,6 +106,9 @@ static constexpr int PROD_ROLE_MAX = Qt::UserRole + 1;
 static constexpr int PROD_ROLE_AISLE = Qt::UserRole + 2;
 static constexpr int PROD_ROLE_ID = Qt::UserRole + 6;
 static constexpr int PROD_ROLE_BATTERY = Qt::UserRole + 7;
+static constexpr int PROD_ROLE_IMAGE = Qt::UserRole + 8;
+static constexpr int PROD_ROLE_FEATURES = Qt::UserRole + 9;
+static constexpr int PROD_ROLE_LOC = Qt::UserRole + 10;
 static constexpr int STOCK_ROLE_ID = Qt::UserRole + 50;
 static constexpr int STOCK_ROLE_SEUIL = Qt::UserRole + 51;
 static constexpr int STOCK_ROLE_ID_FOUR = Qt::UserRole + 52;
@@ -609,30 +615,20 @@ void styleTopCombinedUser(QLabel *label)
 
 
 MainWindow::MainWindow(QWidget *parent)
-
     : QMainWindow(parent)
-
     , ui(new Ui::MainWindow)
-
-    , sidebarGroup(nullptr)
-
+    , sidebarGroup(new QButtonGroup(this))
     , homeDashboardPage(nullptr)
-
     , currentEmployeRow(-1)
-
     , currentProduitRow(-1)
-
     , currentClientRow(-1)
-
-    , currentMaintRow(-1)
-
     , globalStatsReturnPage(nullptr)
-
     , m_sidebarExpanded(true)
 
 {
 
     ui->setupUi(this);
+    m_networkManager = new QNetworkAccessManager(this);
 
     // Initialize Add Commande Date Comboboxes
     for (int i = 1; i <= 31; ++i) {
@@ -5496,17 +5492,24 @@ void MainWindow::setupProduitModule()
 
         connect(b, &QPushButton::clicked, this, &MainWindow::goAffichage);
 
-    if (auto *b = root->findChild<QPushButton*>("prod_btnSave_Add")) {
-        disconnect(b, &QPushButton::clicked, this, &MainWindow::on_prod_btnSave_Add_clicked);
-        connect(b, &QPushButton::clicked, this, &MainWindow::on_prod_btnSave_Add_clicked);
+    // prod_btnSave_Add and prod_btnSave_Mod are auto-connected via
+    // connectSlotsByName (slot names follow on_<objectName>_<signal> pattern).
+    // Manual connect here would cause the slot to fire twice per click.
+
+
+
+    if (auto *lbl = root->findChild<QLabel*>("prod_l5")) {
+        lbl->setCursor(Qt::PointingHandCursor);
+        lbl->installEventFilter(this);
+    }
+    if (auto *lbl = root->findChild<QLabel*>("prod_l5_m")) {
+        lbl->setCursor(Qt::PointingHandCursor);
+        lbl->installEventFilter(this);
     }
 
-    if (auto *b = root->findChild<QPushButton*>("prod_btnSave_Mod")) {
-        disconnect(b, &QPushButton::clicked, this, &MainWindow::on_prod_btnSave_Mod_clicked);
-        connect(b, &QPushButton::clicked, this, &MainWindow::on_prod_btnSave_Mod_clicked);
+    if (auto *btn = root->findChild<QPushButton*>("prod_btnMap3D")) {
+        connect(btn, &QPushButton::clicked, this, &MainWindow::openStockMap3D);
     }
-
-
 
     if (QTableWidget *t = produitTable()) {
         QPushButton *btnToggle = root->findChild<QPushButton*>("prod_btnToggleView");
@@ -5548,10 +5551,79 @@ void MainWindow::setupProduitModule()
 
         t->horizontalHeader()->show(); 
 
+        // Setup Search and Sort for Produit
+        if (QLineEdit *searchInput = root->findChild<QLineEdit*>("prod_searchInput")) {
+            connect(searchInput, &QLineEdit::textChanged, this, &MainWindow::applyProduitFilterAndSort);
+        }
+        if (QComboBox *cbSort = root->findChild<QComboBox*>("prod_cbSort")) {
+            cbSort->clear();
+            cbSort->addItems({"Par defaut", "Capacite (Croissante)", "Capacite (Decroissante)"});
+            connect(cbSort, &QComboBox::currentIndexChanged, this, &MainWindow::applyProduitFilterAndSort);
+        }
 
+        // on_prod_btnPdf_clicked is auto-connected by Qt via connectSlotsByName.
+        // Manual connect here causes the dialog to appear twice.
 
         addExampleRow();
         refreshCardView();
+
+        // Real-time slider labels
+        if (ui) {
+            // Add form labels (already exist in .ui)
+            auto updateBatAdd = [this](int val) { if (ui->prod_label) ui->prod_label->setText(QString("%1 mAh").arg(val)); };
+            auto updateCapAdd = [this](int val) { if (ui->prod_label_4) ui->prod_label_4->setText(QString("%1 L").arg(val)); };
+
+            // Modify form labels (injected dynamically to avoid UI header issues)
+            QLabel *lblBatValMod = root->findChild<QLabel*>("prod_lbl_bat_val_mod");
+            if (!lblBatValMod && ui->prod_vl_bat_mod) {
+                lblBatValMod = new QLabel();
+                lblBatValMod->setObjectName("prod_lbl_bat_val_mod");
+                lblBatValMod->setStyleSheet("color: #28a745; font-weight: bold; margin-left: 5px;");
+                // Find title label to put value next to it
+                if (ui->prod_l_bat_m) {
+                    // Try to replace layout with horizontal one for title + value
+                    QHBoxLayout *hl = new QHBoxLayout();
+                    ui->prod_vl_bat_mod->insertLayout(0, hl);
+                    ui->prod_vl_bat_mod->removeWidget(ui->prod_l_bat_m);
+                    hl->addWidget(ui->prod_l_bat_m);
+                    hl->addWidget(lblBatValMod);
+                    hl->addStretch();
+                } else {
+                    ui->prod_vl_bat_mod->insertWidget(1, lblBatValMod);
+                }
+            }
+
+            QLabel *lblCapValMod = root->findChild<QLabel*>("prod_lbl_cap_val_mod");
+            if (!lblCapValMod && ui->prod_vl_cap_mod) {
+                lblCapValMod = new QLabel();
+                lblCapValMod->setObjectName("prod_lbl_cap_val_mod");
+                lblCapValMod->setStyleSheet("color: #28a745; font-weight: bold; margin-left: 5px;");
+                if (ui->prod_l_cap_m) {
+                    QHBoxLayout *hl = new QHBoxLayout();
+                    ui->prod_vl_cap_mod->insertLayout(0, hl);
+                    ui->prod_vl_cap_mod->removeWidget(ui->prod_l_cap_m);
+                    hl->addWidget(ui->prod_l_cap_m);
+                    hl->addWidget(lblCapValMod);
+                    hl->addStretch();
+                } else {
+                    ui->prod_vl_cap_mod->insertWidget(1, lblCapValMod);
+                }
+            }
+
+            auto updateBatMod = [this, lblBatValMod](int val) { if (lblBatValMod) lblBatValMod->setText(QString("%1 mAh").arg(val)); };
+            auto updateCapMod = [this, lblCapValMod](int val) { if (lblCapValMod) lblCapValMod->setText(QString("%1 L").arg(val)); };
+
+            if (ui->prod_slider_bat_add) connect(ui->prod_slider_bat_add, &QSlider::valueChanged, this, updateBatAdd);
+            if (ui->prod_slider_cap_add) connect(ui->prod_slider_cap_add, &QSlider::valueChanged, this, updateCapAdd);
+            if (ui->prod_slider_bat_mod) connect(ui->prod_slider_bat_mod, &QSlider::valueChanged, this, updateBatMod);
+            if (ui->prod_slider_cap_mod) connect(ui->prod_slider_cap_mod, &QSlider::valueChanged, this, updateCapMod);
+
+            // Initial values
+            if (ui->prod_slider_bat_add) updateBatAdd(ui->prod_slider_bat_add->value());
+            if (ui->prod_slider_cap_add) updateCapAdd(ui->prod_slider_cap_add->value());
+            if (ui->prod_slider_bat_mod) updateBatMod(ui->prod_slider_bat_mod->value());
+            if (ui->prod_slider_cap_mod) updateCapMod(ui->prod_slider_cap_mod->value());
+        }
 
         // --- INJECT PAGINATION BAR ---
         QTimer::singleShot(200, this, [this, root]() {
@@ -5788,21 +5860,20 @@ void MainWindow::goAffichage()
 void MainWindow::goAjout()
 
 {
-
     if (auto *stack = produitStacked()) {
-
         if (auto *page = produitPage("prod_ajout"))
-
             stack->setCurrentWidget(page);
-
         else if (auto *page = produitPage("ajout"))
-
             stack->setCurrentWidget(page);
+    }
 
+    m_selectedEmplacement = "";
+    if (auto *lbl = findChild<QLabel*>("prod_l5")) {
+        lbl->setText("Plan du dépôt : cliquer ici pour choisir");
+        lbl->setStyleSheet("");
     }
 
     applyStyleFix();
-
 }
 
 
@@ -5857,6 +5928,13 @@ void MainWindow::goStatistiques()
 
 // ---------- Produit module table ----------
 
+void MainWindow::applyProduitFilterAndSort()
+{
+    m_currentPage = 0; // Reset pagination
+    addExampleRow();
+    refreshCardView();
+}
+
 void MainWindow::addExampleRow()
 {
     QTableWidget *t = produitTable();
@@ -5864,7 +5942,25 @@ void MainWindow::addExampleRow()
 
     t->setRowCount(0);
 
-    QSqlQueryModel *model = Ptmp.afficher();
+    // Read search and sort from UI if available
+    QString searchModel = "";
+    QString sortCriteria = "id_bac ASC";
+
+    if (QWidget *root = produitRoot()) {
+        if (QLineEdit *searchInput = root->findChild<QLineEdit*>("prod_searchInput")) {
+            searchModel = searchInput->text();
+        }
+        if (QComboBox *cbSort = root->findChild<QComboBox*>("prod_cbSort")) {
+            QString selectedText = cbSort->currentText();
+            if (selectedText == "Capacite (Croissante)") {
+                sortCriteria = "remplissage ASC";
+            } else if (selectedText == "Capacite (Decroissante)") {
+                sortCriteria = "remplissage DESC";
+            }
+        }
+    }
+
+    QSqlQueryModel *model = Ptmp.afficher(searchModel, sortCriteria);
     if (!model) {
         showFriendlySqlError(this, "charger les produits", "Modele SQL indisponible.");
         return;
@@ -5884,6 +5980,9 @@ void MainWindow::addExampleRow()
         const int capacite = model->data(model->index(i, 4)).toInt();
         const double prix = model->data(model->index(i, 5)).toDouble();
         const int battery = model->data(model->index(i, 6)).toInt();
+        const QString imagePath = model->data(model->index(i, 7)).toString();
+        const QString features = model->data(model->index(i, 8)).toString();
+        const QString loc = model->data(model->index(i, 9)).toString();
 
         const QString etat = productStatusFromQty(quantite);
         const QString aisle = QString("A%1").arg((i % 6) + 1);
@@ -5910,16 +6009,315 @@ void MainWindow::addExampleRow()
             refItem->setData(PROD_ROLE_AISLE, aisle);
             refItem->setData(PROD_ROLE_ID, id);
             refItem->setData(PROD_ROLE_BATTERY, battery > 0 ? battery : 12000);
+            refItem->setData(PROD_ROLE_IMAGE, imagePath);
+            refItem->setData(PROD_ROLE_FEATURES, features);
+            refItem->setData(PROD_ROLE_LOC, loc);
         }
     }
 
     delete model;
 }
 
+void MainWindow::on_prod_btnPdf_clicked()
+{
+    // Logic moved to a direct call to avoid mangling
+    onGeminiPdfReply(nullptr);
+}
 
+void MainWindow::onProductImageDownloaded(QNetworkReply *reply, const QString &numSerie)
+{
+    // Obsolete function. Kept empty to prevent MOC compilation missing-symbol errors.
+    if (reply) reply->deleteLater();
+}
 
+void MainWindow::onGeminiPdfReply(QNetworkReply *reply)
+{
+    if (reply) reply->deleteLater();
+
+    // 1. Gather Data
+    struct ProductInfo {
+        QString modele, sn, caract;
+        int capacity, battery, stock;
+        double price;
+        QImage image;
+    };
+    QList<ProductInfo> products;
+
+    QSqlQuery q;
+    q.prepare("SELECT modele, num_serie, remplissage, capacite_batterie, prix, stock, caracteristiques, image_path FROM BAC_INTEL ORDER BY prix DESC");
+    
+    if (!q.exec()) {
+        QMessageBox::critical(this, "Erreur Base de Données", "Impossible de charger les produits : " + q.lastError().text());
+        return;
+    }
+
+    while (q.next()) {
+        ProductInfo p;
+        p.modele = q.value(0).toString();
+        if (p.modele.isEmpty()) p.modele = "Série Standard";
+        p.sn = q.value(1).toString();
+        p.capacity = q.value(2).toInt();
+        p.battery = q.value(3).toInt();
+        p.price = q.value(4).toDouble();
+        p.stock = q.value(5).toInt();
+        p.caract = q.value(6).toString();
+        
+        QString imgPath = q.value(7).toString();
+        if (!imgPath.isEmpty()) {
+            p.image.load(imgPath);
+        }
+        products.append(p);
+    }
+
+    if (products.isEmpty()) {
+        QMessageBox::warning(this, "Catalogue Vide", "Aucun produit trouvé dans la base de données.");
+        return;
+    }
+
+    QString fileName = QFileDialog::getSaveFileName(this, "Exporter le Catalogue Premium", "Catalogue_WasteGuard_2026.pdf", "PDF Files (*.pdf)");
+    if (fileName.isEmpty()) return;
+
+    // 2. Setup PDF Writer
+    QPdfWriter pdfWriter(fileName);
+    pdfWriter.setPageSize(QPageSize(QPageSize::A4));
+    pdfWriter.setPageMargins(QMarginsF(0, 0, 0, 0), QPageLayout::Millimeter);
+    pdfWriter.setResolution(300);
+
+    QPainter painter(&pdfWriter);
+    painter.setRenderHint(QPainter::Antialiasing);
+    int pageW = pdfWriter.width();
+    int pageH = pdfWriter.height();
+
+    // Brand Colors
+    QColor primaryGreen("#4caf50");
+    QColor darkGreen("#2e7d32");
+    QColor lightGreen("#e8f5e9");
+    QColor accentNavy("#0a192f");
+    QColor lightGray("#f5f5f5");
+    QColor textDark("#333333");
+
+    // Fonts
+    QFont brandLarge("Arial Black", 54);
+    QFont titleFont("Arial", 42, QFont::Bold);
+    QFont sectionFont("Arial", 14, QFont::Bold);
+    QFont bodyFont("Arial", 12);
+    QFont priceFont("Arial Black", 18);
+    QFont smallFont("Arial", 10);
+
+    // =========================================================================
+    // PAGE 1: COVER PAGE (Page de Garde)
+    // =========================================================================
+    painter.fillRect(0, 0, pageW, pageH, Qt::white);
+
+    // Draw Top-Right Organic Wave
+    QPainterPath topWave;
+    topWave.moveTo(pageW * 0.4, 0);
+    topWave.cubicTo(pageW * 0.6, pageH * 0.2, pageW * 1.1, pageH * 0.05, pageW, pageH * 0.3);
+    topWave.lineTo(pageW, 0);
+    topWave.closeSubpath();
+    painter.fillPath(topWave, lightGreen);
+
+    QPainterPath midWave;
+    midWave.moveTo(pageW * 0.5, 0);
+    midWave.cubicTo(pageW * 0.7, pageH * 0.1, pageW * 0.9, pageH * 0.2, pageW, pageH * 0.15);
+    midWave.lineTo(pageW, 0);
+    painter.fillPath(midWave, primaryGreen);
+
+    // Branding
+    painter.setPen(accentNavy);
+    painter.setFont(brandLarge);
+    painter.drawText(QRect(200, pageH * 0.4, pageW - 400, 300), Qt::AlignLeft, "WASTEGUARD");
+    
+    painter.setFont(titleFont);
+    painter.setPen(primaryGreen);
+    painter.drawText(QRect(200, pageH * 0.4 + 350, pageW - 400, 200), Qt::AlignLeft, "CATALOGUE");
+    
+    painter.setFont(sectionFont);
+    painter.setPen(textDark);
+    painter.drawText(QRect(200, pageH * 0.4 + 550, pageW - 400, 100), Qt::AlignLeft, "COMMUNAUTÉ & INNOVATION | ÉDITION 2026");
+
+    // Bottom decorative wave
+    QPainterPath bottomWave;
+    bottomWave.moveTo(0, pageH);
+    bottomWave.lineTo(pageW, pageH);
+    bottomWave.lineTo(pageW, pageH * 0.85);
+    bottomWave.cubicTo(pageW * 0.7, pageH * 0.8, pageW * 0.3, pageH * 0.95, 0, pageH * 0.8);
+    painter.fillPath(bottomWave, primaryGreen);
+
+    // =========================================================================
+    // PRODUCT PAGES
+    // =========================================================================
+    for (int i = 0; i < products.size(); ++i) {
+        pdfWriter.newPage();
+        const ProductInfo &p = products[i];
+
+        painter.fillRect(0, 0, pageW, pageH, Qt::white);
+
+        // --- BACKGROUND DECORATION (Dotted Grid) ---
+        painter.setPen(QPen(QColor("#eeeeee"), 1, Qt::DotLine));
+        for (int x = 600; x < pageW; x += 150) {
+            for (int y = 500; y < pageH - 600; y += 150) {
+                painter.drawPoint(x, y);
+            }
+        }
+
+        // --- LEFT WAVY SIDEBAR ---
+        QPainterPath sideWave;
+        sideWave.moveTo(0, 0);
+        sideWave.lineTo(350, 0);
+        sideWave.cubicTo(450, pageH * 0.3, 150, pageH * 0.7, 300, pageH);
+        sideWave.lineTo(0, pageH);
+        sideWave.closeSubpath();
+        painter.fillPath(sideWave, lightGreen);
+
+        QPainterPath sideInner;
+        sideInner.moveTo(0, 0);
+        sideInner.lineTo(150, 0);
+        sideInner.cubicTo(200, pageH * 0.4, 80, pageH * 0.6, 120, pageH);
+        sideInner.lineTo(0, pageH);
+        painter.fillPath(sideInner, primaryGreen);
+
+        // --- CIRCULAR IMAGE FRAME (TOP RIGHT) ---
+        int circleSize = 950;
+        int circleX = pageW - circleSize - 80;
+        int circleY = 150;
+
+        // Shadow/Glow effect for the circle
+        painter.setBrush(lightGray);
+        painter.setPen(Qt::NoPen);
+        painter.drawEllipse(circleX + 20, circleY + 20, circleSize, circleSize);
+
+        // Main colored ring
+        painter.setBrush(Qt::NoBrush);
+        painter.setPen(QPen(primaryGreen, 12));
+        painter.drawEllipse(circleX, circleY, circleSize, circleSize);
+
+        // Clipping mask for the image
+        painter.save();
+        QPainterPath clipPath;
+        clipPath.addEllipse(circleX + 15, circleY + 15, circleSize - 30, circleSize - 30);
+        painter.setClipPath(clipPath);
+
+        if (!p.image.isNull()) {
+            QImage scaled = p.image.scaled(circleSize, circleSize, Qt::KeepAspectRatioByExpanding, Qt::SmoothTransformation);
+            int ix = circleX + (circleSize - scaled.width()) / 2;
+            int iy = circleY + (circleSize - scaled.height()) / 2;
+            painter.drawImage(ix, iy, scaled);
+        } else {
+            painter.setBrush(lightGray);
+            painter.drawRect(circleX, circleY, circleSize, circleSize);
+            painter.setPen(Qt::gray);
+            painter.drawText(QRect(circleX, circleY, circleSize, circleSize), Qt::AlignCenter, "Fichier Photo\nManquant");
+        }
+        painter.restore();
+
+        // --- CONTENT PLACEMENT ---
+        int textStartX = 650;
+        int currentY = 500;
+        int textMaxWidth = circleX - textStartX - 100;
+
+        // Product Name
+        painter.setPen(accentNavy);
+        QFont titleFontFixed = titleFont;
+        titleFontFixed.setPointSize(38);
+        painter.setFont(titleFontFixed);
+        painter.drawText(QRect(textStartX, currentY, textMaxWidth, 400), 
+                         Qt::AlignLeft | Qt::AlignTop | Qt::TextWordWrap, p.modele.toUpper());
+        
+        currentY += 450;
+
+        // Series/Type
+        painter.setPen(primaryGreen);
+        painter.setFont(sectionFont);
+        painter.drawText(QRect(textStartX, currentY, textMaxWidth, 150), 
+                         Qt::AlignLeft | Qt::AlignTop, "COLLECTION SIGNATURE 2026");
+        currentY += 150;
+
+        // Description
+        painter.setPen(textDark);
+        painter.setFont(bodyFont);
+        QString desc = "Découvrez l'excellence de la gestion des déchets avec notre modèle '" + p.modele + 
+                       "'. Un mariage parfait entre durabilité environnementale et élégance contemporaine.";
+        painter.drawText(QRect(textStartX, currentY, textMaxWidth, 350), 
+                         Qt::AlignLeft | Qt::TextWordWrap, desc);
+        currentY += 450;
+
+        // Stats boxes
+        int boxW = 500;
+        int boxH = 180;
+        
+        auto drawStat = [&](int x, int y, const QString &label, const QString &val, const QColor &c) {
+            painter.setBrush(lightGray);
+            painter.setPen(Qt::NoPen);
+            painter.drawRoundedRect(x, y, boxW, boxH, 25, 25);
+            
+            painter.setPen(c);
+            painter.setFont(smallFont);
+            painter.drawText(x + 50, y + 65, label);
+            
+            painter.setFont(sectionFont);
+            painter.drawText(x + 50, y + 135, val);
+        };
+
+        drawStat(textStartX, currentY, "CAPACITÉ RÉSERVOIR", QString("%1 LITRES").arg(p.capacity), primaryGreen);
+        drawStat(textStartX + boxW + 50, currentY, "AUTONOMIE BATTERIE", QString("%1 mAh").arg(p.battery), accentNavy);
+        currentY += 300;
+
+        // --- SPÉCIFICATIONS SECTION ---
+        painter.setPen(accentNavy);
+        painter.setFont(sectionFont);
+        painter.drawText(textStartX, currentY, "SPÉCIFICATIONS DÉTAILLÉES");
+        currentY += 50;
+        
+        painter.setPen(QPen(lightGreen, 8));
+        painter.drawLine(textStartX, currentY, textStartX + 600, currentY);
+        currentY += 120;
+        
+        painter.setPen(textDark);
+        painter.setFont(bodyFont);
+        QStringList bullets = {
+            "• Gestion intelligente par capteur ultrasonique",
+            "• Structure en acier inoxydable 304 anti-corrosion",
+            "• Système de compression de déchets intégré",
+            "• Alerte de remplissage automatique via Dashboard"
+        };
+        for (const QString &b : bullets) {
+            painter.drawText(textStartX + 40, currentY, b);
+            currentY += 90;
+        }
+
+        // --- FOOTER SECTION ---
+        int footerY = pageH - 450;
+        
+        int stockPillX = textStartX;
+        QRect stockRect(stockPillX, footerY, 700, 130);
+        painter.setBrush(p.stock > 10 ? lightGreen : QColor("#ffebee"));
+        painter.setPen(Qt::NoPen);
+        painter.drawRoundedRect(stockRect, 65, 65);
+        painter.setPen(p.stock > 10 ? darkGreen : QColor("#c62828"));
+        painter.setFont(sectionFont);
+        painter.drawText(stockRect, Qt::AlignCenter, QString("DISPONIBILITÉ : %1 EN STOCK").arg(p.stock));
+
+        painter.setPen(accentNavy);
+        painter.setFont(priceFont);
+        painter.drawText(QRect(pageW - 1400, footerY + 20, 1300, 120), Qt::AlignRight | Qt::AlignVCenter, 
+                         QString("%1 TND").arg(p.price, 0, 'f', 2));
+        
+        painter.setFont(smallFont);
+        painter.drawText(QRect(pageW - 1400, footerY + 120, 1300, 50), Qt::AlignRight, "PRIX DE VENTE CONSEILLÉ TTC");
+
+        // Page Number
+        painter.setPen(Qt::gray);
+        painter.setFont(smallFont);
+        painter.drawText(pageW - 400, pageH - 150, QString("PAGE %1").arg(i + 2)); 
+    }
+
+    painter.end();
+
+    QMessageBox::information(this, "Succès", "Catalogue Redesigné exporté avec succès !");
+    QDesktopServices::openUrl(QUrl::fromLocalFile(fileName));
+}
 void MainWindow::installActionButtonsForRow(int row)
-
 {
 
     QTableWidget *t = produitTable();
@@ -6135,9 +6533,59 @@ void MainWindow::loadProduitToModificationForm(int row)
     if (ui->prod_slider_cap_mod) ui->prod_slider_cap_mod->setValue(qMax(ui->prod_slider_cap_mod->minimum(), qMin(ui->prod_slider_cap_mod->maximum(), capacite)));
     if (ui->prod_slider_bat_mod) ui->prod_slider_bat_mod->setValue(qMax(ui->prod_slider_bat_mod->minimum(), qMin(ui->prod_slider_bat_mod->maximum(), battery)));
 
-    setComboTextSafe(ui->prod_cb_model_mod, modele);
+    if (ui->prod_ln_model_mod) ui->prod_ln_model_mod->setText(modele);
     setComboTextSafe(ui->prod_cb_status_mod, status);
-    if (ui->prod_lstCharacteristics_mod) ui->prod_lstCharacteristics_mod->clearSelection();
+    if (ui->prod_lstCharacteristics_mod) {
+        ui->prod_lstCharacteristics_mod->clearSelection();
+        const QString caracteristiques = t->item(row, 0) ? t->item(row, 0)->data(PROD_ROLE_FEATURES).toString() : QString();
+        QStringList featuresList = caracteristiques.split(",", Qt::SkipEmptyParts);
+        for (int i = 0; i < ui->prod_lstCharacteristics_mod->count(); ++i) {
+            QListWidgetItem *item = ui->prod_lstCharacteristics_mod->item(i);
+            for (const QString &f : featuresList) {
+                if (item->text().trimmed() == f.trimmed()) {
+                    item->setSelected(true);
+                    item->setCheckState(Qt::Checked);
+                }
+            }
+        }
+    }
+
+    // Force update labels in case setValue didn't change (no signal)
+    if (ui->prod_slider_bat_mod) {
+        QLabel *lblVal = ui->pageProduit->findChild<QLabel*>("prod_lbl_bat_val_mod");
+        if (lblVal) lblVal->setText(QString("%1 mAh").arg(ui->prod_slider_bat_mod->value()));
+    }
+    if (ui->prod_slider_cap_mod) {
+        QLabel *lblVal = ui->pageProduit->findChild<QLabel*>("prod_lbl_cap_val_mod");
+        if (lblVal) lblVal->setText(QString("%1 L").arg(ui->prod_slider_cap_mod->value()));
+    }
+
+    // Load Image
+    const QString imagePath = t->item(row, 0) ? t->item(row, 0)->data(PROD_ROLE_IMAGE).toString() : QString();
+    m_prodImagePathMod = imagePath;
+
+    const QString loc = t->item(row, 0) ? t->item(row, 0)->data(PROD_ROLE_LOC).toString() : QString();
+    m_selectedEmplacement = loc;
+    if (auto *lbl = ui->pageProduit->findChild<QLabel*>("prod_l5_m")) {
+        if (!loc.isEmpty()) {
+            lbl->setText(QString("📍 Emplacement sélectionné : %1").arg(loc));
+            lbl->setStyleSheet("color: #FFD700; font-size: 13px; font-weight: 700; padding: 10px 16px; background: rgba(255,215,0,0.08); border: 1px solid rgba(255,215,0,0.3); border-radius: 10px;");
+        } else {
+            lbl->setText("Plan du dépôt : cliquer ici pour choisir");
+            lbl->setStyleSheet("");
+        }
+    }
+    if (ui->prod_imgBin) {
+        if (!imagePath.isEmpty() && QFile::exists(imagePath)) {
+            QPixmap pix(imagePath);
+            ui->prod_imgBin->setPixmap(pix.scaled(ui->prod_imgBin->size(), Qt::KeepAspectRatio, Qt::SmoothTransformation));
+            ui->prod_imgBin->setText("");
+        } else {
+            ui->prod_imgBin->clear();
+            ui->prod_imgBin->setText("[ Aucune Image ]");
+            ui->prod_imgBin->setStyleSheet("background-color: #f0f0f0; border: 1px dashed #ccc; color: #999;");
+        }
+    }
 }
 
 void MainWindow::on_prod_btnSave_Add_clicked()
@@ -6153,7 +6601,7 @@ void MainWindow::on_prod_btnSave_Add_clicked()
         }
         reference = firstNonEmptyLineEditText(scope, {"prod_ln_ref_add", "inputRef_add", "ln_ref_add_2", "ln_ref_add_4"});
     }
-    const QString modele = ui->prod_cb_model_add ? ui->prod_cb_model_add->currentText().trimmed() : QString();
+    const QString modele = ui->prod_ln_model_add ? ui->prod_ln_model_add->text().trimmed() : QString();
     const int quantite = ui->prod_sb_qty_add ? ui->prod_sb_qty_add->value() : 0;
     const int capacite = ui->prod_slider_cap_add ? ui->prod_slider_cap_add->value() : 100;
     const double prix = ui->prod_dsb_price_add ? ui->prod_dsb_price_add->value() : 0.0;
@@ -6180,6 +6628,20 @@ void MainWindow::on_prod_btnSave_Add_clicked()
     Ptmp.setCapacite(capacite);
     Ptmp.setPrix(prix);
     Ptmp.setCapaciteBatterie(battery);
+    Ptmp.setLocalisation(m_selectedEmplacement);
+    Ptmp.setImagePath(m_prodImagePathAdd);
+
+    QStringList features;
+    if (ui->prod_lstCharacteristics) {
+        for (int i = 0; i < ui->prod_lstCharacteristics->count(); ++i) {
+            QListWidgetItem *item = ui->prod_lstCharacteristics->item(i);
+            if (item->checkState() == Qt::Checked || item->isSelected()) {
+                features << item->text().trimmed();
+            }
+        }
+    }
+    const QString caracteristiques = features.join(", ");
+    Ptmp.setCaracteristiques(caracteristiques);
 
     if (!Ptmp.ajouter()) {
         showFriendlySqlError(this, "ajouter le produit", Ptmp.lastError());
@@ -6195,8 +6657,9 @@ void MainWindow::on_prod_btnSave_Add_clicked()
                 it->setData(PROD_ROLE_BATTERY, battery);
                 setComboTextSafe(ui->prod_cb_status_add, status);
                 if (auto *statusItem = t->item(r, 5)) {
-                    statusItem->setText(resolvedProductStatus(status, quantite));
+                    statusItem->setText(productStatusFromQty(quantite));
                 }
+                it->setData(PROD_ROLE_FEATURES, caracteristiques);
                 t->selectRow(r);
                 currentProduitRow = r;
                 break;
@@ -6207,11 +6670,18 @@ void MainWindow::on_prod_btnSave_Add_clicked()
     if (m_isCardView) refreshCardView();
 
     if (ui->prod_ln_ref_add) ui->prod_ln_ref_add->clear();
+    if (ui->prod_ln_model_add) ui->prod_ln_model_add->clear();
     if (ui->prod_dsb_price_add) ui->prod_dsb_price_add->setValue(0.0);
     if (ui->prod_sb_qty_add) ui->prod_sb_qty_add->setValue(0);
     if (ui->prod_slider_cap_add) ui->prod_slider_cap_add->setValue(qMax(0, ui->prod_slider_cap_add->maximum() / 2));
     if (ui->prod_slider_bat_add) ui->prod_slider_bat_add->setValue(10000);
     if (ui->prod_lstCharacteristics) ui->prod_lstCharacteristics->clearSelection();
+
+    m_prodImagePathAdd = "";
+    if (ui->prod_lblImgPreview_Add) {
+        ui->prod_lblImgPreview_Add->clear();
+        ui->prod_lblImgPreview_Add->setText("Glisser Image Ici");
+    }
 
     goAffichage();
 }
@@ -6238,7 +6708,7 @@ void MainWindow::on_prod_btnSave_Mod_clicked()
         }
         reference = firstNonEmptyLineEditText(scope, {"prod_ln_ref_mod", "inputRef_mod"});
     }
-    const QString modele = ui->prod_cb_model_mod ? ui->prod_cb_model_mod->currentText().trimmed() : QString();
+    const QString modele = ui->prod_ln_model_mod ? ui->prod_ln_model_mod->text().trimmed() : QString();
     const int quantite = ui->prod_sb_qty_mod ? ui->prod_sb_qty_mod->value() : 0;
     const int capacite = ui->prod_slider_cap_mod ? ui->prod_slider_cap_mod->value() : 100;
     const double prix = ui->prod_dsb_price_mod ? ui->prod_dsb_price_mod->value() : 0.0;
@@ -6280,6 +6750,21 @@ void MainWindow::on_prod_btnSave_Mod_clicked()
     Ptmp.setCapacite(capacite);
     Ptmp.setPrix(prix);
     Ptmp.setCapaciteBatterie(battery);
+    Ptmp.setLocalisation(m_selectedEmplacement);
+    Ptmp.setImagePath(m_prodImagePathMod);
+    m_prodImagePathMod = "";
+
+    QStringList features;
+    if (ui->prod_lstCharacteristics_mod) {
+        for (int i = 0; i < ui->prod_lstCharacteristics_mod->count(); ++i) {
+            QListWidgetItem *item = ui->prod_lstCharacteristics_mod->item(i);
+            if (item->checkState() == Qt::Checked || item->isSelected()) {
+                features << item->text().trimmed();
+            }
+        }
+    }
+    const QString caracteristiques = features.join(", ");
+    Ptmp.setCaracteristiques(caracteristiques);
 
     if (!Ptmp.modifier()) {
         showFriendlySqlError(this, "modifier le produit", Ptmp.lastError());
@@ -6294,8 +6779,9 @@ void MainWindow::on_prod_btnSave_Mod_clicked()
             if (it->data(PROD_ROLE_ID).toInt() == idProduit || it->text().trimmed() == reference) {
                 it->setData(PROD_ROLE_BATTERY, battery);
                 if (auto *statusItem = t->item(r, 5)) {
-                    statusItem->setText(resolvedProductStatus(status, quantite));
+                    statusItem->setText(productStatusFromQty(quantite));
                 }
+                it->setData(PROD_ROLE_FEATURES, caracteristiques);
                 t->selectRow(r);
                 currentProduitRow = r;
                 break;
@@ -6517,6 +7003,10 @@ bool MainWindow::eventFilter(QObject *obj, QEvent *event) {
                         Qt::KeepAspectRatio, Qt::SmoothTransformation));
                 }
             }
+            return true;
+        }
+        if (obj->objectName() == "prod_l5" || obj->objectName() == "prod_l5_m") {
+            openStockMap3D();
             return true;
         }
     }
@@ -7227,230 +7717,201 @@ void MainWindow::buildStatsCharts()
 
 
 
-    QFrame *chart1Host = root->findChild<QFrame*>("prod_graphFrame1Plot");
+    // Find the main graphs layout container
+    QHBoxLayout *mainLayout = root->findChild<QHBoxLayout*>("prod_graphsLayout");
+    if (!mainLayout) return;
 
-    if (!chart1Host)
+    // Clear existing layout items
+    QLayoutItem *child;
+    while ((child = mainLayout->takeAt(0)) != nullptr) {
+        if (child->widget()) child->widget()->deleteLater();
+        delete child;
+    }
 
-        chart1Host = root->findChild<QFrame*>("graphFrame1Plot");
+    QWidget *gridWidget = new QWidget();
+    QGridLayout *gridLayout = new QGridLayout(gridWidget);
+    gridLayout->setContentsMargins(0, 0, 0, 0);
+    gridLayout->setSpacing(20);
+    mainLayout->addWidget(gridWidget);
 
-    QFrame *chart2Host = root->findChild<QFrame*>("prod_graphFrame2Plot");
+    auto createChartCard = [](const QString &title, const QString &hint, QChart *chart) -> QWidget* {
+        QWidget *card = new QWidget();
+        card->setStyleSheet("QWidget { background-color: white; border-radius: 8px; }");
+        QVBoxLayout *layout = new QVBoxLayout(card);
+        
+        QLabel *titleLabel = new QLabel(title);
+        titleLabel->setStyleSheet("font-weight: bold; font-size: 14px; color: #2c3e50; border: none;");
+        layout->addWidget(titleLabel);
 
-    if (!chart2Host)
+        QLabel *hintLabel = new QLabel(hint);
+        hintLabel->setStyleSheet("font-size: 11px; color: #7f8c8d; border: none;");
+        layout->addWidget(hintLabel);
 
-        chart2Host = root->findChild<QFrame*>("graphFrame2Plot");
+        QChartView *view = new QChartView(chart);
+        view->setRenderHint(QPainter::Antialiasing);
+        view->setStyleSheet("border: none;");
+        view->setMinimumHeight(280);
+        layout->addWidget(view);
 
-    if (!chart1Host || !chart2Host) return;
-
-
-
-    auto clearAndLayout = [](QWidget *w) {
-
-        if (!w) return;
-
-        if (w->layout()) {
-
-            QLayoutItem *child;
-
-            while ((child = w->layout()->takeAt(0)) != nullptr) {
-
-                if (child->widget()) child->widget()->deleteLater();
-
-                delete child;
-
-            }
-
-            delete w->layout();
-
-        }
-
-        auto *lay = new QVBoxLayout(w);
-
-        lay->setContentsMargins(0,0,0,0);
-
-        lay->setSpacing(0);
-
+        return card;
     };
 
-
-
-    clearAndLayout(chart1Host);
-
-    clearAndLayout(chart2Host);
-
-
-
-    chart1Host->setMinimumHeight(260);
-
-    chart2Host->setMinimumHeight(260);
-
-
-
+    // 1. Chart Taux de Production (Donut Chart)
     auto *donutSeries = new QPieSeries();
-
     donutSeries->setHoleSize(0.35);
 
-    donutSeries->append("Produits", 45);
-
-    donutSeries->append("Stock", 30);
-
-    donutSeries->append("Maintenance", 15);
-
-    donutSeries->append("Commandes", 10);
-
-
+    QSqlQuery q1("SELECT NVL(remplissage, 0), SUM(NVL(stock, 0)) FROM BAC_INTEL GROUP BY remplissage ORDER BY remplissage ASC");
+    bool hasData1 = false;
+    while (q1.next()) {
+        int cap = q1.value(0).toInt();
+        int totalStock = q1.value(1).toInt();
+        if (totalStock > 0) {
+            donutSeries->append(QString("%1 L").arg(cap), totalStock);
+            hasData1 = true;
+        }
+    }
+    
+    if (!hasData1) donutSeries->append("Aucun Produit", 1);
 
     for (auto *slice : donutSeries->slices()) {
-
         slice->setLabelVisible(true);
-
         slice->setLabelColor(Qt::white);
-
         slice->setLabelPosition(QPieSlice::LabelInsideHorizontal);
-
         slice->setBorderWidth(2);
-
         slice->setBorderColor(Qt::white);
-
     }
-
-    if (!donutSeries->slices().isEmpty()) {
-
+    if (hasData1 && !donutSeries->slices().isEmpty()) {
         auto *s = donutSeries->slices().at(0);
-
         s->setExploded(true);
-
         s->setLabelVisible(true);
-
         s->setLabelPosition(QPieSlice::LabelOutside);
-
         s->setLabelColor(Qt::black);
-
     }
-
-
 
     auto *donutChart = new QChart();
-
     donutChart->addSeries(donutSeries);
-
-    donutChart->setTitle("Répartition Globale (Donut)");
-
     donutChart->setTheme(QChart::ChartThemeBlueCerulean);
-
     donutChart->setAnimationOptions(QChart::AllAnimations);
-
     donutChart->legend()->setAlignment(Qt::AlignRight);
-
     donutChart->legend()->setFont(QFont("Segoe UI", 9));
+    
+    QWidget *card1 = createChartCard("Taux de Production (Par Capacité)", "Répartition des produits fabriqués par capacité (L)", donutChart);
+    gridLayout->addWidget(card1, 0, 0);
 
-    donutChart->setTitleFont(QFont("Segoe UI", 12, QFont::Bold));
+    // 2. Chart Valeur du Stock (Bar Chart)
+    auto *barSet = new QBarSet("Valeur (TND)");
+    barSet->setColor(QColor(0x2980b9));
+    
+    QStringList categories;
+    QSqlQuery q2("SELECT NVL(remplissage, 0), SUM(NVL(stock, 0) * NVL(prix, 0)) FROM BAC_INTEL GROUP BY remplissage ORDER BY remplissage ASC");
+    
+    double maxVal = 0;
+    bool hasData2 = false;
+    while (q2.next()) {
+        int cap = q2.value(0).toInt();
+        double totalVal = q2.value(1).toDouble();
+        *barSet << totalVal;
+        categories << QString("%1 L").arg(cap);
+        if (totalVal > maxVal) maxVal = totalVal;
+        hasData2 = true;
+    }
+    
+    if (!hasData2) { *barSet << 0; categories << "N/A"; }
+    
+    auto *barSeries = new QBarSeries();
+    barSeries->append(barSet);
+    
+    auto *barChart = new QChart();
+    barChart->addSeries(barSeries);
+    barChart->setTheme(QChart::ChartThemeLight);
+    barChart->setAnimationOptions(QChart::SeriesAnimations);
+    barChart->legend()->setAlignment(Qt::AlignBottom);
 
-
-
-    auto *donutView = new QChartView(donutChart);
-
-    donutView->setRenderHint(QPainter::Antialiasing);
-
-
-
-    auto *splineSeries = new QSplineSeries();
-
-    splineSeries->setName("Croissance");
-
-    splineSeries->append(1, 10);
-
-    splineSeries->append(2, 22);
-
-    splineSeries->append(3, 18);
-
-    splineSeries->append(4, 32);
-
-    splineSeries->append(5, 28);
-
-    splineSeries->append(6, 45);
-
-
-
-    auto *areaSeries = new QAreaSeries(splineSeries);
-
-    areaSeries->setName("Zone de Croissance");
-
-
-
-    QLinearGradient gradient(QPointF(0, 0), QPointF(0, 1));
-
-    gradient.setColorAt(0.0, QColor(0x3498db));
-
-    gradient.setColorAt(1.0, QColor(0xecf0f1));
-
-    areaSeries->setBrush(gradient);
-
-
-
-    QPen pen(0x2980b9);
-
-    pen.setWidth(3);
-
-    areaSeries->setPen(pen);
-
-
-
-    auto *areaChart = new QChart();
-
-    areaChart->addSeries(areaSeries);
-
-    areaChart->setTitle("Évolution Dynamique");
-
-    areaChart->setTheme(QChart::ChartThemeLight);
-
-    areaChart->setAnimationOptions(QChart::SeriesAnimations);
-
-    areaChart->legend()->setAlignment(Qt::AlignBottom);
-
-    areaChart->setTitleFont(QFont("Segoe UI", 12, QFont::Bold));
-
-
-
-    auto *axisX = new QValueAxis();
-
-    axisX->setRange(1, 6);
-
-    axisX->setLabelFormat("%d");
-
-    axisX->setTickCount(6);
-
-    areaChart->addAxis(axisX, Qt::AlignBottom);
-
-    areaSeries->attachAxis(axisX);
-
-
+    auto *axisX = new QBarCategoryAxis();
+    axisX->append(categories);
+    barChart->addAxis(axisX, Qt::AlignBottom);
+    barSeries->attachAxis(axisX);
 
     auto *axisY = new QValueAxis();
+    axisY->setLabelFormat("%.0f");
+    axisY->setRange(0, maxVal > 0 ? maxVal * 1.2 : 100);
+    barChart->addAxis(axisY, Qt::AlignLeft);
+    barSeries->attachAxis(axisY);
 
-    axisY->setRange(0, 50);
+    QWidget *card2 = createChartCard("Valeur Initiale du Stock Produit", "Valeur financière brute du stock par capacité", barChart);
+    gridLayout->addWidget(card2, 0, 1);
 
-    areaChart->addAxis(axisY, Qt::AlignLeft);
+    // 3. Chart Répartition par Modèle (Pie Chart)
+    auto *pieSeries = new QPieSeries();
+    QSqlQuery q3("SELECT NVL(modele, 'Inconnu'), SUM(NVL(stock, 0)) FROM BAC_INTEL GROUP BY modele");
+    bool hasData3 = false;
+    while (q3.next()) {
+        QString mod = q3.value(0).toString();
+        int totalStock = q3.value(1).toInt();
+        if (totalStock > 0) {
+            pieSeries->append(mod, totalStock);
+            hasData3 = true;
+        }
+    }
+    if (!hasData3) pieSeries->append("Aucun Modèle", 1);
 
-    areaSeries->attachAxis(axisY);
+    for (auto *slice : pieSeries->slices()) {
+        slice->setLabelVisible(true);
+        // Distinguish the donut from the pie
+    }
 
+    auto *pieChart = new QChart();
+    pieChart->addSeries(pieSeries);
+    pieChart->setTheme(QChart::ChartThemeLight);
+    pieChart->setAnimationOptions(QChart::AllAnimations);
+    pieChart->legend()->setAlignment(Qt::AlignRight);
+    pieChart->legend()->setFont(QFont("Segoe UI", 9));
 
+    QWidget *card3 = createChartCard("Répartition par Modèle", "Quantité des bacs manufacturés par type de modèle", pieChart);
+    gridLayout->addWidget(card3, 1, 0);
 
-    auto *areaView = new QChartView(areaChart);
+    // 4. Chart Volume Actif Total par Modèle (Horizontal Bar Chart)
+    auto *hBarSet = new QBarSet("Volume Total (Litres)");
+    hBarSet->setColor(QColor(0x27ae60)); // Green color for volume
+    
+    QStringList hCategories;
+    QSqlQuery q4("SELECT NVL(modele, 'Inconnu'), SUM(NVL(stock, 0) * NVL(remplissage, 0)) FROM BAC_INTEL GROUP BY modele");
+    
+    double hMaxVal = 0;
+    bool hasData4 = false;
+    while (q4.next()) {
+        QString mod = q4.value(0).toString();
+        double totalVolume = q4.value(1).toDouble();
+        *hBarSet << totalVolume;
+        hCategories << mod;
+        if (totalVolume > hMaxVal) hMaxVal = totalVolume;
+        hasData4 = true;
+    }
+    
+    if (!hasData4) { *hBarSet << 0; hCategories << "N/A"; }
+    
+    auto *hBarSeries = new QHorizontalBarSeries();
+    hBarSeries->append(hBarSet);
+    
+    auto *hBarChart = new QChart();
+    hBarChart->addSeries(hBarSeries);
+    hBarChart->setTheme(QChart::ChartThemeLight);
+    hBarChart->setAnimationOptions(QChart::SeriesAnimations);
+    hBarChart->legend()->setAlignment(Qt::AlignBottom);
 
-    areaView->setRenderHint(QPainter::Antialiasing);
+    auto *hAxisY = new QBarCategoryAxis();
+    hAxisY->append(hCategories);
+    hBarChart->addAxis(hAxisY, Qt::AlignLeft);
+    hBarSeries->attachAxis(hAxisY);
 
+    auto *hAxisX = new QValueAxis();
+    hAxisX->setLabelFormat("%.0f");
+    hAxisX->setRange(0, hMaxVal > 0 ? hMaxVal * 1.2 : 100);
+    hBarChart->addAxis(hAxisX, Qt::AlignBottom);
+    hBarSeries->attachAxis(hAxisX);
 
-
-    if (!chart1Host->layout()) new QVBoxLayout(chart1Host);
-
-    if (!chart2Host->layout()) new QVBoxLayout(chart2Host);
-
-
-
-    chart1Host->layout()->addWidget(donutView);
-
-    chart2Host->layout()->addWidget(areaView);
-
+    QWidget *card4 = createChartCard("Volume Actif Total par Modèle", "Capacité volumétrique totale disponible (L)", hBarChart);
+    gridLayout->addWidget(card4, 1, 1);
 }
 
 
@@ -9751,7 +10212,8 @@ QWidget* MainWindow::createProductCard(int row)
     imgLabel->setAlignment(Qt::AlignCenter);
     imgLabel->setStyleSheet("background: transparent;");
 
-    QString resPath = ":/assets/bin.png";
+    QString imagePath = t->item(row, 0)->data(PROD_ROLE_IMAGE).toString();
+    QString resPath = (imagePath.isEmpty() || !QFile::exists(imagePath)) ? ":/assets/bin.png" : imagePath;
 
     QPixmap pix(resPath);
     if (!pix.isNull())
@@ -12252,4 +12714,65 @@ void MainWindow::installCmdActions2(int row)
         }
         refreshCmdStats();
     });
+}
+
+void MainWindow::on_prod_btnUpload_Add_clicked()
+{
+    QString fileName = QFileDialog::getOpenFileName(this, tr("Choisir une image"), "", tr("Images (*.png *.jpg *.jpeg *.bmp *.gif)"));
+    if (!fileName.isEmpty()) {
+        m_prodImagePathAdd = fileName;
+        QPixmap pix(fileName);
+        if (!pix.isNull() && ui->prod_lblImgPreview_Add) {
+            ui->prod_lblImgPreview_Add->setPixmap(pix.scaled(ui->prod_lblImgPreview_Add->size(), Qt::KeepAspectRatio, Qt::SmoothTransformation));
+            ui->prod_lblImgPreview_Add->setText("");
+        }
+    }
+}
+
+void MainWindow::on_prod_btnUpload_Mod_clicked()
+{
+    QString fileName = QFileDialog::getOpenFileName(this, tr("Choisir une image"), "", tr("Images (*.png *.jpg *.jpeg *.bmp *.gif)"));
+    if (!fileName.isEmpty()) {
+        m_prodImagePathMod = fileName;
+        QPixmap pix(fileName);
+        if (!pix.isNull() && ui->prod_imgBin) {
+            ui->prod_imgBin->setPixmap(pix.scaled(ui->prod_imgBin->size(), Qt::KeepAspectRatio, Qt::SmoothTransformation));
+            ui->prod_imgBin->setText("");
+        }
+    }
+}
+
+void MainWindow::openStockMap3D()
+{
+    StockMapDialog dlg(this);
+
+    // SQL query to find occupied slots
+    QStringList occupied;
+    QSqlQuery q;
+    q.prepare("SELECT DISTINCT localisation_stock FROM BAC_INTEL WHERE localisation_stock IS NOT NULL");
+    if (q.exec()) {
+        while(q.next()) {
+            QString loc = q.value(0).toString();
+            if (loc.contains("-")) occupied << loc;
+        }
+    }
+    dlg.setOccupiedSlots(occupied);
+
+    if (dlg.exec() == QDialog::Accepted) {
+        m_selectedEmplacement = dlg.selectedCode();
+
+        auto updateLabel = [&](const QString &objName) {
+            if (auto *lbl = findChild<QLabel*>(objName)) {
+                lbl->setText(QString("📍 Emplacement sélectionné : %1").arg(m_selectedEmplacement));
+                lbl->setStyleSheet(
+                    "color: #FFD700; font-size: 13px; font-weight: 700; padding: 10px 16px; "
+                    "background: rgba(255,215,0,0.08); border: 1px solid rgba(255,215,0,0.3); "
+                    "border-radius: 10px;"
+                );
+            }
+        };
+
+        updateLabel("prod_l5");
+        updateLabel("prod_l5_m");
+    }
 }

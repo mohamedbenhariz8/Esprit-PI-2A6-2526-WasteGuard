@@ -8,12 +8,13 @@ class Produit
 {
 public:
     Produit();
-    Produit(int id_mp, const QString &reference, const QString &nom, int quantite, int capacite, double prix, int capaciteBatterie = 10000);
+    Produit(int id_mp, const QString &reference, const QString &nom, int quantite, int capacite, double prix, int capaciteBatterie = 10000, 
+            const QString &imagePath = QString(), const QString &caracteristiques = QString(), const QString &localisation = QString());
 
     bool ajouter();
     bool modifier();
     bool supprimer(int id_mp);
-    QSqlQueryModel *afficher();
+    QSqlQueryModel *afficher(const QString &searchModel = "", const QString &sortCriteria = "id_bac ASC");
     bool findIdByReference(const QString &reference, int &id_mp);
     QString lastError() const;
 
@@ -24,6 +25,9 @@ public:
     int getCapacite() const;
     double getPrix() const;
     int getCapaciteBatterie() const;
+    QString getImagePath() const;
+    QString getCaracteristiques() const;
+    QString getLocalisation() const;
 
     void setIdMp(int value);
     void setReference(const QString &value);
@@ -32,6 +36,9 @@ public:
     void setCapacite(int value);
     void setPrix(double value);
     void setCapaciteBatterie(int value);
+    void setImagePath(const QString &value);
+    void setCaracteristiques(const QString &value);
+    void setLocalisation(const QString &value);
 
 private:
     int m_idMp;
@@ -41,6 +48,9 @@ private:
     int m_capacite;
     double m_prix;
     int m_capaciteBatterie;
+    QString m_imagePath;
+    QString m_caracteristiques;
+    QString m_localisation;
     QString m_lastError;
 };
 

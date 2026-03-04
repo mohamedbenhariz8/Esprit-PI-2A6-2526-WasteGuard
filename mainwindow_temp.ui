@@ -1,4 +1,4 @@
-﻿<?xml version="1.0" encoding="UTF-8"?>
+<?xml version="1.0" encoding="UTF-8"?>
 <ui version="4.0">
  <class>MainWindow</class>
  <widget class="QMainWindow" name="MainWindow">
@@ -3472,7 +3472,7 @@ text-align: center;</string>
                                    </widget>
                                   </item>
                                   <item row="0" column="3">
-                                   <widget class="QComboBox" name="prod_cb_model_add">
+                                   <widget class="QLineEdit" name="prod_ln_model_add">
                                     <item>
                                      <property name="text">
                                       <string>ProBin 240L</string>
@@ -3852,7 +3852,7 @@ text-align: center;</string>
                                    </widget>
                                   </item>
                                   <item row="0" column="3">
-                                   <widget class="QComboBox" name="prod_cb_model_mod">
+                                   <widget class="QLineEdit" name="prod_ln_model_mod">
                                     <item>
                                      <property name="text">
                                       <string>ProBin 240L</string>

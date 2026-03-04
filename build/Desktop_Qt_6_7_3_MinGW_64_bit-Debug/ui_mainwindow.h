@@ -296,7 +296,7 @@ public:
     QLabel *prod_l1;
     QLineEdit *prod_ln_ref_add;
     QLabel *prod_l2;
-    QComboBox *prod_cb_model_add;
+    QLineEdit *prod_ln_model_add;
     QLabel *prod_l_px;
     QDoubleSpinBox *prod_dsb_price_add;
     QLabel *prod_l_qty;
@@ -333,7 +333,7 @@ public:
     QSpinBox *prod_sb_qty_mod;
     QLabel *prod_l_stat_m;
     QLabel *prod_l_qty_m;
-    QComboBox *prod_cb_model_mod;
+    QLineEdit *prod_ln_model_mod;
     QComboBox *prod_cb_status_mod;
     QDoubleSpinBox *prod_dsb_price_mod;
     QLineEdit *prod_ln_ref_mod;
@@ -3679,11 +3679,10 @@ public:
 
         prod_gl_inputs->addWidget(prod_l2, 0, 2, 1, 1);
 
-        prod_cb_model_add = new QComboBox(prod_cardAdd);
-        prod_cb_model_add->addItem(QString());
-        prod_cb_model_add->setObjectName("prod_cb_model_add");
+        prod_ln_model_add = new QLineEdit(prod_cardAdd);
+        prod_ln_model_add->setObjectName("prod_ln_model_add");
 
-        prod_gl_inputs->addWidget(prod_cb_model_add, 0, 3, 1, 1);
+        prod_gl_inputs->addWidget(prod_ln_model_add, 0, 3, 1, 1);
 
         prod_l_px = new QLabel(prod_cardAdd);
         prod_l_px->setObjectName("prod_l_px");
@@ -3885,11 +3884,10 @@ public:
 
         prod_gl_inputs_mod->addWidget(prod_l_qty_m, 1, 2, 1, 1);
 
-        prod_cb_model_mod = new QComboBox(prod_cardMod);
-        prod_cb_model_mod->addItem(QString());
-        prod_cb_model_mod->setObjectName("prod_cb_model_mod");
+        prod_ln_model_mod = new QLineEdit(prod_cardMod);
+        prod_ln_model_mod->setObjectName("prod_ln_model_mod");
 
-        prod_gl_inputs_mod->addWidget(prod_cb_model_mod, 0, 3, 1, 1);
+        prod_gl_inputs_mod->addWidget(prod_ln_model_mod, 0, 3, 1, 1);
 
         prod_cb_status_mod = new QComboBox(prod_cardMod);
         prod_cb_status_mod->addItem(QString());
@@ -7326,8 +7324,7 @@ public:
         prod_l1->setText(QCoreApplication::translate("MainWindow", "Reference", nullptr));
         prod_ln_ref_add->setPlaceholderText(QCoreApplication::translate("MainWindow", "REF-2024", nullptr));
         prod_l2->setText(QCoreApplication::translate("MainWindow", "Modele", nullptr));
-        prod_cb_model_add->setItemText(0, QCoreApplication::translate("MainWindow", "ProBin 240L", nullptr));
-
+        prod_ln_model_add->setPlaceholderText(QCoreApplication::translate("MainWindow", "Ex: ProBin 240L", nullptr));
         prod_l_px->setText(QCoreApplication::translate("MainWindow", "Prix (TND)", nullptr));
         prod_l_qty->setText(QCoreApplication::translate("MainWindow", "Quantite", nullptr));
         prod_l_stat->setText(QCoreApplication::translate("MainWindow", "Statut", nullptr));
@@ -7407,8 +7404,7 @@ public:
         prod_lblTitleMod->setText(QCoreApplication::translate("MainWindow", "Modifier Stock", nullptr));
         prod_l_stat_m->setText(QCoreApplication::translate("MainWindow", "Statut", nullptr));
         prod_l_qty_m->setText(QCoreApplication::translate("MainWindow", "Quantite", nullptr));
-        prod_cb_model_mod->setItemText(0, QCoreApplication::translate("MainWindow", "ProBin 240L", nullptr));
-
+        prod_ln_model_mod->setPlaceholderText(QCoreApplication::translate("MainWindow", "Ex: ProBin 240L", nullptr));
         prod_cb_status_mod->setItemText(0, QCoreApplication::translate("MainWindow", "En Stock", nullptr));
 
         prod_ln_ref_mod->setText(QCoreApplication::translate("MainWindow", "REF-2023", nullptr));
