@@ -8,6 +8,7 @@
 #include <QFileDialog>
 #include <QFile>
 #include <QUrlQuery>
+#include "videogenerationdialog.h"
 
 
 
@@ -6794,6 +6795,32 @@ void MainWindow::on_prod_btnSave_Mod_clicked()
     goAffichage();
 }
 
+
+
+void MainWindow::on_prod_btnVideo3D_clicked()
+{
+    QTableWidget *t = produitTable();
+    if (!t) return;
+
+    int row = t->currentRow();
+    if (row < 0) {
+        QMessageBox::warning(this, "Generation Video 3D", "Veuillez d'abord selectionner un produit dans la liste.");
+        return;
+    }
+
+    QString reference = t->item(row, 0)->text();
+    QString productName = t->item(row, 1)->text(); // Modele
+    
+    int capacity = t->item(row, 0)->data(PROD_ROLE_MAX).toInt();
+    int battery = t->item(row, 0)->data(PROD_ROLE_BATTERY).toInt();
+    QString imagePath = t->item(row, 0)->data(PROD_ROLE_IMAGE).toString();
+    
+    QString featuresStr = t->item(row, 0)->data(PROD_ROLE_FEATURES).toString();
+    QStringList features = featuresStr.split(", ", Qt::SkipEmptyParts);
+
+    VideoGenerationDialog dialog(productName, reference, capacity, battery, features, imagePath, this);
+    dialog.exec();
+}
 
 
 // ---------- Maintenance Module Implementation ----------

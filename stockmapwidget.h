@@ -95,6 +95,8 @@ private:
     void drawMinimap(QPainter &p);
     void drawHUD(QPainter &p);
     void drawNavigationArrows(QPainter &p);
+    void drawLabibBack(QPainter &p);
+    void drawLabibFaceMinimap(QPainter &p, qreal cx, qreal cy);
 
     // Drawing – Top Down
     void paintTopDown(QPainter &p);
@@ -141,6 +143,8 @@ private:
     // Animations
     QPropertyAnimation *m_glowAnim = nullptr;
     QTimer *m_particleTimer = nullptr;
+    qreal m_labibAnimPhase = 0.0;
+    bool  m_isMoving = false;
 
     // Navigation arrow rects for click
     QRectF m_arrowLeft, m_arrowRight, m_arrowFwd, m_arrowBack;

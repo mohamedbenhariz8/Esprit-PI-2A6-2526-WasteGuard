@@ -1,0 +1,10 @@
+build/
+.qtc_clangd/
+.qtcreator/
+node_modules/
+meta_ai_*/
+invideo_*/
+*.log
+*.o
+*.exe
+Makefile*

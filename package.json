@@ -1,0 +1,12 @@
+{
+  "name": "wasteguard-video-bot",
+  "version": "1.0.0",
+  "description": "Meta AI video generation bot for WasteGuard",
+  "main": "meta_video_bot.js",
+  "scripts": {
+    "generate": "node meta_video_bot.js"
+  },
+  "dependencies": {
+    "playwright": "^1.52.0"
+  }
+}

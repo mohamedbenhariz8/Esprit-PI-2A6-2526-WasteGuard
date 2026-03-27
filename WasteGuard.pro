@@ -16,7 +16,8 @@ SOURCES += \
     produit.cpp \
     stock.cpp \
     commande.cpp \
-    stockmapwidget.cpp
+    stockmapwidget.cpp \
+    videogenerationdialog.cpp
 
 HEADERS += \
     client.h \
@@ -28,7 +29,8 @@ HEADERS += \
     produit.h \
     stock.h \
     commande.h \
-    stockmapwidget.h
+    stockmapwidget.h \
+    videogenerationdialog.h
 
 FORMS += \
     mainwindow.ui

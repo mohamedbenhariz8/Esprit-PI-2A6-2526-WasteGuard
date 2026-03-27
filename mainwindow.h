@@ -101,6 +101,7 @@ private slots:
     void onGeminiPdfReply(QNetworkReply *reply);
     void onProductImageDownloaded(QNetworkReply *reply, const QString &numSerie);
     void openStockMap3D();
+    void on_prod_btnVideo3D_clicked();
 
     void handleEditClicked();
     void handleDeleteClicked();

@@ -1,0 +1,2 @@
+﻿ --profile-directory=Default --app-id=bkjkbpmddfhnnfbeaplafomaablnncli
+C:\Program Files\Google\Chrome\Application\chrome_proxy.exe

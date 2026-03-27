@@ -67,6 +67,14 @@ Warehouse3DView::Warehouse3DView(QWidget *parent)
                 pt.alpha = 0.15 + QRandomGenerator::global()->bounded(50) / 100.0;
             }
         }
+        
+        // Labib walking animation
+        if (m_isMoving) {
+            m_labibAnimPhase += 0.25;
+        } else {
+            m_labibAnimPhase += 0.05; // Idle breathing
+        }
+        
         update();
     });
     m_particleTimer->start(50);
@@ -226,6 +234,7 @@ void Warehouse3DView::paintEvent(QPaintEvent *)
 
     drawAisleSign(p);
     drawParticles(p);
+    drawLabibBack(p);
     drawNavigationArrows(p);
     drawMinimap(p);
     drawHUD(p);
@@ -593,9 +602,9 @@ void Warehouse3DView::drawMinimap(QPainter &p)
     // Draw camera position (the aisle the camera is in)
     qreal camAisleX = mx + padX + (m_currentAisle + 0.5) * scX;
     qreal camRowY   = my + padY + m_cameraZ * scY;
-    p.setBrush(Qt::NoBrush);
-    p.setPen(QPen(kSlotSelected, 2.0));
-    p.drawEllipse(QPointF(camAisleX, camRowY), 5, 5);
+    
+    // Draw Labib face icon instead of a dot
+    drawLabibFaceMinimap(p, camAisleX, camRowY);
 
     // Camera direction line
     p.setPen(QPen(kSlotSelected, 1.5));
@@ -937,10 +946,16 @@ void Warehouse3DView::mousePressEvent(QMouseEvent *e)
     }
 
     // First-person: navigation arrows
-    if (m_arrowFwd.contains(pos) && m_cameraZ < ROWS-1) { m_cameraZ += 1.0; update(); return; }
-    if (m_arrowBack.contains(pos) && m_cameraZ > 0)     { m_cameraZ -= 1.0; update(); return; }
-    if (m_arrowLeft.contains(pos) && m_currentAisle > 0) { m_currentAisle--; emit aisleChanged(m_currentAisle); update(); return; }
-    if (m_arrowRight.contains(pos) && m_currentAisle < COLS-2) { m_currentAisle++; emit aisleChanged(m_currentAisle); update(); return; }
+    auto triggerMove = [&]() {
+        m_isMoving = true;
+        QTimer::singleShot(300, this, [this](){ m_isMoving = false; });
+        update();
+    };
+
+    if (m_arrowFwd.contains(pos) && m_cameraZ < ROWS-1) { m_cameraZ += 1.0; triggerMove(); return; }
+    if (m_arrowBack.contains(pos) && m_cameraZ > 0)     { m_cameraZ -= 1.0; triggerMove(); return; }
+    if (m_arrowLeft.contains(pos) && m_currentAisle > 0) { m_currentAisle--; emit aisleChanged(m_currentAisle); triggerMove(); return; }
+    if (m_arrowRight.contains(pos) && m_currentAisle < COLS-2) { m_currentAisle++; emit aisleChanged(m_currentAisle); triggerMove(); return; }
 
     // First-person: slot clicks
     for (int i = m_slots.size()-1; i >= 0; --i) {
@@ -999,13 +1014,22 @@ void Warehouse3DView::wheelEvent(QWheelEvent *e)
     qreal delta = e->angleDelta().y() / 120.0;
     if (m_viewMode == ViewMode::TopDown) {
         m_isoZoom = qBound(0.4, m_isoZoom + delta * 0.15, 3.5);
+        update();
     } else {
-        if (delta > 0 && m_cameraZ < ROWS-1)
+        bool moved = false;
+        if (delta > 0 && m_cameraZ < ROWS-1) {
             m_cameraZ = qMin((qreal)(ROWS-1), m_cameraZ + 0.5);
-        else if (delta < 0 && m_cameraZ > 0)
+            moved = true;
+        } else if (delta < 0 && m_cameraZ > 0) {
             m_cameraZ = qMax(0.0, m_cameraZ - 0.5);
+            moved = true;
+        }
+        if (moved) {
+            m_isMoving = true;
+            QTimer::singleShot(300, this, [this](){ m_isMoving = false; });
+        }
+        update();
     }
-    update();
 }
 
 void Warehouse3DView::keyPressEvent(QKeyEvent *e)
@@ -1023,15 +1047,21 @@ void Warehouse3DView::keyPressEvent(QKeyEvent *e)
         update(); return;
     }
 
+    auto triggerMove = [&]() {
+        m_isMoving = true;
+        QTimer::singleShot(300, this, [this](){ m_isMoving = false; });
+        update();
+    };
+
     switch (e->key()) {
     case Qt::Key_W: case Qt::Key_Up:
-        if (m_cameraZ < ROWS-1) { m_cameraZ += 1.0; update(); } break;
+        if (m_cameraZ < ROWS-1) { m_cameraZ += 1.0; triggerMove(); } break;
     case Qt::Key_S: case Qt::Key_Down:
-        if (m_cameraZ > 0) { m_cameraZ -= 1.0; update(); } break;
+        if (m_cameraZ > 0) { m_cameraZ -= 1.0; triggerMove(); } break;
     case Qt::Key_A: case Qt::Key_Left:
-        if (m_currentAisle > 0) { m_currentAisle--; emit aisleChanged(m_currentAisle); update(); } break;
+        if (m_currentAisle > 0) { m_currentAisle--; emit aisleChanged(m_currentAisle); triggerMove(); } break;
     case Qt::Key_D: case Qt::Key_Right:
-        if (m_currentAisle < COLS-2) { m_currentAisle++; emit aisleChanged(m_currentAisle); update(); } break;
+        if (m_currentAisle < COLS-2) { m_currentAisle++; emit aisleChanged(m_currentAisle); triggerMove(); } break;
     default:
         QWidget::keyPressEvent(e); return;
     }
@@ -1164,3 +1194,133 @@ StockMapDialog::StockMapDialog(QWidget *parent)
 
 QString StockMapDialog::selectedCode() const { return m_view->selectedSlotCode(); }
 void StockMapDialog::setOccupiedSlots(const QStringList &codes) { m_view->setOccupiedSlots(codes); }
+
+// ════════════════════════════════════════════════════════════
+//  Labib Integrations (Minimap + Immersive Back View)
+// ════════════════════════════════════════════════════════════
+
+void Warehouse3DView::drawLabibFaceMinimap(QPainter &p, qreal cx, qreal cy)
+{
+    p.save();
+    p.translate(cx, cy);
+    p.scale(0.8, 0.8); // Agrandir le visage dans la minimap
+
+    QColor terra("#C66A4E");
+    QColor dark("#7A3B2E");
+    
+    p.setRenderHint(QPainter::Antialiasing);
+
+    // Ears
+    p.setBrush(terra);
+    p.setPen(QPen(dark, 1));
+    QPolygonF leftEar, rightEar;
+    leftEar << QPointF(-8, -5) << QPointF(-20, -20) << QPointF(-2, -8);
+    rightEar << QPointF(8, -5) << QPointF(20, -20) << QPointF(2, -8);
+    p.drawPolygon(leftEar);
+    p.drawPolygon(rightEar);
+
+    // Head
+    p.drawEllipse(QRectF(-12, -10, 24, 20));
+
+    // White fur
+    p.setBrush(Qt::white);
+    p.setPen(Qt::NoPen);
+    p.drawEllipse(QRectF(-10, 0, 9, 9));
+    p.drawEllipse(QRectF(1, 0, 9, 9));
+    
+    // Eyes
+    p.setBrush(Qt::black);
+    p.drawEllipse(QRectF(-7, 3, 3, 3));
+    p.drawEllipse(QRectF(4, 3, 3, 3));
+
+    p.restore();
+}
+
+void Warehouse3DView::drawLabibBack(QPainter &p)
+{
+    p.save();
+    
+    int cx = width() / 2;
+    int cy = height() - 180; // Remonter Labib pour qu'il ne soit pas caché
+    
+    // Sway based on anim phase
+    qreal sway = std::sin(m_labibAnimPhase) * 6.0;
+    qreal bounce = std::abs(std::cos(m_labibAnimPhase * 2.0)) * 5.0;
+    if (m_isMoving) {
+        bounce *= 2.0;
+    }
+    
+    p.translate(cx + sway, cy - bounce);
+    p.scale(1.8, 1.8); // Agrandir Labib
+    
+    QColor terra("#C66A4E");
+    QColor light("#E9BC99");
+    QColor dark("#7A3B2E");
+    
+    p.setRenderHint(QPainter::Antialiasing);
+
+    // Tail
+    p.save();
+    p.translate(0, 30);
+    p.rotate(sway * 3.5);
+    QPainterPath tail;
+    tail.moveTo(0, 0);
+    tail.cubicTo(-15, 20, -25, 60, 0, 80);
+    tail.cubicTo(25, 60, 15, 20, 0, 0);
+    QRadialGradient tG(0, 40, 50);
+    tG.setColorAt(0, terra);
+    tG.setColorAt(1, dark);
+    p.setBrush(tG);
+    p.setPen(Qt::NoPen);
+    p.drawPath(tail);
+    
+    // Tail tip
+    p.setBrush(light);
+    p.drawEllipse(QRectF(-8, 60, 16, 22));
+    p.restore();
+
+    // Body (Back view)
+    QPainterPath body;
+    body.moveTo(-30, 50);
+    body.cubicTo(-35, 0, 35, 0, 30, 50);
+    body.lineTo(-30, 50);
+    QLinearGradient bG(0, 0, 0, 50);
+    bG.setColorAt(0, terra);
+    bG.setColorAt(1, dark.darker(120));
+    p.setBrush(bG);
+    p.setPen(Qt::NoPen);
+    p.drawPath(body);
+
+    // Head (Back view)
+    p.save();
+    p.rotate(sway * 1.5); // Slight head tilt
+    
+    // Back of Ears
+    auto drawEarBack = [&](bool left) {
+        p.save();
+        p.translate(left ? -20 : 20, -10);
+        p.rotate(left ? -20 : 20);
+        QPainterPath ear;
+        ear.moveTo(0, 10);
+        ear.cubicTo(left ? -15 : 15, -10, left ? -10 : 10, -50, 0, -40);
+        ear.cubicTo(left ? 10 : -10, -50, left ? 15 : -15, -10, 0, 10);
+        QRadialGradient eG(0, -15, 40);
+        eG.setColorAt(0, terra); eG.setColorAt(1, dark);
+        p.setBrush(eG);
+        p.drawPath(ear);
+        p.restore();
+    };
+    drawEarBack(true);
+    drawEarBack(false);
+
+    // Back of Head sphere
+    QRadialGradient hG(0, -5, 40);
+    hG.setColorAt(0, terra.lighter(110));
+    hG.setColorAt(1, dark);
+    p.setBrush(hG);
+    p.drawEllipse(QRectF(-35, -30, 70, 55));
+    
+    p.restore();
+    
+    p.restore();
+}
