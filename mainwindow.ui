@@ -2329,7 +2329,7 @@ QLabel#userLabel_Aj {
                    </layout>
                   </item>
                   <item row="1" column="0">
-                   <widget class="QLabel" name="label">
+                   <widget class="QLabel" name="label1">
                     <property name="text">
                      <string>EMAIL</string>
                     </property>
@@ -3466,7 +3466,7 @@ QLabel#userLabel_Aj {
                                   <number>0</number>
                                  </property>
                                  <property name="columnCount">
-                                  <number>8</number>
+                                  <number>7</number>
                                  </property>
                                  <attribute name="verticalHeaderVisible">
                                   <bool>false</bool>
@@ -3479,11 +3479,6 @@ QLabel#userLabel_Aj {
                                  <column>
                                   <property name="text">
                                    <string>Modele</string>
-                                  </property>
-                                 </column>
-                                 <column>
-                                  <property name="text">
-                                   <string>Type</string>
                                   </property>
                                  </column>
                                  <column>
@@ -3977,7 +3972,13 @@ text-align: center;</string>
                                  <property name="minimumSize">
                                   <size>
                                    <width>0</width>
-                                   <height>250</height>
+                                   <height>170</height>
+                                  </size>
+                                 </property>
+                                 <property name="maximumSize">
+                                  <size>
+                                   <width>16777215</width>
+                                   <height>170</height>
                                   </size>
                                  </property>
                                  <property name="text">
@@ -4063,10 +4064,10 @@ text-align: center;</string>
                                   </item>
                                   <item row="0" column="3">
                                    <widget class="QLineEdit" name="prod_ln_model_add">
-                                     <property name="placeholderText">
-                                      <string>Ex: ProBin 240L</string>
-                                     </property>
-                                    </widget>
+                                    <property name="placeholderText">
+                                     <string>Ex: ProBin 240L</string>
+                                    </property>
+                                   </widget>
                                   </item>
                                   <item row="1" column="0">
                                    <widget class="QLabel" name="prod_l_px">
@@ -4161,7 +4162,7 @@ text-align: center;</string>
                                       <item>
                                        <widget class="QLabel" name="prod_label_4">
                                         <property name="text">
-                                         <string>750 L</string>
+                                         <string>50 L</string>
                                         </property>
                                        </widget>
                                       </item>
@@ -4170,10 +4171,13 @@ text-align: center;</string>
                                     <item>
                                      <widget class="QSlider" name="prod_slider_cap_add">
                                       <property name="minimum">
-                                       <number>50</number>
+                                       <number>1</number>
                                       </property>
                                       <property name="maximum">
-                                       <number>1000</number>
+                                       <number>100</number>
+                                      </property>
+                                      <property name="value">
+                                       <number>50</number>
                                       </property>
                                       <property name="orientation">
                                        <enum>Qt::Orientation::Horizontal</enum>
@@ -4373,20 +4377,50 @@ text-align: center;</string>
                               <number>20</number>
                              </property>
                              <item>
-                              <widget class="QLabel" name="prod_imgBin">
-                               <property name="maximumSize">
-                                <size>
-                                 <width>16777215</width>
-                                 <height>250</height>
-                                </size>
-                               </property>
-                               <property name="text">
-                                <string>[ Image Actuelle ]</string>
-                               </property>
-                               <property name="alignment">
-                                <set>Qt::AlignmentFlag::AlignCenter</set>
-                               </property>
-                              </widget>
+                              <layout class="QVBoxLayout" name="prod_vl_img_mod">
+                               <item>
+                                <widget class="QLabel" name="prod_imgBin">
+                                 <property name="minimumSize">
+                                  <size>
+                                   <width>0</width>
+                                   <height>170</height>
+                                  </size>
+                                 </property>
+                                 <property name="maximumSize">
+                                  <size>
+                                   <width>16777215</width>
+                                   <height>170</height>
+                                  </size>
+                                 </property>
+                                 <property name="text">
+                                  <string>[ Image Actuelle ]</string>
+                                 </property>
+                                 <property name="alignment">
+                                  <set>Qt::AlignmentFlag::AlignCenter</set>
+                                 </property>
+                                </widget>
+                               </item>
+                               <item>
+                                <widget class="QPushButton" name="prod_btnUpload_Mod">
+                                 <property name="text">
+                                  <string>📤 Importer Image</string>
+                                 </property>
+                                </widget>
+                               </item>
+                               <item>
+                                <spacer>
+                                 <property name="orientation">
+                                  <enum>Qt::Orientation::Vertical</enum>
+                                 </property>
+                                 <property name="sizeHint" stdset="0">
+                                  <size>
+                                   <width>0</width>
+                                   <height>0</height>
+                                  </size>
+                                 </property>
+                                </spacer>
+                               </item>
+                              </layout>
                              </item>
                              <item>
                               <widget class="QFrame" name="prod_cardMod">
@@ -4441,10 +4475,10 @@ text-align: center;</string>
                                   </item>
                                   <item row="0" column="3">
                                    <widget class="QLineEdit" name="prod_ln_model_mod">
-                                     <property name="placeholderText">
-                                      <string>Ex: ProBin 240L</string>
-                                     </property>
-                                    </widget>
+                                    <property name="placeholderText">
+                                     <string>Ex: ProBin 240L</string>
+                                    </property>
+                                   </widget>
                                   </item>
                                   <item row="2" column="1">
                                    <widget class="QComboBox" name="prod_cb_status_mod">
@@ -4500,11 +4534,22 @@ text-align: center;</string>
                                   <item>
                                    <layout class="QVBoxLayout" name="prod_vl_bat_mod">
                                     <item>
-                                     <widget class="QLabel" name="prod_l_bat_m">
-                                      <property name="text">
-                                       <string>Batterie</string>
-                                      </property>
-                                     </widget>
+                                     <layout class="QHBoxLayout" name="prod_hl_bat_mod">
+                                      <item>
+                                       <widget class="QLabel" name="prod_l_bat_m">
+                                        <property name="text">
+                                         <string>Batterie</string>
+                                        </property>
+                                       </widget>
+                                      </item>
+                                      <item>
+                                       <widget class="QLabel" name="prod_label_m">
+                                        <property name="text">
+                                         <string>12000 mAh</string>
+                                        </property>
+                                       </widget>
+                                      </item>
+                                     </layout>
                                     </item>
                                     <item>
                                      <widget class="QSlider" name="prod_slider_bat_mod">
@@ -4524,16 +4569,33 @@ text-align: center;</string>
                                   <item>
                                    <layout class="QVBoxLayout" name="prod_vl_cap_mod">
                                     <item>
-                                     <widget class="QLabel" name="prod_l_cap_m">
-                                      <property name="text">
-                                       <string>Capacite</string>
-                                      </property>
-                                     </widget>
+                                     <layout class="QHBoxLayout" name="prod_hl_cap_mod">
+                                      <item>
+                                       <widget class="QLabel" name="prod_l_cap_m">
+                                        <property name="text">
+                                         <string>Capacite</string>
+                                        </property>
+                                       </widget>
+                                      </item>
+                                      <item>
+                                       <widget class="QLabel" name="prod_label_4_m">
+                                        <property name="text">
+                                         <string>50 L</string>
+                                        </property>
+                                       </widget>
+                                      </item>
+                                     </layout>
                                     </item>
                                     <item>
                                      <widget class="QSlider" name="prod_slider_cap_mod">
+                                      <property name="minimum">
+                                       <number>1</number>
+                                      </property>
                                       <property name="maximum">
-                                       <number>1000</number>
+                                       <number>100</number>
+                                      </property>
+                                      <property name="value">
+                                       <number>50</number>
                                       </property>
                                       <property name="orientation">
                                        <enum>Qt::Orientation::Horizontal</enum>
@@ -4748,8 +4810,11 @@ text-align: center;</string>
                          </item>
                          <item>
                           <widget class="QLabel" name="prod_lblStatsSub">
+                           <property name="visible">
+                            <bool>false</bool>
+                           </property>
                            <property name="text">
-                            <string>(Données exemple — graphiques généraux)</string>
+                            <string/>
                            </property>
                           </widget>
                          </item>
@@ -4928,8 +4993,11 @@ text-align: center;</string>
                          </item>
                          <item>
                           <widget class="QLabel" name="prod_lblStatsNote">
+                           <property name="visible">
+                            <bool>false</bool>
+                           </property>
                            <property name="text">
-                            <string>Astuce: vous pouvez remplacer ces placeholders par QtCharts plus tard.</string>
+                            <string/>
                            </property>
                           </widget>
                          </item>
@@ -4963,7 +5031,7 @@ text-align: center;</string>
           </layout>
          </widget>
          <widget class="QWidget" name="pageStock">
-          <layout class="QHBoxLayout" name="horizontalLayout_Main">
+          <layout class="QHBoxLayout" name="horizontalLayout_Stock">
            <property name="spacing">
             <number>0</number>
            </property>
@@ -5276,6 +5344,23 @@ text-align: center;</string>
                     </widget>
                    </item>
                    <item>
+                    <widget class="QPushButton" name="btnSmartCart">
+                     <property name="styleSheet">
+                      <string notr="true">background-color: #ffffff;
+color: #1f2d3d;
+border: 1px solid #dce1e6;
+border-radius: 10px;
+padding: 12px 16px;
+font-size: 14px;
+font-weight: 700;
+text-align: center;</string>
+                     </property>
+                     <property name="text">
+                      <string>📧 Contacter Fournisseur</string>
+                     </property>
+                    </widget>
+                   </item>
+                   <item>
                     <spacer name="verticalSpacer_right">
                      <property name="orientation">
                       <enum>Qt::Orientation::Vertical</enum>
@@ -5392,11 +5477,73 @@ text-align: center;</string>
                      </layout>
                     </item>
                     <item>
-                     <widget class="QLineEdit" name="inputFournisseur_add">
-                      <property name="placeholderText">
-                       <string>Fournisseur</string>
+                     <layout class="QHBoxLayout" name="layoutFournSeuil_add">
+                      <property name="spacing">
+                       <number>15</number>
                       </property>
-                     </widget>
+                      <item>
+                       <widget class="QLineEdit" name="inputFournisseur_add">
+                        <property name="placeholderText">
+                         <string>Fournisseur</string>
+                        </property>
+                       </widget>
+                      </item>
+                      <item>
+                       <widget class="QLineEdit" name="inputEmailFour_add">
+                        <property name="placeholderText">
+                         <string>Email Fournisseur</string>
+                        </property>
+                       </widget>
+                      </item>
+                      <item>
+                       <widget class="QLineEdit" name="inputSeuil_add">
+                        <property name="placeholderText">
+                         <string>Seuil critique (ex: 5)</string>
+                        </property>
+                       </widget>
+                      </item>
+                     </layout>
+                    </item>
+                    <item>
+                     <layout class="QHBoxLayout" name="layoutDates_add">
+                      <property name="spacing">
+                       <number>15</number>
+                      </property>
+                      <item>
+                       <widget class="QLabel" name="lblDateFab_add">
+                        <property name="text">
+                         <string>Date Fab:</string>
+                        </property>
+                       </widget>
+                      </item>
+                      <item>
+                       <widget class="QDateEdit" name="inputDateFab_add">
+                        <property name="displayFormat">
+                         <string>dd/MM/yyyy</string>
+                        </property>
+                        <property name="calendarPopup">
+                         <bool>true</bool>
+                        </property>
+                       </widget>
+                      </item>
+                      <item>
+                       <widget class="QLabel" name="lblDateAchat_add">
+                        <property name="text">
+                         <string>Date Achat:</string>
+                        </property>
+                       </widget>
+                      </item>
+                      <item>
+                       <widget class="QDateEdit" name="inputDateAchat_add">
+                        <property name="displayFormat">
+                         <string>dd/MM/yyyy</string>
+                        </property>
+                        <property name="calendarPopup">
+                         <bool>true</bool>
+                        </property>
+                       </widget>
+                      </item>
+                     </layout>
                     </item>
                     <item>
                      <layout class="QHBoxLayout" name="addActions">
@@ -5511,7 +5658,73 @@ text-align: center;</string>
                      </layout>
                     </item>
                     <item>
-                     <widget class="QLineEdit" name="inputFournisseur_mod"/>
+                     <layout class="QHBoxLayout" name="layoutFournSeuil_mod">
+                      <property name="spacing">
+                       <number>15</number>
+                      </property>
+                      <item>
+                       <widget class="QLineEdit" name="inputFournisseur_mod">
+                        <property name="placeholderText">
+                         <string>Fournisseur</string>
+                        </property>
+                       </widget>
+                      </item>
+                      <item>
+                       <widget class="QLineEdit" name="inputEmailFour_mod">
+                        <property name="placeholderText">
+                         <string>Email Fournisseur</string>
+                        </property>
+                       </widget>
+                      </item>
+                      <item>
+                       <widget class="QLineEdit" name="inputSeuil_mod">
+                        <property name="placeholderText">
+                         <string>Seuil critique (ex: 5)</string>
+                        </property>
+                       </widget>
+                      </item>
+                     </layout>
+                    </item>
+                    <item>
+                     <layout class="QHBoxLayout" name="layoutDates_mod">
+                      <property name="spacing">
+                       <number>15</number>
+                      </property>
+                      <item>
+                       <widget class="QLabel" name="lblDateFab_mod">
+                        <property name="text">
+                         <string>Date Fab:</string>
+                        </property>
+                       </widget>
+                      </item>
+                      <item>
+                       <widget class="QDateEdit" name="inputDateFab_mod">
+                        <property name="displayFormat">
+                         <string>dd/MM/yyyy</string>
+                        </property>
+                        <property name="calendarPopup">
+                         <bool>true</bool>
+                        </property>
+                       </widget>
+                      </item>
+                      <item>
+                       <widget class="QLabel" name="lblDateAchat_mod">
+                        <property name="text">
+                         <string>Date Achat:</string>
+                        </property>
+                       </widget>
+                      </item>
+                      <item>
+                       <widget class="QDateEdit" name="inputDateAchat_mod">
+                        <property name="displayFormat">
+                         <string>dd/MM/yyyy</string>
+                        </property>
+                        <property name="calendarPopup">
+                         <bool>true</bool>
+                        </property>
+                       </widget>
+                      </item>
+                     </layout>
                     </item>
                     <item>
                      <layout class="QHBoxLayout" name="modifyActions">
@@ -5717,7 +5930,7 @@ Chef d'Atelier</string>
                           </widget>
                          </item>
                          <item>
-                          <widget class="QComboBox" name="cbSort">
+                          <widget class="QComboBox" name="cbSort1">
                            <item>
                             <property name="text">
                              <string>Reference</string>
@@ -5870,7 +6083,7 @@ Chef d'Atelier</string>
                            <item>
                             <widget class="QLabel" name="st_icon1">
                              <property name="text">
-                              <string>🛠</string>
+                              <string>🧩</string>
                              </property>
                             </widget>
                            </item>
@@ -5884,7 +6097,7 @@ Chef d'Atelier</string>
                            <item>
                             <widget class="QLabel" name="st_lbl1">
                              <property name="text">
-                              <string>TOTAL INTERVENTIONS</string>
+                              <string>COUT PIECES</string>
                              </property>
                             </widget>
                            </item>
@@ -5900,7 +6113,7 @@ Chef d'Atelier</string>
                            <item>
                             <widget class="QLabel" name="st_icon2">
                              <property name="text">
-                              <string>💰</string>
+                              <string>👷</string>
                              </property>
                             </widget>
                            </item>
@@ -5914,7 +6127,7 @@ Chef d'Atelier</string>
                            <item>
                             <widget class="QLabel" name="st_lbl2">
                              <property name="text">
-                              <string>TOTAL COUT</string>
+                              <string>COUT MAIN D'OEUVRE</string>
                              </property>
                             </widget>
                            </item>
@@ -5930,7 +6143,7 @@ Chef d'Atelier</string>
                            <item>
                             <widget class="QLabel" name="st_icon3">
                              <property name="text">
-                              <string>⏱</string>
+                              <string>💰</string>
                              </property>
                             </widget>
                            </item>
@@ -5944,7 +6157,7 @@ Chef d'Atelier</string>
                            <item>
                             <widget class="QLabel" name="st_lbl3">
                              <property name="text">
-                              <string>HEURES DE MAINTENANCE</string>
+                              <string>COUT TOTAL (PIECES + MO)</string>
                              </property>
                             </widget>
                            </item>
@@ -6024,7 +6237,7 @@ Chef d'Atelier</string>
                       <item>
                        <widget class="QLabel" name="lblMiniChartTitle">
                         <property name="text">
-                         <string>Repartition par Priorite</string>
+                         <string>Top Types d'Intervention</string>
                         </property>
                        </widget>
                       </item>
@@ -6042,7 +6255,7 @@ Chef d'Atelier</string>
                            </size>
                           </property>
                           <property name="text">
-                           <string>Normale</string>
+                           <string>Curative</string>
                           </property>
                          </widget>
                         </item>
@@ -6082,7 +6295,7 @@ Chef d'Atelier</string>
                            </size>
                           </property>
                           <property name="text">
-                           <string>Urgente</string>
+                           <string>Préventive</string>
                           </property>
                          </widget>
                         </item>
@@ -6122,7 +6335,7 @@ Chef d'Atelier</string>
                            </size>
                           </property>
                           <property name="text">
-                           <string>Critique</string>
+                           <string>Autre</string>
                           </property>
                          </widget>
                         </item>
@@ -6307,7 +6520,7 @@ Chef d'Atelier</string>
                             <item>
                              <widget class="QLabel" name="lblRefAdd">
                               <property name="text">
-                               <string>Reference</string>
+                               <string>Produit (BAC)</string>
                               </property>
                               <property name="class" stdset="0">
                                <string>formLabel</string>
@@ -6315,11 +6528,7 @@ Chef d'Atelier</string>
                              </widget>
                             </item>
                             <item>
-                             <widget class="QLineEdit" name="editRefAdd">
-                              <property name="placeholderText">
-                               <string>INT010</string>
-                              </property>
-                             </widget>
+                             <widget class="QComboBox" name="cbBacAdd"/>
                             </item>
                            </layout>
                           </item>
@@ -6473,6 +6682,69 @@ Chef d'Atelier</string>
                          </widget>
                         </item>
                         <item>
+                         <layout class="QHBoxLayout" name="hlStatutTypeAdd">
+                          <item>
+                           <layout class="QVBoxLayout">
+                            <item>
+                             <widget class="QLabel" name="lblStatutAdd">
+                              <property name="text">
+                               <string>Statut</string>
+                              </property>
+                              <property name="class" stdset="0">
+                               <string>formLabel</string>
+                              </property>
+                             </widget>
+                            </item>
+                            <item>
+                             <widget class="QComboBox" name="comboStatutAdd">
+                              <item>
+                               <property name="text">
+                                <string>EN_COURS</string>
+                               </property>
+                              </item>
+                              <item>
+                               <property name="text">
+                                <string>EN_ATTENTE</string>
+                               </property>
+                              </item>
+                              <item>
+                               <property name="text">
+                                <string>TERMINEE</string>
+                               </property>
+                              </item>
+                              <item>
+                               <property name="text">
+                                <string>ANNULEE</string>
+                               </property>
+                              </item>
+                             </widget>
+                            </item>
+                           </layout>
+                          </item>
+                          <item>
+                           <layout class="QVBoxLayout">
+                            <item>
+                             <widget class="QLabel" name="lblTypeAdd">
+                              <property name="text">
+                               <string>Type</string>
+                              </property>
+                              <property name="class" stdset="0">
+                               <string>formLabel</string>
+                              </property>
+                             </widget>
+                            </item>
+                            <item>
+                             <widget class="QLineEdit" name="editTypeAdd">
+                              <property name="placeholderText">
+                               <string>Curative / Préventive</string>
+                              </property>
+                             </widget>
+                            </item>
+                           </layout>
+                          </item>
+                         </layout>
+                        </item>
+                        <item>
                          <layout class="QHBoxLayout" name="hlTechAddrAdd">
                           <item>
                            <layout class="QVBoxLayout">
@@ -6487,11 +6759,7 @@ Chef d'Atelier</string>
                              </widget>
                             </item>
                             <item>
-                             <widget class="QLineEdit" name="editTechAdd">
-                              <property name="placeholderText">
-                               <string>Sophie Dupont</string>
-                              </property>
-                             </widget>
+                             <widget class="QComboBox" name="cbTechAdd"/>
                             </item>
                            </layout>
                           </item>
@@ -7021,6 +7289,69 @@ Chef d'Atelier</string>
                          </widget>
                         </item>
                         <item>
+                         <layout class="QHBoxLayout" name="hlStatutTypeMod">
+                          <item>
+                           <layout class="QVBoxLayout">
+                            <item>
+                             <widget class="QLabel" name="lblStatutMod">
+                              <property name="text">
+                               <string>Statut</string>
+                              </property>
+                              <property name="class" stdset="0">
+                               <string>formLabel</string>
+                              </property>
+                             </widget>
+                            </item>
+                            <item>
+                             <widget class="QComboBox" name="comboStatutMod">
+                              <item>
+                               <property name="text">
+                                <string>EN_COURS</string>
+                               </property>
+                              </item>
+                              <item>
+                               <property name="text">
+                                <string>EN_ATTENTE</string>
+                               </property>
+                              </item>
+                              <item>
+                               <property name="text">
+                                <string>TERMINEE</string>
+                               </property>
+                              </item>
+                              <item>
+                               <property name="text">
+                                <string>ANNULEE</string>
+                               </property>
+                              </item>
+                             </widget>
+                            </item>
+                           </layout>
+                          </item>
+                          <item>
+                           <layout class="QVBoxLayout">
+                            <item>
+                             <widget class="QLabel" name="lblTypeMod">
+                              <property name="text">
+                               <string>Type</string>
+                              </property>
+                              <property name="class" stdset="0">
+                               <string>formLabel</string>
+                              </property>
+                             </widget>
+                            </item>
+                            <item>
+                             <widget class="QLineEdit" name="editTypeMod">
+                              <property name="placeholderText">
+                               <string>Curative / Préventive</string>
+                              </property>
+                             </widget>
+                            </item>
+                           </layout>
+                          </item>
+                         </layout>
+                        </item>
+                        <item>
                          <layout class="QHBoxLayout" name="hlTechAddrMod">
                           <item>
                            <layout class="QVBoxLayout">
@@ -7365,7 +7696,7 @@ Responsable Commercial</string>
                     <string notr="true">QLineEdit { border: 1px solid #d1d5db; border-radius: 8px; padding: 6px 12px; font-size: 13px; background: white; color: #333; } QLineEdit:focus { border-color: #2a5298; }</string>
                    </property>
                    <property name="placeholderText">
-                    <string>🔍  Rechercher (Matricule, Nom, Email)...</string>
+                    <string>🔍  Rechercher (Matricule, Nom)</string>
                    </property>
                   </widget>
                  </item>
@@ -7410,7 +7741,7 @@ Responsable Commercial</string>
                     <bool>true</bool>
                    </property>
                    <property name="currentText">
-                    <string>Type de contrat</string>
+                    <string>Tous</string>
                    </property>
                    <item>
                     <property name="text">
@@ -7491,12 +7822,12 @@ Responsable Commercial</string>
                    </column>
                    <column>
                     <property name="text">
-                     <string>Bacs</string>
+                     <string>Type Contrat</string>
                     </property>
                    </column>
                    <column>
                     <property name="text">
-                     <string>Score</string>
+                     <string>Date Expiration</string>
                     </property>
                    </column>
                    <column>
@@ -7546,6 +7877,15 @@ Responsable Commercial</string>
                     </property>
                     <item>
                      <widget class="QLabel" name="pilotage">
+                      <property name="enabled">
+                       <bool>true</bool>
+                      </property>
+                      <property name="maximumSize">
+                       <size>
+                        <width>16777215</width>
+                        <height>100</height>
+                       </size>
+                      </property>
                       <property name="styleSheet">
                        <string notr="true">font-weight: bold; color: black;</string>
                       </property>
@@ -7556,12 +7896,24 @@ Responsable Commercial</string>
                     </item>
                     <item>
                      <widget class="QWidget" name="growthWidget" native="true">
+                      <property name="maximumSize">
+                       <size>
+                        <width>16777215</width>
+                        <height>200</height>
+                       </size>
+                      </property>
                       <property name="styleSheet">
                        <string notr="true">background-color: #e9ecef; border-radius: 5px; padding: 10px;</string>
                       </property>
                       <layout class="QVBoxLayout">
                        <item>
-                        <widget class="QLabel" name="label">
+                        <widget class="QLabel" name="label1Success">
+                         <property name="maximumSize">
+                          <size>
+                           <width>16777215</width>
+                           <height>100</height>
+                          </size>
+                         </property>
                          <property name="styleSheet">
                           <string notr="true">color: green; font-size: 18px; font-weight: bold;</string>
                          </property>
@@ -7571,7 +7923,13 @@ Responsable Commercial</string>
                         </widget>
                        </item>
                        <item>
-                        <widget class="QLabel" name="label">
+                        <widget class="QLabel" name="label2">
+                         <property name="maximumSize">
+                          <size>
+                           <width>16777215</width>
+                           <height>100</height>
+                          </size>
+                         </property>
                          <property name="styleSheet">
                           <string notr="true">color: #666; font-size: 10px;</string>
                          </property>
@@ -7582,22 +7940,6 @@ Responsable Commercial</string>
                        </item>
                       </layout>
                      </widget>
-                    </item>
-                    <item>
-                     <spacer>
-                      <property name="orientation">
-                       <enum>Qt::Orientation::Vertical</enum>
-                      </property>
-                      <property name="sizeType">
-                       <enum>QSizePolicy::Policy::Fixed</enum>
-                      </property>
-                      <property name="sizeHint" stdset="0">
-                       <size>
-                        <width>20</width>
-                        <height>8</height>
-                       </size>
-                      </property>
-                     </spacer>
                     </item>
                     <item>
                      <widget class="QPushButton" name="exportclient">
@@ -7638,6 +7980,22 @@ text-align: center;</string>
                        <string>📊  Statistiques</string>
                       </property>
                      </widget>
+                    </item>
+                    <item>
+                     <spacer>
+                      <property name="orientation">
+                       <enum>Qt::Orientation::Vertical</enum>
+                      </property>
+                      <property name="sizeType">
+                       <enum>QSizePolicy::Policy::Fixed</enum>
+                      </property>
+                      <property name="sizeHint" stdset="0">
+                       <size>
+                        <width>20</width>
+                        <height>8</height>
+                       </size>
+                      </property>
+                     </spacer>
                     </item>
                    </layout>
                   </widget>
@@ -7689,7 +8047,7 @@ text-align: center;</string>
                    <number>30</number>
                   </property>
                   <item>
-                   <widget class="QLabel" name="label">
+                   <widget class="QLabel" name="label2Title">
                     <property name="styleSheet">
                      <string notr="true">font-size: 20px; color: #1A365D;</string>
                     </property>
@@ -7781,6 +8139,29 @@ text-align: center;</string>
                         <string>En Retard</string>
                        </property>
                       </item>
+                     </widget>
+                    </item>
+                    <item row="2" column="2">
+                     <widget class="QLabel" name="lbl_date_exp_a">
+                      <property name="text">
+                       <string>Date Expiration:</string>
+                      </property>
+                     </widget>
+                    </item>
+                    <item row="2" column="3">
+                     <widget class="QDateEdit" name="input_date_expiration_ajouter">
+                      <property name="minimumSize">
+                       <size>
+                        <width>150</width>
+                        <height>34</height>
+                       </size>
+                      </property>
+                      <property name="styleSheet">
+                       <string notr="true">QDateEdit { border: 1px solid #999; border-radius: 8px; padding: 6px 12px; font-size: 13px; background-color: #ffffff; color: #000000; } QDateEdit:focus { border: 2px solid #0066cc; outline: none; background-color: #f9f9f9; } QDateEdit::drop-down { border: none; background-color: #f0f0f0; } QDateEdit::down-arrow { image: none; width: 16px; } QCalendarWidget { background-color: white; color: black; } QCalendarWidget QToolButton { background-color: white; color: black; border: 1px solid #ccc; } QCalendarWidget QAbstractItemView { background-color: white; color: black; }</string>
+                      </property>
+                      <property name="calendarPopup">
+                       <bool>true</bool>
+                      </property>
                      </widget>
                     </item>
                    </layout>
@@ -7890,7 +8271,7 @@ text-align: center;</string>
                    <number>30</number>
                   </property>
                   <item>
-                   <widget class="QLabel" name="label">
+                   <widget class="QLabel" name="label3">
                     <property name="styleSheet">
                      <string notr="true">font-size: 20px; color: #1A365D;</string>
                     </property>
@@ -7982,6 +8363,29 @@ text-align: center;</string>
                         <string>En Retard</string>
                        </property>
                       </item>
+                     </widget>
+                    </item>
+                    <item row="2" column="2">
+                     <widget class="QLabel" name="lbl_date_exp_m">
+                      <property name="text">
+                       <string>Date Expiration:</string>
+                      </property>
+                     </widget>
+                    </item>
+                    <item row="2" column="3">
+                     <widget class="QDateEdit" name="input_date_expiration_modifier">
+                      <property name="minimumSize">
+                       <size>
+                        <width>150</width>
+                        <height>34</height>
+                       </size>
+                      </property>
+                      <property name="styleSheet">
+                       <string notr="true">QDateEdit { border: 1px solid #999; border-radius: 8px; padding: 6px 12px; font-size: 13px; background-color: #ffffff; color: #000000; } QDateEdit:focus { border: 2px solid #0066cc; outline: none; background-color: #f9f9f9; } QDateEdit::drop-down { border: none; background-color: #f0f0f0; } QDateEdit::down-arrow { image: none; width: 16px; } QCalendarWidget { background-color: white; color: black; } QCalendarWidget QToolButton { background-color: white; color: black; border: 1px solid #ccc; } QCalendarWidget QAbstractItemView { background-color: white; color: black; }</string>
+                      </property>
+                      <property name="calendarPopup">
+                       <bool>true</bool>
+                      </property>
                      </widget>
                     </item>
                    </layout>
@@ -8146,7 +8550,7 @@ text-align: center;</string>
           </layout>
          </widget>
          <widget class="QWidget" name="pageCmdDashboard">
-          <layout class="QHBoxLayout" name="horizontalLayout_Main">
+          <layout class="QHBoxLayout" name="horizontalLayout_CmdDashboard">
            <property name="spacing">
             <number>0</number>
            </property>
@@ -8180,7 +8584,7 @@ text-align: center;</string>
               <number>0</number>
              </property>
              <item>
-              <layout class="QHBoxLayout" name="horizontalLayout_1">
+              <layout class="QHBoxLayout" name="horizontalLayout_11A">
                <property name="spacing">
                 <number>4</number>
                </property>
@@ -9041,6 +9445,26 @@ Chef d'Atelier</string>
                      </layout>
                     </item>
                     <item>
+                     <widget class="QLabel" name="lblBacSelect">
+                      <property name="text">
+                       <string>🧺  Bacs disponibles</string>
+                      </property>
+                     </widget>
+                    </item>
+                    <item>
+                     <widget class="QListWidget" name="lstBacsCmdAdd">
+                      <property name="minimumSize">
+                       <size>
+                        <width>0</width>
+                        <height>140</height>
+                       </size>
+                      </property>
+                      <property name="selectionMode">
+                       <enum>QAbstractItemView::MultiSelection</enum>
+                      </property>
+                     </widget>
+                    </item>
+                    <item>
                      <spacer name="spacerBeforeDates">
                       <property name="orientation">
                        <enum>Qt::Orientation::Vertical</enum>
@@ -9136,7 +9560,7 @@ Chef d'Atelier</string>
                      </layout>
                     </item>
                     <item>
-                     <layout class="QHBoxLayout" name="horizontalLayout_11">
+                     <layout class="QHBoxLayout" name="horizontalLayout_11B">
                       <property name="spacing">
                        <number>12</number>
                       </property>
@@ -9233,7 +9657,7 @@ Chef d'Atelier</string>
                     <item>
                      <layout class="QHBoxLayout" name="horizontalLayout">
                       <item>
-                       <widget class="QLabel" name="label">
+                       <widget class="QLabel" name="label5">
                         <property name="sizePolicy">
                          <sizepolicy hsizetype="Fixed" vsizetype="Fixed">
                           <horstretch>0</horstretch>
@@ -9493,8 +9917,8 @@ Chef d'Atelier</string>
                  <rect>
                   <x>0</x>
                   <y>0</y>
-                  <width>690</width>
-                  <height>923</height>
+                  <width>658</width>
+                  <height>849</height>
                  </rect>
                 </property>
                 <layout class="QHBoxLayout" name="hl_mod_split">
@@ -9514,7 +9938,7 @@ Chef d'Atelier</string>
                   <number>30</number>
                  </property>
                  <item>
-                  <widget class="QFrame" name="cardMod">
+                  <widget class="QFrame" name="cardMod1">
                    <property name="frameShape">
                     <enum>QFrame::Shape::StyledPanel</enum>
                    </property>
@@ -9660,6 +10084,26 @@ Chef d'Atelier</string>
                        </widget>
                       </item>
                      </layout>
+                    </item>
+                    <item>
+                     <widget class="QLabel" name="lblBacSelectMod">
+                      <property name="text">
+                       <string>🧺  Bacs disponibles</string>
+                      </property>
+                     </widget>
+                    </item>
+                    <item>
+                     <widget class="QListWidget" name="lstBacsCmdMod">
+                      <property name="minimumSize">
+                       <size>
+                        <width>0</width>
+                        <height>140</height>
+                       </size>
+                      </property>
+                      <property name="selectionMode">
+                       <enum>QAbstractItemView::MultiSelection</enum>
+                      </property>
+                     </widget>
                     </item>
                     <item>
                      <spacer name="spacerBeforeDatesMod">
@@ -10060,12 +10504,12 @@ QPushButton:hover {
    <slot>setCurrentIndex(int)</slot>
    <hints>
     <hint type="sourcelabel">
-     <x>1059</x>
-     <y>133</y>
+     <x>801</x>
+     <y>86</y>
     </hint>
     <hint type="destinationlabel">
-     <x>620</x>
-     <y>359</y>
+     <x>360</x>
+     <y>65</y>
     </hint>
    </hints>
   </connection>
@@ -10076,12 +10520,12 @@ QPushButton:hover {
    <slot>setCurrentIndex(int)</slot>
    <hints>
     <hint type="sourcelabel">
-     <x>1166</x>
-     <y>133</y>
+     <x>702</x>
+     <y>158</y>
     </hint>
     <hint type="destinationlabel">
-     <x>620</x>
-     <y>359</y>
+     <x>360</x>
+     <y>65</y>
     </hint>
    </hints>
   </connection>
@@ -10092,12 +10536,12 @@ QPushButton:hover {
    <slot>setCurrentIndex(int)</slot>
    <hints>
     <hint type="sourcelabel">
-     <x>886</x>
-     <y>789</y>
+     <x>478</x>
+     <y>1139</y>
     </hint>
     <hint type="destinationlabel">
-     <x>620</x>
-     <y>359</y>
+     <x>360</x>
+     <y>65</y>
     </hint>
    </hints>
   </connection>
@@ -10108,12 +10552,12 @@ QPushButton:hover {
    <slot>setCurrentIndex(int)</slot>
    <hints>
     <hint type="sourcelabel">
-     <x>886</x>
-     <y>875</y>
+     <x>523</x>
+     <y>1262</y>
     </hint>
     <hint type="destinationlabel">
-     <x>620</x>
-     <y>359</y>
+     <x>360</x>
+     <y>65</y>
     </hint>
    </hints>
   </connection>
@@ -10124,12 +10568,12 @@ QPushButton:hover {
    <slot>setCurrentIndex(int)</slot>
    <hints>
     <hint type="sourcelabel">
-     <x>115</x>
-     <y>180</y>
+     <x>281</x>
+     <y>53</y>
     </hint>
     <hint type="destinationlabel">
-     <x>620</x>
-     <y>359</y>
+     <x>360</x>
+     <y>65</y>
     </hint>
    </hints>
   </connection>
@@ -10140,12 +10584,12 @@ QPushButton:hover {
    <slot>setCurrentIndex(int)</slot>
    <hints>
     <hint type="sourcelabel">
-     <x>115</x>
-     <y>180</y>
+     <x>281</x>
+     <y>53</y>
     </hint>
     <hint type="destinationlabel">
-     <x>620</x>
-     <y>359</y>
+     <x>360</x>
+     <y>65</y>
     </hint>
    </hints>
   </connection>

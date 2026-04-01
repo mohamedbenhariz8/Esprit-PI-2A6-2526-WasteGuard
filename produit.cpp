@@ -2,6 +2,8 @@
 
 #include <QSqlError>
 #include <QSqlQuery>
+#include <QStringList>
+#include <QPair>
 
 namespace {
 int resolveNextBacId(QString &error)
@@ -64,7 +66,12 @@ bool Produit::ajouter()
     query.bindValue(":caracteristiques", m_caracteristiques);
 
     const bool ok = query.exec();
-    m_lastError = ok ? QString() : query.lastError().text();
+    if (ok) {
+        m_idMp = idToUse;
+        m_lastError.clear();
+    } else {
+        m_lastError = query.lastError().text();
+    }
     return ok;
 }
 
@@ -121,6 +128,23 @@ QSqlQueryModel *Produit::afficher(const QString &searchModel, const QString &sor
     QSqlQueryModel *model = new QSqlQueryModel();
     QSqlQuery query;
     
+    // Validate sort criteria against whitelist to prevent SQL injection
+    QStringList allowedSortColumns = {
+        "id_bac", "id_bac ASC", "id_bac DESC",
+        "modele", "modele ASC", "modele DESC",
+        "num_serie", "num_serie ASC", "num_serie DESC",
+        "stock", "stock ASC", "stock DESC",
+        "prix", "prix ASC", "prix DESC",
+        "remplissage", "remplissage ASC", "remplissage DESC",
+        "capacite_batterie", "capacite_batterie ASC", "capacite_batterie DESC",
+        "localisation_stock", "localisation_stock ASC", "localisation_stock DESC"
+    };
+    
+    QString safeSortCriteria = "id_bac ASC"; // Default safe sort
+    if (!sortCriteria.isEmpty() && allowedSortColumns.contains(sortCriteria.trimmed())) {
+        safeSortCriteria = sortCriteria.trimmed();
+    }
+    
     QString queryString = 
         "SELECT "
         "id_bac AS id_mp, "
@@ -136,10 +160,12 @@ QSqlQueryModel *Produit::afficher(const QString &searchModel, const QString &sor
         "FROM BAC_INTEL ";
         
     if (!searchModel.isEmpty()) {
-        queryString += "WHERE UPPER(modele) LIKE '%' || UPPER(:search) || '%' ";
+        queryString +=
+            "WHERE UPPER(modele) LIKE '%' || UPPER(:search) || '%' "
+            "   OR UPPER(num_serie) LIKE '%' || UPPER(:search) || '%' ";
     }
     
-    queryString += "ORDER BY " + sortCriteria;
+    queryString += "ORDER BY " + safeSortCriteria;
 
     query.prepare(queryString);
     if (!searchModel.isEmpty()) {
@@ -176,6 +202,236 @@ bool Produit::findIdByReference(const QString &reference, int &id_mp)
 }
 
 QString Produit::lastError() const { return m_lastError; }
+
+QList<QPair<int, QString>> Produit::fetchAvailableCapteurOptions(int minQty, int idBac, QString *error) const
+{
+    int minRequired = minQty;
+    if (minRequired <= 0) minRequired = 1;
+
+    QSqlQuery query;
+    if (idBac > 0) {
+        query.prepare(
+            "SELECT DISTINCT mp.ID_MP, mp.NOM "
+            "FROM MATIERE_PREMIERE mp "
+            "LEFT JOIN FABRICATION f ON f.ID_MP = mp.ID_MP AND f.ID_BAC = :id_bac "
+            "WHERE NVL(mp.QUANTITE, 0) >= (:minQty * NVL(f.QTE_UTILISE, 1)) "
+            "  AND (UPPER(mp.NOM) LIKE 'CAPTUR%' OR UPPER(mp.NOM) LIKE 'CAPTEUR%') "
+            "ORDER BY mp.NOM"
+        );
+        query.bindValue(":id_bac", idBac);
+        query.bindValue(":minQty", minRequired);
+    } else {
+        query.prepare(
+            "SELECT DISTINCT ID_MP, NOM "
+            "FROM MATIERE_PREMIERE "
+            "WHERE NVL(QUANTITE, 0) >= :minQty "
+            "  AND (UPPER(NOM) LIKE 'CAPTUR%' OR UPPER(NOM) LIKE 'CAPTEUR%') "
+            "ORDER BY NOM"
+        );
+        query.bindValue(":minQty", minRequired);
+    }
+
+    if (!query.exec()) {
+        if (error) *error = query.lastError().text();
+        return {};
+    }
+
+    QList<QPair<int, QString>> results;
+    while (query.next()) {
+        const int idMp = query.value(0).toInt();
+        const QString name = query.value(1).toString().trimmed();
+        if (idMp > 0 && !name.isEmpty()) results.append(qMakePair(idMp, name));
+    }
+    return results;
+}
+
+QStringList Produit::fetchAvailableCapteurFeatures(int minQty, int idBac, QString *error) const
+{
+    const auto options = fetchAvailableCapteurOptions(minQty, idBac, error);
+    QStringList names;
+    names.reserve(options.size());
+    for (const auto &opt : options) {
+        names << opt.second;
+    }
+    return names;
+}
+
+bool Produit::syncFabricationForBac(int idBac, const QList<int> &idMps, int qteUtiliseDefault)
+{
+    if (idBac <= 0) {
+        m_lastError = "ID bac invalide pour fabrication.";
+        return false;
+    }
+
+    QSqlQuery del;
+    del.prepare("DELETE FROM FABRICATION WHERE ID_BAC = :id_bac");
+    del.bindValue(":id_bac", idBac);
+    if (!del.exec()) {
+        m_lastError = del.lastError().text();
+        return false;
+    }
+
+    if (idMps.isEmpty()) {
+        m_lastError.clear();
+        return true;
+    }
+
+    QSqlQuery ins;
+    ins.prepare(
+        "INSERT INTO FABRICATION (ID_MP, ID_BAC, QTE_UTILISE) "
+        "VALUES (:id_mp, :id_bac, :qte)"
+    );
+
+    const int qte = qteUtiliseDefault > 0 ? qteUtiliseDefault : 1;
+    for (int idMp : idMps) {
+        if (idMp <= 0) continue;
+        ins.bindValue(":id_mp", idMp);
+        ins.bindValue(":id_bac", idBac);
+        ins.bindValue(":qte", qte);
+        if (!ins.exec()) {
+            m_lastError = ins.lastError().text();
+            return false;
+        }
+    }
+
+    m_lastError.clear();
+    return true;
+}
+
+bool Produit::syncFabricationForBacByNames(int idBac, const QStringList &capteurNames, int qteUtiliseDefault)
+{
+    QList<int> ids;
+    ids.reserve(capteurNames.size());
+    QSqlQuery idQuery;
+    for (const QString &raw : capteurNames) {
+        const QString name = raw.trimmed();
+        if (name.isEmpty()) continue;
+        idQuery.prepare("SELECT MIN(ID_MP) FROM MATIERE_PREMIERE WHERE UPPER(TRIM(NOM)) = UPPER(:nom)");
+        idQuery.bindValue(":nom", name);
+        if (idQuery.exec() && idQuery.next() && !idQuery.value(0).isNull()) {
+            ids.append(idQuery.value(0).toInt());
+        }
+    }
+    return syncFabricationForBac(idBac, ids, qteUtiliseDefault);
+}
+
+bool Produit::consumeMatiereForFabrication(int idBac, int produitQty)
+{
+    if (idBac <= 0 || produitQty <= 0) {
+        m_lastError.clear();
+        return true;
+    }
+
+    QSqlDatabase db = QSqlDatabase::database();
+    const bool useTx = db.isValid() && db.isOpen();
+    if (useTx && !db.transaction()) {
+        m_lastError = "Impossible de demarrer la transaction.";
+        return false;
+    }
+
+    QSqlQuery countQ(db);
+    countQ.prepare("SELECT COUNT(*) FROM FABRICATION WHERE ID_BAC = :id_bac");
+    countQ.bindValue(":id_bac", idBac);
+    if (!countQ.exec() || !countQ.next()) {
+        if (useTx) db.rollback();
+        m_lastError = countQ.lastError().text();
+        return false;
+    }
+    if (countQ.value(0).toInt() == 0) {
+        if (useTx) db.rollback();
+        m_lastError = "Aucune fabrication associee au produit.";
+        return false;
+    }
+
+    QSqlQuery check(db);
+    check.prepare(
+        "SELECT mp.NOM, NVL(mp.QUANTITE, 0) "
+        "FROM MATIERE_PREMIERE mp "
+        "JOIN FABRICATION f ON f.ID_MP = mp.ID_MP "
+        "WHERE f.ID_BAC = :id_bac "
+        "  AND NVL(mp.QUANTITE, 0) < :qty"
+    );
+    check.bindValue(":id_bac", idBac);
+    check.bindValue(":qty", produitQty);
+
+    if (!check.exec()) {
+        if (useTx) db.rollback();
+        m_lastError = check.lastError().text();
+        return false;
+    }
+
+    if (check.next()) {
+        const QString nom = check.value(0).toString().trimmed();
+        const double dispo = check.value(1).toDouble();
+        if (useTx) db.rollback();
+        m_lastError = QString("Stock insuffisant pour %1 (dispo: %2, besoin: %3).")
+                          .arg(nom)
+                          .arg(dispo)
+                          .arg(produitQty);
+        return false;
+    }
+
+    QSqlQuery upd(db);
+    upd.prepare(
+        "UPDATE MATIERE_PREMIERE mp "
+        "SET mp.QUANTITE = NVL(mp.QUANTITE, 0) - :qty "
+        "WHERE EXISTS (SELECT 1 FROM FABRICATION f WHERE f.ID_MP = mp.ID_MP AND f.ID_BAC = :id_bac)"
+    );
+    upd.bindValue(":qty", produitQty);
+    upd.bindValue(":id_bac", idBac);
+
+    if (!upd.exec()) {
+        if (useTx) db.rollback();
+        m_lastError = upd.lastError().text();
+        return false;
+    }
+
+    if (useTx && !db.commit()) {
+        m_lastError = "Impossible de valider la transaction.";
+        return false;
+    }
+
+    m_lastError.clear();
+    return true;
+}
+
+bool Produit::restoreMatiereForFabrication(int idBac, int produitQty)
+{
+    if (idBac <= 0 || produitQty <= 0) {
+        m_lastError.clear();
+        return true;
+    }
+
+    QSqlDatabase db = QSqlDatabase::database();
+    const bool useTx = db.isValid() && db.isOpen();
+    if (useTx && !db.transaction()) {
+        m_lastError = "Impossible de demarrer la transaction.";
+        return false;
+    }
+
+    QSqlQuery upd(db);
+    upd.prepare(
+        "UPDATE MATIERE_PREMIERE mp "
+        "SET mp.QUANTITE = NVL(mp.QUANTITE, 0) + :qty "
+        "WHERE EXISTS (SELECT 1 FROM FABRICATION f WHERE f.ID_MP = mp.ID_MP AND f.ID_BAC = :id_bac)"
+    );
+    upd.bindValue(":qty", produitQty);
+    upd.bindValue(":id_bac", idBac);
+
+    if (!upd.exec()) {
+        if (useTx) db.rollback();
+        m_lastError = upd.lastError().text();
+        return false;
+    }
+
+    if (useTx && !db.commit()) {
+        m_lastError = "Impossible de valider la transaction.";
+        return false;
+    }
+
+    m_lastError.clear();
+    return true;
+}
 
 int Produit::getIdMp() const { return m_idMp; }
 QString Produit::getReference() const { return m_reference; }

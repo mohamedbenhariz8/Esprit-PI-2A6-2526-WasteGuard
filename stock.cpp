@@ -1,14 +1,27 @@
-﻿#include "stock.h"
-
+#include "stock.h"
 #include <QDate>
 #include <QSqlError>
 #include <QSqlQuery>
+#include <QFile>
+#include <QTextStream>
+#include <QDateTime>
+
+static void logStockHistoryTxt(int idMp, int quantite) {
+    QFile file("stock_history.txt");
+    if (file.open(QIODevice::Append | QIODevice::Text)) {
+        QTextStream out(&file);
+        out << idMp << ";" << QDateTime::currentMSecsSinceEpoch() << ";" << quantite << "\n";
+        file.close();
+    }
+}
 
 Stock::Stock()
     : m_idMp(0),
       m_quantite(0),
       m_seuilCritique(5),
-      m_prix(0.0)
+      m_prix(0.0),
+      m_dateFabrication(QDate::currentDate()),
+      m_dateAchat(QDate::currentDate())
 {
 }
 
@@ -18,14 +31,18 @@ Stock::Stock(int idMp,
              int quantite,
              int seuilCritique,
              double prix,
-             const QString &fournisseurInput)
+             const QString &fournisseurInput,
+             const QDate &dateFabrication,
+             const QDate &dateAchat)
     : m_idMp(idMp),
       m_reference(reference),
       m_nom(nom),
       m_quantite(quantite),
       m_seuilCritique(seuilCritique),
       m_prix(prix),
-      m_fournisseurInput(fournisseurInput)
+      m_fournisseurInput(fournisseurInput),
+      m_dateFabrication(dateFabrication),
+      m_dateAchat(dateAchat)
 {
 }
 
@@ -67,6 +84,18 @@ bool Stock::resolveFournisseurIdFromInput(const QString &inputRaw, int &idFour, 
         return false;
     }
 
+    bool isInt;
+    int parsedId = input.toInt(&isInt); // First declaration here
+
+    // Vérification de l'existence de la table FOURNISSEUR
+    QSqlQuery probe;
+    if (!probe.exec("SELECT 1 FROM FOURNISSEUR WHERE 1=0")) {
+        idFour = isInt ? parsedId : 1;
+        nomFour = input;
+        m_lastError.clear();
+        return true;
+    }
+
     auto byId = [&](int id) -> bool {
         QSqlQuery q;
         q.prepare("SELECT id_four, nom FROM FOURNISSEUR WHERE id_four = :id");
@@ -85,8 +114,8 @@ bool Stock::resolveFournisseurIdFromInput(const QString &inputRaw, int &idFour, 
         return true;
     };
 
-    bool isInt = false;
-    const int parsedId = input.toInt(&isInt);
+    // FIXED: Removed 'bool' and 'const int' because they were already declared above.
+    // We just reuse the values already stored in 'isInt' and 'parsedId'.
     if (isInt) {
         return byId(parsedId);
     }
@@ -133,7 +162,6 @@ bool Stock::resolveFournisseurIdFromInput(const QString &inputRaw, int &idFour, 
     m_lastError.clear();
     return true;
 }
-
 bool Stock::ajouter()
 {
     const int idMp = (m_idMp > 0) ? m_idMp : resolveNextMpId();
@@ -142,28 +170,29 @@ bool Stock::ajouter()
     int idFour = -1;
     QString nomFour;
     if (!resolveFournisseurIdFromInput(m_fournisseurInput, idFour, nomFour)) {
-        return false;
+        nomFour = m_fournisseurInput.trimmed();
     }
 
     const int seuil = (m_seuilCritique > 0) ? m_seuilCritique : qMax(5, m_quantite / 5);
 
     QSqlQuery q;
-    q.prepare(
-        "INSERT INTO MATIERE_PREMIERE "
-        "(id_mp, reference, nom, quantite, seuil_critique, prix, date_fabrication, date_achat, id_four) "
-        "VALUES (:id_mp, :reference, :nom, :quantite, :seuil, :prix, :df, :da, :id_four)");
+    q.prepare("INSERT INTO MATIERE_PREMIERE (ID_MP, REFERENCE, NOM, QUANTITE, PRIX, SEUIL_CRITIQUE, DATE_FABRICATION, DATE_ACHAT, NUM_FOUR, NOM_FOUR, EMAIL_FOUR) "
+        "VALUES (:ID_MP, :REFERENCE, :NOM, :QUANTITE, :PRIX, :SEUIL_CRITIQUE, :DATE_FABRICATION, :DATE_ACHAT, :NUM_FOUR, :NOM_FOUR, :EMAIL_FOUR)");
 
-    q.bindValue(":id_mp", idMp);
-    q.bindValue(":reference", m_reference.trimmed());
-    q.bindValue(":nom", m_nom.trimmed());
-    q.bindValue(":quantite", m_quantite);
-    q.bindValue(":seuil", seuil);
-    q.bindValue(":prix", m_prix);
-    q.bindValue(":df", QDate::currentDate());
-    q.bindValue(":da", QDate::currentDate());
-    q.bindValue(":id_four", idFour);
+    q.bindValue(":ID_MP", idMp);
+    q.bindValue(":REFERENCE", m_reference.trimmed());
+    q.bindValue(":NOM", m_nom.trimmed());
+    q.bindValue(":QUANTITE", m_quantite);
+    q.bindValue(":PRIX", m_prix);
+    q.bindValue(":SEUIL_CRITIQUE", seuil);
+    q.bindValue(":DATE_FABRICATION", m_dateFabrication);
+    q.bindValue(":DATE_ACHAT", m_dateAchat);
+    q.bindValue(":NUM_FOUR", idFour > 0 ? idFour : 1);
+    q.bindValue(":NOM_FOUR", nomFour);
+    q.bindValue(":EMAIL_FOUR", m_emailFourInput);
 
     const bool ok = q.exec();
+    if (ok) logStockHistoryTxt(idMp, m_quantite);
     m_lastError = ok ? QString() : q.lastError().text();
     return ok;
 }
@@ -178,28 +207,27 @@ bool Stock::modifier()
     int idFour = -1;
     QString nomFour;
     if (!resolveFournisseurIdFromInput(m_fournisseurInput, idFour, nomFour)) {
-        return false;
+        nomFour = m_fournisseurInput.trimmed();
     }
 
     const int seuil = (m_seuilCritique > 0) ? m_seuilCritique : qMax(5, m_quantite / 5);
 
     QSqlQuery q;
-    q.prepare(
-        "UPDATE MATIERE_PREMIERE SET "
-        "reference=:reference, nom=:nom, quantite=:quantite, seuil_critique=:seuil, "
-        "prix=:prix, date_achat=:da, id_four=:id_four "
-        "WHERE id_mp=:id_mp");
+    q.prepare("UPDATE MATIERE_PREMIERE SET NOM=:NOM, QUANTITE=:QUANTITE, PRIX=:PRIX, SEUIL_CRITIQUE=:SEUIL_CRITIQUE, DATE_FABRICATION=:DATE_FABRICATION, DATE_ACHAT=:DATE_ACHAT, NUM_FOUR=:NUM_FOUR, NOM_FOUR=:NOM_FOUR, EMAIL_FOUR=:EMAIL_FOUR WHERE REFERENCE=:REFERENCE");
 
-    q.bindValue(":id_mp", m_idMp);
-    q.bindValue(":reference", m_reference.trimmed());
-    q.bindValue(":nom", m_nom.trimmed());
-    q.bindValue(":quantite", m_quantite);
-    q.bindValue(":seuil", seuil);
-    q.bindValue(":prix", m_prix);
-    q.bindValue(":da", QDate::currentDate());
-    q.bindValue(":id_four", idFour);
+    q.bindValue(":NOM", m_nom.trimmed());
+    q.bindValue(":QUANTITE", m_quantite);
+    q.bindValue(":PRIX", m_prix);
+    q.bindValue(":SEUIL_CRITIQUE", seuil);
+    q.bindValue(":DATE_FABRICATION", m_dateFabrication);
+    q.bindValue(":DATE_ACHAT", m_dateAchat);
+    q.bindValue(":NUM_FOUR", idFour > 0 ? idFour : 1);
+    q.bindValue(":NOM_FOUR", nomFour);
+    q.bindValue(":EMAIL_FOUR", m_emailFourInput);
+    q.bindValue(":REFERENCE", m_reference.trimmed());
 
     const bool ok = q.exec();
+    if (ok) logStockHistoryTxt(m_idMp, m_quantite);
     m_lastError = ok ? QString() : q.lastError().text();
     return ok;
 }
@@ -207,6 +235,11 @@ bool Stock::modifier()
 bool Stock::supprimer(int idMp)
 {
     QSqlQuery q;
+    // Supprimer les enregistrements enfants pour eviter l'erreur de contrainte de clef etrangere
+    q.prepare("DELETE FROM INTERVENTION_MATIERE WHERE ID_MP = :id");
+    q.bindValue(":id", idMp);
+    q.exec();
+
     q.prepare("DELETE FROM MATIERE_PREMIERE WHERE id_mp = :id");
     q.bindValue(":id", idMp);
     const bool ok = q.exec();
@@ -217,13 +250,8 @@ bool Stock::supprimer(int idMp)
 QSqlQueryModel *Stock::afficher()
 {
     auto *model = new QSqlQueryModel();
-    model->setQuery(
-        "SELECT "
-        "m.id_mp, m.reference, m.nom, m.quantite, m.seuil_critique, m.prix, m.id_four, "
-        "NVL(f.nom, '') AS fournisseur_nom "
-        "FROM MATIERE_PREMIERE m "
-        "LEFT JOIN FOURNISSEUR f ON f.id_four = m.id_four "
-        "ORDER BY m.id_mp");
+    model->setQuery("SELECT ID_MP, REFERENCE, NOM, QUANTITE, SEUIL_CRITIQUE, PRIX, DATE_FABRICATION, DATE_ACHAT, NOM_FOUR, EMAIL_FOUR "
+                "FROM MATIERE_PREMIERE");
 
     m_lastError = model->lastError().isValid() ? model->lastError().text() : QString();
     return model;
@@ -260,6 +288,9 @@ int Stock::quantite() const { return m_quantite; }
 int Stock::seuilCritique() const { return m_seuilCritique; }
 double Stock::prix() const { return m_prix; }
 QString Stock::fournisseurInput() const { return m_fournisseurInput; }
+QString Stock::emailFourInput() const { return m_emailFourInput; }
+QDate Stock::dateFabrication() const { return m_dateFabrication; }
+QDate Stock::dateAchat() const { return m_dateAchat; }
 
 void Stock::setIdMp(int value) { m_idMp = value; }
 void Stock::setReference(const QString &value) { m_reference = value; }
@@ -268,3 +299,6 @@ void Stock::setQuantite(int value) { m_quantite = value; }
 void Stock::setSeuilCritique(int value) { m_seuilCritique = value; }
 void Stock::setPrix(double value) { m_prix = value; }
 void Stock::setFournisseurInput(const QString &value) { m_fournisseurInput = value; }
+void Stock::setEmailFourInput(const QString &value) { m_emailFourInput = value; }
+void Stock::setDateFabrication(const QDate &value) { m_dateFabrication = value; }
+void Stock::setDateAchat(const QDate &value) { m_dateAchat = value; }

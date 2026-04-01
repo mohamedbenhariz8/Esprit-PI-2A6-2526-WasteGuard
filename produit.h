@@ -3,6 +3,9 @@
 
 #include <QString>
 #include <QSqlQueryModel>
+#include <QStringList>
+#include <QList>
+#include <QPair>
 
 class Produit
 {
@@ -17,6 +20,12 @@ public:
     QSqlQueryModel *afficher(const QString &searchModel = "", const QString &sortCriteria = "id_bac ASC");
     bool findIdByReference(const QString &reference, int &id_mp);
     QString lastError() const;
+    QList<QPair<int, QString>> fetchAvailableCapteurOptions(int minQty = 1, int idBac = -1, QString *error = nullptr) const;
+    QStringList fetchAvailableCapteurFeatures(int minQty = 1, int idBac = -1, QString *error = nullptr) const;
+    bool syncFabricationForBac(int idBac, const QList<int> &idMps, int qteUtiliseDefault = 1);
+    bool syncFabricationForBacByNames(int idBac, const QStringList &capteurNames, int qteUtiliseDefault = 1);
+    bool consumeMatiereForFabrication(int idBac, int produitQty);
+    bool restoreMatiereForFabrication(int idBac, int produitQty);
 
     int getIdMp() const;
     QString getReference() const;

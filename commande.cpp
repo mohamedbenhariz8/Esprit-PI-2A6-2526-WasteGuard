@@ -12,13 +12,16 @@ Commande::Commande()
 Commande::Commande(int id, int idClient, int qte, const QString &priorite,
                    const QString &statut, const QDate &dateCommande,
                    const QDate &dateLivraison, double prixTotal)
-    : m_id(id), m_idClient(idClient), m_qte(qte), m_priorite(priorite),
-      m_statut(statut), m_dateCommande(dateCommande),
-      m_dateLivraison(dateLivraison), m_prixTotal(prixTotal), m_adresse("")
+    : m_id(id), m_idClient(idClient), m_qte(qte), 
+      m_prixTotal(prixTotal), m_adresse(""), m_dateCommande(dateCommande),
+      m_dateLivraison(dateLivraison)
 {
+    setPriorite(priorite);
+    setStatut(statut);
 }
 
 int Commande::id() const { return m_id; }
+QString Commande::refer() const { return m_refer; }
 int Commande::idClient() const { return m_idClient; }
 int Commande::qte() const { return m_qte; }
 QString Commande::priorite() const { return m_priorite; }
@@ -29,10 +32,25 @@ double Commande::prixTotal() const { return m_prixTotal; }
 QString Commande::adresse() const { return m_adresse; }
 
 void Commande::setId(int id) { m_id = id; }
+void Commande::setRefer(const QString &refer) { m_refer = refer.trimmed(); }
 void Commande::setIdClient(int idClient) { m_idClient = idClient; }
 void Commande::setQte(int qte) { m_qte = qte; }
-void Commande::setPriorite(const QString &priorite) { m_priorite = priorite; }
-void Commande::setStatut(const QString &statut) { m_statut = statut; }
+void Commande::setPriorite(const QString &priorite) { 
+    QString p = priorite.toUpper();
+    if (p.contains("URGENT")) m_priorite = "URGENTE";
+    else if (p.contains("HAUT")) m_priorite = "HAUTE";
+    else if (p.contains("FAIBL")) m_priorite = "FAIBLE";
+    else m_priorite = "NORMALE";
+}
+
+void Commande::setStatut(const QString &statut) { 
+    QString s = statut.toUpper();
+    if (s.contains("PENDANTE") || s.contains("PREPAR")) m_statut = "EN_PREPARATION";
+    else if (s.contains("LIVR")) m_statut = "LIVREE";
+    else if (s.contains("INSTALL")) m_statut = "INSTALLEE";
+    else if (s.contains("ANNUL")) m_statut = "ANNULEE";
+    else m_statut = "EN_PREPARATION"; // fallback for database integrity
+}
 void Commande::setDateCommande(const QDate &date) { m_dateCommande = date; }
 void Commande::setDateLivraison(const QDate &date) { m_dateLivraison = date; }
 void Commande::setPrixTotal(double prix) { m_prixTotal = prix; }
@@ -52,17 +70,23 @@ bool Commande::ajouter()
         }
     }
 
-    query.prepare("INSERT INTO COMMANDE (ID_COMMANDE, ID_CLIENT, QTE, PRIORITE, STATUT, DATE_COMMANDE, DATE_LIVRAISON, PRIX_TOTAL, ADRESSE) "
-                  "VALUES (:id, :client, :qte, :prio, :stat, :dcmd, :dliv, :prix, :adresse)");
+    query.prepare("INSERT INTO COMMANDE (ID_COMMANDE, ID_CLIENT, QTE, PRIORITE, STATUT, DATE_COMMANDE, DATE_LIVRAISON, PRIX_TOTAL, ADRESSE, REFER) "
+                  "VALUES (:id, :client, :qte, :prio, :stat, TO_DATE(:dcmd, 'DD-MM-YYYY'), TO_DATE(:dliv, 'DD-MM-YYYY'), :prix, :adresse, :refer)");
     query.bindValue(":id", nextId);
     query.bindValue(":client", m_idClient);
     query.bindValue(":qte", m_qte);
     query.bindValue(":prio", m_priorite);
     query.bindValue(":stat", m_statut);
-    query.bindValue(":dcmd", m_dateCommande);
-    query.bindValue(":dliv", m_dateLivraison);
+    
+    // Use the string versions if available, otherwise fallback to QDate format
+    QString dcmd = !m_dateCmdStr.isEmpty() ? m_dateCmdStr : m_dateCommande.toString("dd-MM-yyyy");
+    QString dliv = !m_dateLivStr.isEmpty() ? m_dateLivStr : m_dateLivraison.toString("dd-MM-yyyy");
+    query.bindValue(":dcmd", dcmd);
+    query.bindValue(":dliv", dliv);
+    
     query.bindValue(":prix", m_prixTotal);
     query.bindValue(":adresse", m_adresse);
+    query.bindValue(":refer", m_refer.trimmed());
 
     if (query.exec()) {
         m_id = nextId;
@@ -76,17 +100,23 @@ bool Commande::modifier()
 {
     QSqlQuery query;
     query.prepare("UPDATE COMMANDE SET ID_CLIENT=:client, QTE=:qte, PRIORITE=:prio, STATUT=:stat, "
-                  "DATE_COMMANDE=:dcmd, DATE_LIVRAISON=:dliv, PRIX_TOTAL=:prix, ADRESSE=:adresse "
+                  "DATE_COMMANDE=TO_DATE(:dcmd, 'DD-MM-YYYY'), DATE_LIVRAISON=TO_DATE(:dliv, 'DD-MM-YYYY'), "
+                  "PRIX_TOTAL=:prix, ADRESSE=:adresse, REFER=:refer "
                   "WHERE ID_COMMANDE=:id");
     query.bindValue(":id", m_id);
     query.bindValue(":client", m_idClient);
     query.bindValue(":qte", m_qte);
     query.bindValue(":prio", m_priorite);
     query.bindValue(":stat", m_statut);
-    query.bindValue(":dcmd", m_dateCommande);
-    query.bindValue(":dliv", m_dateLivraison);
+    
+    QString dcmd = !m_dateCmdStr.isEmpty() ? m_dateCmdStr : m_dateCommande.toString("dd-MM-yyyy");
+    QString dliv = !m_dateLivStr.isEmpty() ? m_dateLivStr : m_dateLivraison.toString("dd-MM-yyyy");
+    query.bindValue(":dcmd", dcmd);
+    query.bindValue(":dliv", dliv);
+
     query.bindValue(":prix", m_prixTotal);
     query.bindValue(":adresse", m_adresse);
+    query.bindValue(":refer", m_refer.trimmed());
 
     if (query.exec()) return true;
     m_lastError = query.lastError().text();
@@ -103,14 +133,72 @@ bool Commande::supprimer(int id)
     return false;
 }
 
-QSqlQueryModel *Commande::afficher()
+QSqlQueryModel *Commande::afficher(const QString &searchField, const QString &searchValue, const QString &sortCriteria)
 {
     QSqlQueryModel *model = new QSqlQueryModel();
-    // Joining with CLIENT to show Matricule
-    model->setQuery("SELECT c.ID_COMMANDE, cl.MATRICULE, c.QTE, c.PRIORITE, c.STATUT, c.DATE_COMMANDE, c.DATE_LIVRAISON, c.PRIX_TOTAL, c.ID_CLIENT, c.ADRESSE "
-                    "FROM COMMANDE c "
-                    "LEFT JOIN CLIENT cl ON c.ID_CLIENT = cl.ID_CLIENT "
-                    "ORDER BY c.ID_COMMANDE");
+    QSqlQuery query;
+    
+    // Validate sort criteria against whitelist to prevent SQL injection
+    QStringList allowedSortColumns = {
+        "c.id_commande", "c.id_commande asc", "c.id_commande desc",
+        "c.refer", "c.refer asc", "c.refer desc",
+        "cl.matricule", "cl.matricule asc", "cl.matricule desc",
+        "c.qte", "c.qte asc", "c.qte desc",
+        "c.priorite", "c.priorite asc", "c.priorite desc",
+        "c.statut", "c.statut asc", "c.statut desc",
+        "c.date_commande", "c.date_commande asc", "c.date_commande desc",
+        "c.date_livraison", "c.date_livraison asc", "c.date_livraison desc",
+        "c.prix_total", "c.prix_total asc", "c.prix_total desc"
+    };
+    
+    QString safeSortCriteria = "c.id_commande ASC";
+    if (!sortCriteria.isEmpty()) {
+        QString lowerCrit = sortCriteria.toLower().trimmed();
+        bool found = false;
+        for (const QString &col : allowedSortColumns) {
+            if (col.toLower() == lowerCrit) {
+                safeSortCriteria = col;
+                found = true;
+                break;
+            }
+        }
+        if (!found && !lowerCrit.contains(" ")) {
+             // allow e.g. "c.refer" even if no asc/desc
+             for (const QString &col : allowedSortColumns) {
+                 if (col.toLower().startsWith(lowerCrit + " ")) {
+                     safeSortCriteria = col;
+                     break;
+                 }
+             }
+        }
+    }
+    
+    QString queryString = 
+        "SELECT c.REFER, cl.MATRICULE, c.QTE, c.PRIORITE, c.STATUT, c.DATE_COMMANDE, c.DATE_LIVRAISON, c.PRIX_TOTAL, c.ID_CLIENT, c.ADRESSE, c.ID_COMMANDE "
+        "FROM COMMANDE c "
+        "LEFT JOIN CLIENT cl ON c.ID_CLIENT = cl.ID_CLIENT ";
+    
+    if (!searchValue.isEmpty()) {
+        if (searchField.isEmpty() || searchField.toLower() == "all") {
+            queryString += "WHERE (UPPER(c.REFER) LIKE '%' || UPPER(:search) || '%' "
+                           "OR UPPER(c.PRIORITE) LIKE '%' || UPPER(:search) || '%' "
+                           "OR UPPER(c.STATUT) LIKE '%' || UPPER(:search) || '%' "
+                           "OR UPPER(c.ADRESSE) LIKE '%' || UPPER(:search) || '%' "
+                           "OR UPPER(cl.MATRICULE) LIKE '%' || UPPER(:search) || '%') ";
+        } else {
+            QString searchColumn = "c." + searchField;
+            if (searchField.toLower() == "matricule") searchColumn = "cl.matricule";
+            else if (searchField.toLower() == "reference") searchColumn = "c.refer";
+            queryString += "WHERE UPPER(" + searchColumn + ") LIKE '%' || UPPER(:search) || '%' ";
+        }
+        query.prepare(queryString + "ORDER BY " + safeSortCriteria);
+        query.bindValue(":search", searchValue.trimmed());
+    } else {
+        query.prepare(queryString + "ORDER BY " + safeSortCriteria);
+    }
+    
+    query.exec();
+    model->setQuery(std::move(query));
     if (model->lastError().isValid()) {
         m_lastError = model->lastError().text();
     }

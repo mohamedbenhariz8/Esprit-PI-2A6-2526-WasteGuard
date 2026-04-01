@@ -1,10 +1,56 @@
-build/
-.qtc_clangd/
-.qtcreator/
-node_modules/
-meta_ai_*/
-invideo_*/
-*.log
+# Build artifacts
+debug/
+release/
 *.o
+*.obj
+*.a
+*.lib
+*.dll
 *.exe
 Makefile*
+.qmake.stash
+ui_mainwindow.h
+test_ui_mainwindow.h
+
+# Qt Creator specific
+*.pro.user
+*.pro.user.*
+.qtcreator/
+
+# VS Code / JetBrains
+.vscode/
+.idea/
+.vs/
+*.swp
+*.bak
+
+# Backups and Temporary files
+mainwindow.ui.backup*
+mainwindow_temp.ui
+*.log
+nul)
+
+# Python artifacts
+.venv/
+__pycache__/
+*.pyc
+*.pyo
+
+# One-off scripts (keeping only core project files)
+# Suggesting to delete these manually to avoid accidental loss of useful scripts,
+# but adding them here for documentation.
+# patch*.py
+# safe_patch*.py
+# search*.py
+# find_*.py
+# fix_*.py
+# move_*.py
+# print_*.py
+# append_*.py
+# inject_*.py
+# restore_header.py
+# update_ui.py
+# debug*.py
+# merge_ui_final.py
+# *_bot.py
+# *_bot.js

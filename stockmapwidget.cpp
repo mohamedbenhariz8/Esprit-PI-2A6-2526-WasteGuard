@@ -348,7 +348,7 @@ void Warehouse3DView::drawRackFace(QPainter &p, int col, int row, int side)
     if (depth < 0.5 || depth > 12.0) return;
 
     qreal wallDist = 0.9; // how far the rack is from center
-    qreal rackW = 0.8;    // how deep the rack is into the aisle direction
+    // qreal rackW = 0.8;    // how deep the rack is into the aisle direction (unused)
 
     // ── Rack outer quad (side of the rack facing the aisle) ──
     qreal xOuter = side * wallDist;
@@ -516,7 +516,7 @@ void Warehouse3DView::drawNavigationArrows(QPainter &p)
     // Right
     m_arrowRight = QRectF(cx + aw / 2 + 8, by - ah / 2 + 4, aw, ah);
 
-    auto drawArrow = [&](const QRectF &r, const QString &icon, const QString &hint, bool enabled) {
+    auto drawArrow = [&](const QRectF &r, const QString &icon, const QString & /*hint*/, bool enabled) {
         QColor bg = enabled ? QColor(20, 35, 60, 180) : QColor(15, 20, 35, 100);
         QColor border = enabled ? kAccent : QColor(40, 55, 75);
         p.setBrush(bg);

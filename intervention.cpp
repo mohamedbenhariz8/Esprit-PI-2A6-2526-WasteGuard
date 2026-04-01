@@ -3,16 +3,18 @@
 #include <QVariant>
 
 Intervention::Intervention()
-    : m_idInter(0), m_duree(0.0), m_cout(0.0), m_idBac(0)
+    : m_idInter(0), m_duree(0.0), m_cout(0.0), m_idBac(0), m_idEmp(1)
 {
 }
 
 Intervention::Intervention(int idInter, const QDate &dateInter, const QString &reference,
                            double duree, double cout, const QString &statut,
-                           const QString &type, const QString &priorite, int idBac)
+                           const QString &type, const QString &priorite, int idBac,
+                           const QString &technicien, const QString &adresse, const QString &descript)
     : m_idInter(idInter), m_dateInter(dateInter), m_reference(reference),
       m_duree(duree), m_cout(cout), m_statut(statut),
-      m_type(type), m_priorite(priorite), m_idBac(idBac)
+      m_type(type), m_priorite(priorite), m_idBac(idBac), m_idEmp(1),
+      m_technicien(technicien), m_adresse(adresse), m_descript(descript)
 {
 }
 
@@ -26,6 +28,10 @@ QString Intervention::getStatut() const { return m_statut; }
 QString Intervention::getType() const { return m_type; }
 QString Intervention::getPriorite() const { return m_priorite; }
 int Intervention::getIdBac() const { return m_idBac; }
+int Intervention::getIdEmp() const { return m_idEmp; }
+QString Intervention::getTechnicien() const { return m_technicien; }
+QString Intervention::getAdresse() const { return m_adresse; }
+QString Intervention::getDescript() const { return m_descript; }
 
 // ---------- Setters ----------
 void Intervention::setIdInter(int value) { m_idInter = value; }
@@ -37,6 +43,10 @@ void Intervention::setStatut(const QString &value) { m_statut = value; }
 void Intervention::setType(const QString &value) { m_type = value; }
 void Intervention::setPriorite(const QString &value) { m_priorite = value; }
 void Intervention::setIdBac(int value) { m_idBac = value; }
+void Intervention::setIdEmp(int value) { m_idEmp = value; }
+void Intervention::setTechnicien(const QString &value) { m_technicien = value; }
+void Intervention::setAdresse(const QString &value) { m_adresse = value; }
+void Intervention::setDescript(const QString &value) { m_descript = value; }
 
 // ---------- CRUD ----------
 bool Intervention::ajouter()
@@ -72,8 +82,8 @@ bool Intervention::ajouter()
     }
 
     query.prepare(
-        "INSERT INTO INTERVENTION (ID_INTER, DATE_INTER, REFERENCE, DUREE, COUT, STATUT, TYPE, PRIORITE, ID_BAC) "
-        "VALUES (:id, :date_inter, :reference, :duree, :cout, :statut, :type, :priorite, :id_bac)"
+        "INSERT INTO INTERVENTION (ID_INTER, DATE_INTER, REFERENCE, DUREE, COUT, STATUT, TYPE, PRIORITE, ID_BAC, ID_EMP, TECHNICIEN, ADRESSE, DESCRIPT) "
+        "VALUES (:id, :date_inter, :reference, :duree, :cout, :statut, :type, :priorite, :id_bac, :id_emp, :technicien, :adresse, :descript)"
     );
     query.bindValue(":id", nextId);
     query.bindValue(":date_inter", m_dateInter);
@@ -84,6 +94,10 @@ bool Intervention::ajouter()
     query.bindValue(":type", m_type);
     query.bindValue(":priorite", m_priorite);
     query.bindValue(":id_bac", m_idBac);
+    query.bindValue(":id_emp", m_idEmp);
+    query.bindValue(":technicien", m_technicien);
+    query.bindValue(":adresse", m_adresse);
+    query.bindValue(":descript", m_descript);
 
     if (query.exec()) {
         m_idInter = nextId;
@@ -101,7 +115,8 @@ bool Intervention::modifier()
         "UPDATE INTERVENTION SET "
         "DATE_INTER = :date_inter, REFERENCE = :reference, DUREE = :duree, "
         "COUT = :cout, STATUT = :statut, TYPE = :type, "
-        "PRIORITE = :priorite, ID_BAC = :id_bac "
+        "PRIORITE = :priorite, ID_BAC = :id_bac, ID_EMP = :id_emp, "
+        "TECHNICIEN = :technicien, ADRESSE = :adresse, DESCRIPT = :descript "
         "WHERE ID_INTER = :id"
     );
     query.bindValue(":id", m_idInter);
@@ -113,6 +128,10 @@ bool Intervention::modifier()
     query.bindValue(":type", m_type);
     query.bindValue(":priorite", m_priorite);
     query.bindValue(":id_bac", m_idBac);
+    query.bindValue(":id_emp", m_idEmp);
+    query.bindValue(":technicien", m_technicien);
+    query.bindValue(":adresse", m_adresse);
+    query.bindValue(":descript", m_descript);
 
     if (query.exec()) {
         m_lastError.clear();
@@ -141,13 +160,77 @@ bool Intervention::supprimer(int idInter)
     return false;
 }
 
-QSqlQueryModel *Intervention::afficher()
+QSqlQueryModel *Intervention::afficher(const QString &searchField, const QString &searchValue, const QString &sortCriteria)
 {
     QSqlQueryModel *model = new QSqlQueryModel();
-    model->setQuery(
-        "SELECT ID_INTER, REFERENCE, DATE_INTER, DUREE, COUT, STATUT, TYPE, PRIORITE, ID_BAC "
-        "FROM INTERVENTION ORDER BY ID_INTER"
-    );
+    QSqlQuery query;
+    
+    // Validate sort criteria against whitelist to prevent SQL injection
+    QStringList allowedSortColumns = {
+        "id_inter", "id_inter asc", "id_inter desc",
+        "reference", "reference asc", "reference desc",
+        "date_inter", "date_inter asc", "date_inter desc",
+        "duree", "duree asc", "duree desc",
+        "cout", "cout asc", "cout desc",
+        "statut", "statut asc", "statut desc",
+        "type", "type asc", "type desc",
+        "priorite", "priorite asc", "priorite desc",
+        "priority_custom"
+    };
+    
+    QString safeSortCriteria = "id_inter ASC";
+    if (!sortCriteria.isEmpty()) {
+        QString lowerCrit = sortCriteria.toLower().trimmed();
+        bool found = false;
+        for (const QString &col : allowedSortColumns) {
+            if (col.toLower() == lowerCrit) {
+                if (lowerCrit == "priority_custom") {
+                    safeSortCriteria = "CASE UPPER(PRIORITE) WHEN 'URGENTE' THEN 1 WHEN 'HAUTE' THEN 2 WHEN 'NORMALE' THEN 3 WHEN 'FAIBLE' THEN 4 ELSE 5 END ASC";
+                } else {
+                    safeSortCriteria = col;
+                }
+                found = true;
+                break;
+            }
+        }
+        if (!found && !lowerCrit.contains(" ")) {
+             for (const QString &col : allowedSortColumns) {
+                 if (col.toLower().startsWith(lowerCrit + " ")) {
+                     safeSortCriteria = col;
+                     break;
+                 }
+             }
+        }
+    }
+    
+    QString queryString = 
+        "SELECT ID_INTER, REFERENCE, DATE_INTER, DUREE, COUT, STATUT, TYPE, PRIORITE, ID_BAC, ID_EMP, TECHNICIEN, ADRESSE, DESCRIPT "
+        "FROM INTERVENTION ";
+    
+    if (!searchValue.isEmpty()) {
+        if (searchField.isEmpty() || searchField.toLower() == "all") {
+            queryString += "WHERE (UPPER(REFERENCE) LIKE '%' || UPPER(:search) || '%' "
+                           "OR UPPER(STATUT) LIKE '%' || UPPER(:search) || '%' "
+                           "OR UPPER(PRIORITE) LIKE '%' || UPPER(:search) || '%' "
+                           "OR TO_CHAR(DATE_INTER, 'YYYY-MM-DD') LIKE '%' || :search || '%') ";
+        } else {
+            QString colName = searchField.toLower() == "reference" ? "REFERENCE" : searchField;
+            if (searchField.toLower() == "date") {
+                queryString += "WHERE TO_CHAR(DATE_INTER, 'YYYY-MM-DD') LIKE '%' || :search || '%' ";
+            } else {
+                queryString += "WHERE UPPER(" + colName + ") LIKE '%' || UPPER(:search) || '%' ";
+            }
+        }
+        query.prepare(queryString + "ORDER BY " + safeSortCriteria);
+        query.bindValue(":search", searchValue.trimmed());
+    } else {
+        query.prepare(queryString + "ORDER BY " + safeSortCriteria);
+    }
+    
+    if (!query.exec()) {
+        m_lastError = query.lastError().text();
+    }
+    model->setQuery(std::move(query));
     m_lastError = model->lastError().isValid() ? model->lastError().text() : QString();
     return model;
 }

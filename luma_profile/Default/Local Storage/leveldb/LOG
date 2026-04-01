@@ -1,0 +1,8 @@
+2026/03/28-09:39:58.170 5214 Creating DB C:\Users\gigabyte\Downloads\INTEGRATION_FINALE\INTEGRATION_FINALE\luma_profile\Default\Local Storage\leveldb since it was missing.
+2026/03/28-09:39:58.184 5214 Reusing MANIFEST C:\Users\gigabyte\Downloads\INTEGRATION_FINALE\INTEGRATION_FINALE\luma_profile\Default\Local Storage\leveldb/MANIFEST-000001
+2026/03/28-09:40:11.257 5874 Level-0 table #5: started
+2026/03/28-09:40:11.261 5874 Level-0 table #5: 30107 bytes OK
+2026/03/28-09:40:11.264 5874 Delete type=0 #3
+2026/03/28-09:41:02.234 5874 Level-0 table #7: started
+2026/03/28-09:41:02.240 5874 Level-0 table #7: 23865 bytes OK
+2026/03/28-09:41:02.243 5874 Delete type=0 #4

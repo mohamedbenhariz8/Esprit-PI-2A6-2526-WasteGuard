@@ -2,6 +2,7 @@
 #define EMPLOYE_H
 
 #include <QString>
+#include <QByteArray>
 #include <QSqlQuery>
 #include <QSqlQueryModel>
 
@@ -9,11 +10,13 @@ class Employe
 {
     int id_emp;
     QString matricule, cin, nom, email, specialite, disponibilite;
+    QByteArray photo;
 
 public:
     Employe();
     Employe(int id_emp, QString matricule, QString cin, QString nom,
-            QString email, QString specialite, QString disponibilite);
+            QString email, QString specialite, QString disponibilite,
+            const QByteArray &photo = QByteArray());
 
     // CRUD
     bool ajouter();
@@ -31,6 +34,7 @@ public:
     QString getEmail() const;
     QString getSpecialite() const;
     QString getDisponibilite() const;
+    QByteArray getPhoto() const;
 
     // setters
     void setIdEmp(int value);
@@ -40,6 +44,7 @@ public:
     void setEmail(const QString &value);
     void setSpecialite(const QString &value);
     void setDisponibilite(const QString &value);
+    void setPhoto(const QByteArray &value);
 
 private:
     QString m_lastError;

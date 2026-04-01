@@ -16,7 +16,7 @@ public:
     bool ajouter();
     bool modifier();
     bool supprimer(int id);
-    QSqlQueryModel *afficher();
+    QSqlQueryModel *afficher(const QString &searchField = "", const QString &searchValue = "", const QString &sortCriteria = "id_commande ASC");
     
     // Helper to resolve client
     int findClientByMatricule(const QString &matricule);
@@ -25,6 +25,7 @@ public:
     QString lastError() const;
 
     int id() const;
+    QString refer() const;
     int idClient() const;
     int qte() const;
     QString priorite() const;
@@ -35,6 +36,7 @@ public:
     QString adresse() const;
 
     void setId(int id);
+    void setRefer(const QString &refer);
     void setIdClient(int idClient);
     void setQte(int qte);
     void setPriorite(const QString &priorite);
@@ -46,15 +48,23 @@ public:
 
 private:
     int m_id;
+    QString m_refer;
     int m_idClient;
     int m_qte;
     QString m_priorite;
     QString m_statut;
-    QDate m_dateCommande;
-    QDate m_dateLivraison;
+    QString m_dateCmdStr;
+    QString m_dateLivStr;
     double m_prixTotal;
     QString m_adresse;
     QString m_lastError;
+
+    // We'll keep QDate versions for getters if needed, but primary focus is now the strings
+    QDate m_dateCommande;
+    QDate m_dateLivraison;
+public:
+    void setDateCmdStr(const QString &s) { m_dateCmdStr = s; }
+    void setDateLivStr(const QString &s) { m_dateLivStr = s; }
 };
 
 #endif // COMMANDE_H

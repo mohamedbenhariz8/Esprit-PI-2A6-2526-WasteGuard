@@ -31,7 +31,7 @@ VideoGenerationDialog::~VideoGenerationDialog()
 
 void VideoGenerationDialog::setupUi()
 {
-    this->setWindowTitle("Meta AI — Génération Vidéo Produit");
+    this->setWindowTitle("Luma Labs — Génération Vidéo Produit");
     this->resize(720, 520);
     this->setStyleSheet("QDialog { background-color: #0f172a; color: white; }");
     this->setWindowFlags(Qt::Dialog | Qt::FramelessWindowHint);
@@ -41,7 +41,7 @@ void VideoGenerationDialog::setupUi()
     mainLayout->setSpacing(15);
 
     // Title
-    m_lblTitle = new QLabel("🎬 Meta AI — Génération Vidéo Produit", this);
+    m_lblTitle = new QLabel("🎬 Luma Labs — Génération Vidéo Produit", this);
     m_lblTitle->setStyleSheet("color: #60a5fa; font-size: 18px; font-weight: bold; font-family: 'Segoe UI';");
     m_lblTitle->setAlignment(Qt::AlignCenter);
     mainLayout->addWidget(m_lblTitle);
@@ -80,7 +80,7 @@ void VideoGenerationDialog::setupUi()
     m_logConsole = new QPlainTextEdit(this);
     m_logConsole->setReadOnly(true);
     m_logConsole->setStyleSheet("background-color: #1e293b; border: 2px dashed #475569; border-radius: 12px; color: #a3e635; font-family: Consolas; padding: 10px;");
-    m_logConsole->setPlainText("En attente du lancement...\n\nLe navigateur Edge s'ouvrira automatiquement.\nLors du premier lancement, connectez-vous à Meta AI.\nLes sessions suivantes seront automatiques.");
+    m_logConsole->setPlainText("En attente du lancement...\n\nLe navigateur s'ouvrira automatiquement.\nLors du premier lancement, connectez-vous à Luma Labs (Dream Machine).\nLes sessions suivantes seront automatiques.");
     mainLayout->addWidget(m_logConsole, 1);
 
     // Progress Bar
@@ -132,14 +132,14 @@ void VideoGenerationDialog::onGenerateClicked()
 {
     m_btnGenerate->setEnabled(false);
     m_progressBar->show();
-    m_lblStatus->setText("Lancement du Robot Meta AI...");
+    m_lblStatus->setText("Lancement du Robot Luma Labs...");
     m_logConsole->clear();
 
     // Resolve the script path by walking up from the executable directory
     QString scriptDir = QCoreApplication::applicationDirPath();
     QString scriptPath;
 
-    const QByteArray envPath = qgetenv("META_VIDEO_BOT_PATH");
+    const QByteArray envPath = qgetenv("LUMA_VIDEO_BOT_PATH");
     if (!envPath.isEmpty()) {
         const QString candidate = QString::fromUtf8(envPath);
         if (QFile::exists(candidate)) {
@@ -150,7 +150,7 @@ void VideoGenerationDialog::onGenerateClicked()
     if (scriptPath.isEmpty()) {
         QDir dir(scriptDir);
         for (int i = 0; i < 12; ++i) {
-            const QString candidate = dir.absoluteFilePath("meta_video_bot.js");
+            const QString candidate = dir.absoluteFilePath("luma_video_bot.js");
             if (QFile::exists(candidate)) {
                 scriptPath = QDir::cleanPath(candidate);
                 break;
@@ -163,7 +163,7 @@ void VideoGenerationDialog::onGenerateClicked()
     if (scriptPath.isEmpty()) {
         QDir dir(QDir::currentPath());
         for (int i = 0; i < 12; ++i) {
-            const QString candidate = dir.absoluteFilePath("meta_video_bot.js");
+            const QString candidate = dir.absoluteFilePath("luma_video_bot.js");
             if (QFile::exists(candidate)) {
                 scriptPath = QDir::cleanPath(candidate);
                 break;
@@ -174,22 +174,31 @@ void VideoGenerationDialog::onGenerateClicked()
         }
     }
 
+    // Fallback: look next to the source file location (compile-time path)
+    if (scriptPath.isEmpty()) {
+        const QString sourceDir = QFileInfo(QStringLiteral(__FILE__)).absolutePath();
+        const QString candidate = QDir(sourceDir).absoluteFilePath("luma_video_bot.js");
+        if (QFile::exists(candidate)) {
+            scriptPath = QDir::cleanPath(candidate);
+        }
+    }
+
     if (scriptPath.isEmpty()) {
         // Fallback: recursive search under the app directory (limited)
-        QDirIterator it(scriptDir, QStringList() << "meta_video_bot.js", QDir::Files, QDirIterator::Subdirectories);
+        QDirIterator it(scriptDir, QStringList() << "luma_video_bot.js", QDir::Files, QDirIterator::Subdirectories);
         if (it.hasNext()) {
             scriptPath = QDir::cleanPath(it.next());
         }
     }
 
     if (!QFile::exists(scriptPath)) {
-        m_logConsole->appendPlainText("ERREUR: meta_video_bot.js introuvable !");
+        m_logConsole->appendPlainText("ERREUR: luma_video_bot.js introuvable !");
         m_logConsole->appendPlainText("Chemin cherche: " + (scriptPath.isEmpty() ? QString("<vide>") : scriptPath));
         m_logConsole->appendPlainText("CWD: " + QDir::currentPath());
         m_logConsole->appendPlainText("AppDir: " + QCoreApplication::applicationDirPath());
-        const QByteArray envPathErr = qgetenv("META_VIDEO_BOT_PATH");
+        const QByteArray envPathErr = qgetenv("LUMA_VIDEO_BOT_PATH");
         if (!envPathErr.isEmpty()) {
-            m_logConsole->appendPlainText("META_VIDEO_BOT_PATH: " + QString::fromUtf8(envPathErr));
+            m_logConsole->appendPlainText("LUMA_VIDEO_BOT_PATH: " + QString::fromUtf8(envPathErr));
         }
         m_lblStatus->setText("Erreur: script introuvable");
         m_btnGenerate->setEnabled(true);
@@ -215,6 +224,11 @@ void VideoGenerationDialog::onGenerateClicked()
     } else {
         m_logConsole->appendPlainText("ATTENTION: Aucune image de produit. La vidéo sera générée sans image de référence.");
     }
+
+    // Use UI automation (no CDP) for now
+    QProcessEnvironment env = QProcessEnvironment::systemEnvironment();
+    env.insert("LUMA_USE_UI", "1");
+    m_nodeProcess->setProcessEnvironment(env);
 
     // Set working directory to the script's directory
     m_nodeProcess->setWorkingDirectory(QFileInfo(scriptPath).absolutePath());
