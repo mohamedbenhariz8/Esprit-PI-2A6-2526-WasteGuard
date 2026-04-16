@@ -10,5 +10,6 @@
         <file>assets/sensor.png</file>
         <file>assets/compactor.png</file>
         <file>assets/landscape_bin.png</file>
+        <file>assets/MapWidget.qml</file>
     </qresource>
 </RCC>

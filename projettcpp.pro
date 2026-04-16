@@ -1,8 +1,9 @@
-QT       += core gui widgets sql charts multimedia multimediawidgets printsupport network concurrent
+QT       += core gui widgets sql charts multimedia multimediawidgets printsupport network concurrent opengl openglwidgets serialport
 
 greaterThan(QT_MAJOR_VERSION, 4): QT += widgets
 
 CONFIG += c++17
+QMAKE_CXXFLAGS += -finput-charset=UTF-8 -fexec-charset=UTF-8
 
 # You can make your code fail to compile if it uses deprecated APIs.
 # In order to do so, uncomment the following line.
@@ -21,10 +22,15 @@ SOURCES += \
     stock.cpp \
     stockmapwidget.cpp \
     videogenerationdialog.cpp \
+    triposr3ddialog.cpp \
+    viewer3ddialog.cpp \
+    modelviewerwidget.cpp \
     accessibilityhelper.cpp \
     voiceassistant.cpp \
     labibassistant.cpp \
-    emailnotificationmanager.cpp
+    emailnotificationmanager.cpp \
+    arduino.cpp \
+    arduinowidget.cpp
 
 HEADERS += \
     client.h \
@@ -38,10 +44,15 @@ HEADERS += \
     stock.h \
     stockmapwidget.h \
     videogenerationdialog.h \
+    triposr3ddialog.h \
+    viewer3ddialog.h \
+    modelviewerwidget.h \
     accessibilityhelper.h \
     voiceassistant.h \
     labibassistant.h \
-    emailnotificationmanager.h
+    emailnotificationmanager.h \
+    arduino.h \
+    arduinowidget.h
 
 FORMS += \
     mainwindow.ui

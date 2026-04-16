@@ -12,6 +12,8 @@
 #include <QPropertyAnimation>
 #include <QProcess>
 #include <QPlainTextEdit>
+#include <QWidget>
+#include <QKeyEvent>
 
 class VideoGenerationDialog : public QDialog
 {
@@ -22,9 +24,13 @@ public:
                                    int capacity, 
                                    int battery, 
                                    const QStringList &features, 
+                                   const QString &provider,
                                    const QString &imagePath,
                                    QWidget *parent = nullptr);
     ~VideoGenerationDialog();
+
+protected:
+    void keyPressEvent(QKeyEvent *event) override;
 
 private slots:
     void onGenerateClicked();
@@ -34,12 +40,18 @@ private slots:
 
 private:
     void setupUi();
+    QString resolveScriptPath(const QString &scriptFileName, const QString &envVarName) const;
+    QString providerLabel() const;
+    bool isBlockingOverlayEnabled() const;
+    void showBlockingOverlay();
+    void hideBlockingOverlay();
 
     QString m_productName;
     QString m_reference;
     int m_capacity;
     int m_battery;
     QStringList m_features;
+    QString m_provider;
     QString m_imagePath;
 
     QLabel *m_lblTitle;
@@ -49,7 +61,10 @@ private:
     QPlainTextEdit *m_logConsole;
     QPushButton *m_btnClose;
     QPushButton *m_btnGenerate;
-    
+    QWidget *m_blockingOverlay;
+    bool m_overlayEnabled;
+    bool m_overlayDismissed;
+
     QProcess *m_nodeProcess;
 };
 

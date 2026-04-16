@@ -1,4 +1,4 @@
-<?xml version="1.0" encoding="UTF-8"?>
+﻿<?xml version="1.0" encoding="UTF-8"?>
 <ui version="4.0">
  <class>MainWindow</class>
  <widget class="QMainWindow" name="MainWindow">
@@ -792,7 +792,7 @@ QPushButton#prod_btnPdf:hover, QPushButton#prod_btnMap3D:hover, QPushButton#prod
        <item>
         <widget class="QPushButton" name="btnToggleSidebar">
          <property name="text">
-          <string>☰</string>
+          <string>â˜°</string>
          </property>
          <property name="cursor">
           <cursorShape>PointingHandCursor</cursorShape>
@@ -839,35 +839,35 @@ QPushButton#prod_btnPdf:hover, QPushButton#prod_btnMap3D:hover, QPushButton#prod
        <item>
         <widget class="QPushButton" name="btnAccueil">
          <property name="text">
-          <string>🏠 Accueils</string>
+          <string>Accueils</string>
          </property>
         </widget>
        </item>
        <item>
         <widget class="QPushButton" name="btnStock">
          <property name="text">
-          <string>📦 Stock</string>
+          <string>Stock</string>
          </property>
         </widget>
        </item>
        <item>
         <widget class="QPushButton" name="btnProduits">
          <property name="text">
-          <string>🛍️ Produits</string>
+          <string>Produits</string>
          </property>
         </widget>
        </item>
        <item>
         <widget class="QPushButton" name="btnClient">
          <property name="text">
-          <string>👥 Clients</string>
+          <string>Clients</string>
          </property>
         </widget>
        </item>
        <item>
         <widget class="QPushButton" name="btnEmployes">
          <property name="text">
-          <string>👷 Employes</string>
+          <string>Employes</string>
          </property>
         </widget>
        </item>
@@ -877,14 +877,14 @@ QPushButton#prod_btnPdf:hover, QPushButton#prod_btnMap3D:hover, QPushButton#prod
           <bool>false</bool>
          </property>
          <property name="text">
-          <string>📊 Statistiques</string>
+          <string>Statistiques</string>
          </property>
         </widget>
        </item>
        <item>
         <widget class="QPushButton" name="btnMaintenance">
          <property name="text">
-          <string>🔧 Maintenances</string>
+          <string>Maintenances</string>
          </property>
         </widget>
        </item>
@@ -901,7 +901,7 @@ QPushButton#prod_btnPdf:hover, QPushButton#prod_btnMap3D:hover, QPushButton#prod
        <item>
         <widget class="QPushButton" name="btnCommandes">
          <property name="text">
-          <string>📝 Commandes</string>
+          <string>Commandes</string>
          </property>
         </widget>
        </item>
@@ -1089,7 +1089,7 @@ QPushButton#prod_btnPdf:hover, QPushButton#prod_btnMap3D:hover, QPushButton#prod
                   </size>
                  </property>
                  <property name="placeholderText">
-                  <string>Rechercher un employé par matricule</string>
+                  <string>Rechercher un employe par matricule</string>
                  </property>
                 </widget>
                </item>
@@ -1186,12 +1186,12 @@ QPushButton#prod_btnPdf:hover, QPushButton#prod_btnMap3D:hover, QPushButton#prod
                </column>
                <column>
                 <property name="text">
-                 <string>SPÉCIALITÉ</string>
+                 <string>SPECIALITE</string>
                 </property>
                </column>
                <column>
                 <property name="text">
-                 <string>DISPONIBILITÉ</string>
+                 <string>DISPONIBILITE</string>
                 </property>
                </column>
                <column>
@@ -1211,7 +1211,7 @@ QPushButton#prod_btnPdf:hover, QPushButton#prod_btnMap3D:hover, QPushButton#prod
                </item>
                <item row="0" column="2">
                 <property name="text">
-                 <string>Mécanicien</string>
+                 <string>Mecanicien</string>
                 </property>
                </item>
                <item row="0" column="3">
@@ -1221,7 +1221,7 @@ QPushButton#prod_btnPdf:hover, QPushButton#prod_btnMap3D:hover, QPushButton#prod
                </item>
                <item row="0" column="4">
                 <property name="text">
-                 <string>✏️ | 🗑️</string>
+                 <string>| </string>
                 </property>
                 <property name="textAlignment">
                  <set>AlignCenter</set>
@@ -1249,7 +1249,7 @@ QPushButton#prod_btnPdf:hover, QPushButton#prod_btnMap3D:hover, QPushButton#prod
                </item>
                <item row="1" column="4">
                 <property name="text">
-                 <string>✏️ | 🗑️</string>
+                 <string>| </string>
                 </property>
                 <property name="textAlignment">
                  <set>AlignCenter</set>
@@ -1267,7 +1267,7 @@ QPushButton#prod_btnPdf:hover, QPushButton#prod_btnMap3D:hover, QPushButton#prod
                </item>
                <item row="2" column="2">
                 <property name="text">
-                 <string>Électronicien</string>
+                 <string>Electronicien</string>
                 </property>
                </item>
                <item row="2" column="3">
@@ -1277,7 +1277,7 @@ QPushButton#prod_btnPdf:hover, QPushButton#prod_btnMap3D:hover, QPushButton#prod
                </item>
                <item row="2" column="4">
                 <property name="text">
-                 <string>✏️ | 🗑️</string>
+                 <string>| </string>
                 </property>
                 <property name="textAlignment">
                  <set>AlignCenter</set>
@@ -1305,7 +1305,7 @@ QPushButton#prod_btnPdf:hover, QPushButton#prod_btnMap3D:hover, QPushButton#prod
                </item>
                <item row="3" column="4">
                 <property name="text">
-                 <string>✏️ | 🗑️</string>
+                 <string>| </string>
                 </property>
                 <property name="textAlignment">
                  <set>AlignCenter</set>
@@ -1594,7 +1594,7 @@ QPushButton#prod_btnPdf:hover, QPushButton#prod_btnMap3D:hover, QPushButton#prod
                    <cursorShape>PointingHandCursor</cursorShape>
                   </property>
                   <property name="text">
-                   <string>📷 Charger une photo</string>
+                   <string>Charger une photo</string>
                   </property>
                  </widget>
                 </item>
@@ -1661,7 +1661,7 @@ QPushButton#prod_btnPdf:hover, QPushButton#prod_btnMap3D:hover, QPushButton#prod
                    <widget class="QComboBox" name="cbSpecialite">
                     <item>
                      <property name="text">
-                      <string>Mécanicien</string>
+                      <string>Mecanicien</string>
                      </property>
                     </item>
                     <item>
@@ -1671,7 +1671,7 @@ QPushButton#prod_btnPdf:hover, QPushButton#prod_btnMap3D:hover, QPushButton#prod
                     </item>
                     <item>
                      <property name="text">
-                      <string>Électronicien</string>
+                      <string>Electronicien</string>
                      </property>
                     </item>
                    </widget>
@@ -1942,7 +1942,7 @@ QPushButton#prod_btnPdf:hover, QPushButton#prod_btnMap3D:hover, QPushButton#prod
                    <cursorShape>PointingHandCursor</cursorShape>
                   </property>
                   <property name="text">
-                   <string>📷 Charger une photo</string>
+                   <string>Charger une photo</string>
                   </property>
                  </widget>
                 </item>
@@ -1992,7 +1992,7 @@ QPushButton#prod_btnPdf:hover, QPushButton#prod_btnMap3D:hover, QPushButton#prod
                    <widget class="QComboBox" name="cbSpecialite_Ajout">
                     <item>
                      <property name="text">
-                      <string>Mécanicien</string>
+                      <string>Mecanicien</string>
                      </property>
                     </item>
                     <item>
@@ -2165,7 +2165,7 @@ QPushButton#prod_btnPdf:hover, QPushButton#prod_btnMap3D:hover, QPushButton#prod
            <item>
             <widget class="QLabel" name="lblTitreMission">
              <property name="text">
-              <string>📢 Définition de la Mission</string>
+              <string>Definition de la Mission</string>
              </property>
             </widget>
            </item>
@@ -2185,14 +2185,14 @@ QPushButton#prod_btnPdf:hover, QPushButton#prod_btnMap3D:hover, QPushButton#prod
               <cursorShape>PointingHandCursor</cursorShape>
              </property>
              <property name="text">
-              <string>🤖 Lancer l'Analyse IA &amp; Trouver l'Équipe</string>
+              <string>Lancer l'Analyse IA &amp; Trouver l'Equipe</string>
              </property>
             </widget>
            </item>
            <item>
             <widget class="QLabel" name="lblResultat">
              <property name="text">
-              <string>✅ Équipe Optimale Recommandée (Score: 98%)</string>
+              <string>Equipe Optimale Recommandee (Score: 98%)</string>
              </property>
             </widget>
            </item>
@@ -2259,14 +2259,14 @@ QPushButton#prod_btnPdf:hover, QPushButton#prod_btnMap3D:hover, QPushButton#prod
            <item>
             <widget class="QLabel" name="lblTitrePointage">
              <property name="text">
-              <string>État du Lecteur RFID :</string>
+              <string>Etat du Lecteur RFID :</string>
              </property>
             </widget>
            </item>
            <item>
             <widget class="QLabel" name="lblStatutRFID">
              <property name="text">
-              <string>🕒 EN ATTENTE DE BADGE...</string>
+              <string>EN ATTENTE DE BADGE...</string>
              </property>
              <property name="alignment">
               <set>Qt::AlignmentFlag::AlignCenter</set>
@@ -2279,14 +2279,14 @@ QPushButton#prod_btnPdf:hover, QPushButton#prod_btnMap3D:hover, QPushButton#prod
               <cursorShape>PointingHandCursor</cursorShape>
              </property>
              <property name="text">
-              <string>🔮 Simuler un passage de badge (Démo)</string>
+              <string>Simuler un passage de badge (Demo)</string>
              </property>
             </widget>
            </item>
            <item>
             <widget class="QLabel" name="lblLog">
              <property name="text">
-              <string>📋 Historique des Entrées / Sorties (Aujourd'hui)</string>
+              <string>Historique des Entrees / Sorties (Aujourd'hui)</string>
              </property>
             </widget>
            </item>
@@ -2816,12 +2816,12 @@ QPushButton#prod_btnPdf:hover, QPushButton#prod_btnMap3D:hover, QPushButton#prod
                                </property>
                                <item>
                                 <property name="text">
-                                 <string>capacité (Croissant)</string>
+                                 <string>capacite (Croissant)</string>
                                 </property>
                                </item>
                                <item>
                                 <property name="text">
-                                 <string>capacité (Decroissant)</string>
+                                 <string>capacite (Decroissant)</string>
                                 </property>
                                </item>
                               </widget>
@@ -2841,7 +2841,7 @@ QPushButton#prod_btnPdf:hover, QPushButton#prod_btnMap3D:hover, QPushButton#prod
                                 </size>
                                </property>
                                <property name="text">
-                                <string>⊞</string>
+                              <string>Menu</string>
                                </property>
                                <property name="toolTip">
                                 <string>Changer de vue (Tableau/Cartes)</string>
@@ -3093,7 +3093,7 @@ QPushButton#prod_btnPdf:hover, QPushButton#prod_btnMap3D:hover, QPushButton#prod
                                <item>
                                 <widget class="QLabel" name="prod_st_lbl3">
                                  <property name="text">
-                                  <string>Équipements en Panne</string>
+                                  <string>Equipements en Panne</string>
                                  </property>
                                  <property name="class" stdset="0">
                                   <string>statLabel</string>
@@ -3401,7 +3401,7 @@ text-align: center;</string>
                                <item>
                                 <widget class="QPushButton" name="prod_btnUpload_Add">
                                  <property name="text">
-                                  <string>📤 Importer Image</string>
+                                  <string>Importer Image</string>
                                  </property>
                                 </widget>
                                </item>
@@ -3658,37 +3658,37 @@ text-align: center;</string>
                                      </property>
                                      <item>
                                       <property name="text">
-                                       <string>📍 GPS Tracking</string>
+                                       <string>GPS Tracking</string>
                                       </property>
                                      </item>
                                      <item>
                                       <property name="text">
-                                       <string>📡 Capteur Ultrason</string>
+                                       <string>Capteur Ultrason</string>
                                       </property>
                                      </item>
                                      <item>
                                       <property name="text">
-                                       <string>☀️ Compacteur Solaire</string>
+                                                                             <string>Compacteur Solaire</string>
                                       </property>
                                      </item>
                                      <item>
                                       <property name="text">
-                                       <string>🔥 Détecteur de Flamme</string>
+                                       <string>Detecteur de Flamme</string>
                                       </property>
                                      </item>
                                      <item>
                                       <property name="text">
-                                       <string>🔒 Verrouillage Auto</string>
+                                       <string>Verrouillage Auto</string>
                                       </property>
                                      </item>
                                      <item>
                                       <property name="text">
-                                       <string>🌐 Intégration IoT</string>
+                                       <string>Integration IoT</string>
                                       </property>
                                      </item>
                                      <item>
                                       <property name="text">
-                                       <string>🌬️ Anti-Odeur</string>
+                                       <string>Anti-Odeur</string>
                                       </property>
                                      </item>
                                     </widget>
@@ -4020,37 +4020,37 @@ text-align: center;</string>
                                      </property>
                                      <item>
                                       <property name="text">
-                                       <string>📍 GPS Tracking</string>
+                                       <string>GPS Tracking</string>
                                       </property>
                                      </item>
                                      <item>
                                       <property name="text">
-                                       <string>📡 Capteur Ultrason</string>
+                                       <string>Capteur Ultrason</string>
                                       </property>
                                      </item>
                                      <item>
                                       <property name="text">
-                                       <string>☀️ Compacteur Solaire</string>
+                                                                             <string>Compacteur Solaire</string>
                                       </property>
                                      </item>
                                      <item>
                                       <property name="text">
-                                       <string>🔥 Détecteur de Flamme</string>
+                                       <string>Detecteur de Flamme</string>
                                       </property>
                                      </item>
                                      <item>
                                       <property name="text">
-                                       <string>🔒 Verrouillage Auto</string>
+                                       <string>Verrouillage Auto</string>
                                       </property>
                                      </item>
                                      <item>
                                       <property name="text">
-                                       <string>🌐 Intégration IoT</string>
+                                       <string>Integration IoT</string>
                                       </property>
                                      </item>
                                      <item>
                                       <property name="text">
-                                       <string>🌬️ Anti-Odeur</string>
+                                       <string>Anti-Odeur</string>
                                       </property>
                                      </item>
                                     </widget>
@@ -4134,7 +4134,7 @@ text-align: center;</string>
                      </string>
                              </property>
                              <property name="text">
-                              <string>⬅️ Retour</string>
+                              <string>Retour</string>
                              </property>
                             </widget>
                            </item>
@@ -4163,7 +4163,7 @@ text-align: center;</string>
                          <item>
                           <widget class="QLabel" name="prod_lblStatsSub">
                            <property name="text">
-                            <string>(Données exemple — graphiques généraux)</string>
+                            <string>(Donnees exemple - graphiques generaux)</string>
                            </property>
                           </widget>
                          </item>
@@ -4214,7 +4214,7 @@ text-align: center;</string>
                               <item>
                                <widget class="QLabel" name="prod_graphFrame1Title">
                                 <property name="text">
-                                 <string>Graphique 1 — Répartition (exemple)</string>
+                                 <string>Graphique 1 - Repartition (exemple)</string>
                                 </property>
                                </widget>
                               </item>
@@ -4291,7 +4291,7 @@ text-align: center;</string>
                               <item>
                                <widget class="QLabel" name="prod_graphFrame2Title">
                                 <property name="text">
-                                 <string>Graphique 2 — Évolution (exemple)</string>
+                                 <string>Graphique 2 - Evolution (exemple)</string>
                                 </property>
                                </widget>
                               </item>
@@ -5053,14 +5053,14 @@ Chef d'Atelier</string>
                     <item>
                      <widget class="QPushButton" name="btnNotif">
                       <property name="text">
-                       <string>🔔</string>
+                       <string></string>
                       </property>
                      </widget>
                     </item>
                     <item>
                      <widget class="QPushButton" name="btnProfil">
                       <property name="text">
-                       <string>👤</string>
+                       <string></string>
                       </property>
                      </widget>
                     </item>
@@ -5285,7 +5285,7 @@ Chef d'Atelier</string>
                        <item>
                         <widget class="QLabel" name="st_lbl2">
                          <property name="text">
-                          <string>Total Coût</string>
+                          <string>Total Cout</string>
                          </property>
                          <property name="class" stdset="0">
                           <string>statLabel</string>
@@ -5440,7 +5440,7 @@ text-align: center;</string>
                     <string>background-color: #e67e22; color: white; font-weight: bold; border-radius: 5px; padding: 8px;</string>
                    </property>
                    <property name="text">
-                    <string>⬅️ Retour au Tableau de Bord</string>
+                    <string>Retour au Tableau de Bord</string>
                    </property>
                   </widget>
                  </item>
@@ -5572,7 +5572,7 @@ text-align: center;</string>
                           <item>
                            <widget class="QLabel" name="lblEuroAdd">
                             <property name="text">
-                             <string>€</string>
+                             <string>DT</string>
                             </property>
                            </widget>
                           </item>
@@ -5866,7 +5866,7 @@ text-align: center;</string>
                     <string>background-color: #e67e22; color: white; font-weight: bold; border-radius: 5px; padding: 8px;</string>
                    </property>
                    <property name="text">
-                    <string>⬅️ Retour au Tableau de Bord</string>
+                    <string>Retour au Tableau de Bord</string>
                    </property>
                   </widget>
                  </item>
@@ -5998,7 +5998,7 @@ text-align: center;</string>
                           <item>
                            <widget class="QLabel" name="lblEuroMod">
                             <property name="text">
-                             <string>€</string>
+                             <string>DT</string>
                             </property>
                            </widget>
                           </item>
@@ -6727,7 +6727,7 @@ text-align: center;</string>
                      <widget class="QComboBox" name="input_paiement_ajouter">
                       <item>
                        <property name="text">
-                        <string>Payé</string>
+                        <string>Paye</string>
                        </property>
                       </item>
                       <item>
@@ -6930,7 +6930,7 @@ text-align: center;</string>
                      <widget class="QComboBox" name="input_paiement_modifier">
                       <item>
                        <property name="text">
-                        <string>Payé</string>
+                        <string>Paye</string>
                        </property>
                       </item>
                       <item>
@@ -7119,7 +7119,7 @@ Chef d'Atelier</string>
                   <bool>false</bool>
                  </property>
                  <property name="text">
-                  <string>🔔</string>
+                  <string></string>
                  </property>
                 </widget>
                </item>
@@ -7129,7 +7129,7 @@ Chef d'Atelier</string>
                   <bool>false</bool>
                  </property>
                  <property name="text">
-                  <string>👤</string>
+                  <string></string>
                  </property>
                 </widget>
                </item>
@@ -7185,7 +7185,7 @@ Chef d'Atelier</string>
                       <widget class="QComboBox" name="cbSortDashboard">
                        <item>
                         <property name="text">
-                         <string>R�f�rence</string>
+                         <string>Rï¿½fï¿½rence</string>
                         </property>
                        </item>
                        <item>
@@ -7195,7 +7195,7 @@ Chef d'Atelier</string>
                        </item>
                        <item>
                         <property name="text">
-                         <string>Prix (D�croissant)</string>
+                         <string>Prix (Dï¿½croissant)</string>
                         </property>
                        </item>
                        <item>
@@ -7246,12 +7246,12 @@ Chef d'Atelier</string>
                      </column>
                      <column>
                       <property name="text">
-                       <string>Quantit�</string>
+                       <string>Quantitï¿½</string>
                       </property>
                      </column>
                      <column>
                       <property name="text">
-                       <string>Priorit�</string>
+                       <string>Prioritï¿½</string>
                       </property>
                      </column>
                      <column>
@@ -7532,14 +7532,14 @@ Chef d'Atelier</string>
                <item>
                 <widget class="QPushButton" name="btnnotif_5">
                  <property name="text">
-                  <string>🔔</string>
+                  <string></string>
                  </property>
                 </widget>
                </item>
                <item>
                 <widget class="QPushButton" name="btnprofil_5">
                  <property name="text">
-                  <string>👤</string>
+                  <string></string>
                  </property>
                 </widget>
                </item>
@@ -8000,14 +8000,14 @@ Chef d'Atelier</string>
                <item>
                 <widget class="QPushButton" name="btnnotif_3">
                  <property name="text">
-                  <string>🔔</string>
+                  <string></string>
                  </property>
                 </widget>
                </item>
                <item>
                 <widget class="QPushButton" name="btnprofil_3">
                  <property name="text">
-                  <string>👤</string>
+                  <string></string>
                  </property>
                 </widget>
                </item>
@@ -8527,3 +8527,5 @@ QPushButton:hover {
   </connection>
  </connections>
 </ui>
+
+

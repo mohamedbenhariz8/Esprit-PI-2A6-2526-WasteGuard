@@ -1,20 +1,105 @@
 #include "intervention.h"
+#include <QSqlDatabase>
 #include <QSqlError>
 #include <QVariant>
 
+namespace {
+
+bool ensureInterventionExtendedColumnsExist(QString &errorText)
+{
+    errorText.clear();
+
+    QSqlDatabase db = QSqlDatabase::database();
+    const QString driver = db.driverName().toUpper();
+    const bool isOracleLikeDriver =
+        driver.contains("QOCI") ||
+        driver.contains("OCI") ||
+        driver.contains("QODBC") ||
+        driver.contains("ODBC");
+
+    struct ColumnSpec {
+        const char *name;
+        const char *oracleType;
+        const char *sqliteType;
+    };
+
+    const ColumnSpec columns[] = {
+        {"TECHNICIEN", "VARCHAR2(200)", "TEXT"},
+        {"ADRESSE", "VARCHAR2(300)", "TEXT"},
+        {"DESCRIPT", "VARCHAR2(1000)", "TEXT"},
+        {"MAIN_OEUVRE", "NUMBER(12,3)", "REAL"},
+        {"PHOTO_AVANT", "VARCHAR2(1000)", "TEXT"},
+        {"PHOTO_APRES", "VARCHAR2(1000)", "TEXT"}
+    };
+
+    auto columnExists = [&](const QString &columnName) -> bool {
+        QSqlQuery q;
+        q.prepare(
+            "SELECT COUNT(*) "
+            "FROM USER_TAB_COLUMNS "
+            "WHERE TABLE_NAME = 'INTERVENTION' AND COLUMN_NAME = :col");
+        q.bindValue(":col", columnName.toUpper());
+        if (q.exec() && q.next()) {
+            return q.value(0).toInt() > 0;
+        }
+
+        QSqlQuery sqliteQuery;
+        if (sqliteQuery.exec("PRAGMA table_info(INTERVENTION)")) {
+            while (sqliteQuery.next()) {
+                if (sqliteQuery.value(1).toString().trimmed().compare(columnName, Qt::CaseInsensitive) == 0) {
+                    return true;
+                }
+            }
+        }
+
+        return false;
+    };
+
+    for (const ColumnSpec &column : columns) {
+        const QString columnName = QString::fromLatin1(column.name);
+        if (columnExists(columnName)) {
+            continue;
+        }
+
+        const QString columnType = isOracleLikeDriver
+            ? QString::fromLatin1(column.oracleType)
+            : QString::fromLatin1(column.sqliteType);
+
+        QSqlQuery alter;
+        const QString sql = isOracleLikeDriver
+            ? QString("ALTER TABLE INTERVENTION ADD (%1 %2)").arg(columnName, columnType)
+            : QString("ALTER TABLE INTERVENTION ADD COLUMN %1 %2").arg(columnName, columnType);
+        if (!alter.exec(sql)) {
+            const QString dbError = alter.lastError().text();
+            if (!columnExists(columnName)) {
+                errorText = dbError.isEmpty()
+                    ? QString("Impossible d'ajouter la colonne %1 a INTERVENTION.").arg(columnName)
+                    : dbError;
+                return false;
+            }
+        }
+    }
+
+    return true;
+}
+
+}
+
 Intervention::Intervention()
-    : m_idInter(0), m_duree(0.0), m_cout(0.0), m_idBac(0)
+    : m_idInter(0), m_duree(0.0), m_cout(0.0), m_mainOeuvre(0.0), m_idBac(0)
 {
 }
 
 Intervention::Intervention(int idInter, const QDate &dateInter, const QString &reference,
-                           double duree, double cout, const QString &statut,
+                           double duree, double cout, double mainOeuvre, const QString &statut,
                            const QString &type, const QString &priorite, int idBac,
-                           const QString &technicien, const QString &adresse, const QString &descript)
+                   const QString &technicien, const QString &adresse, const QString &descript,
+                   const QString &photoAvant, const QString &photoApres)
     : m_idInter(idInter), m_dateInter(dateInter), m_reference(reference),
-      m_duree(duree), m_cout(cout), m_statut(statut),
+      m_duree(duree), m_cout(cout), m_mainOeuvre(mainOeuvre), m_statut(statut),
       m_type(type), m_priorite(priorite), m_idBac(idBac),
-      m_technicien(technicien), m_adresse(adresse), m_descript(descript)
+    m_technicien(technicien), m_adresse(adresse), m_descript(descript),
+    m_photoAvant(photoAvant), m_photoApres(photoApres)
 {
 }
 
@@ -24,6 +109,7 @@ QDate Intervention::getDateInter() const { return m_dateInter; }
 QString Intervention::getReference() const { return m_reference; }
 double Intervention::getDuree() const { return m_duree; }
 double Intervention::getCout() const { return m_cout; }
+double Intervention::getMainOeuvre() const { return m_mainOeuvre; }
 QString Intervention::getStatut() const { return m_statut; }
 QString Intervention::getType() const { return m_type; }
 QString Intervention::getPriorite() const { return m_priorite; }
@@ -31,6 +117,8 @@ int Intervention::getIdBac() const { return m_idBac; }
 QString Intervention::getTechnicien() const { return m_technicien; }
 QString Intervention::getAdresse() const { return m_adresse; }
 QString Intervention::getDescript() const { return m_descript; }
+QString Intervention::getPhotoAvant() const { return m_photoAvant; }
+QString Intervention::getPhotoApres() const { return m_photoApres; }
 
 // ---------- Setters ----------
 void Intervention::setIdInter(int value) { m_idInter = value; }
@@ -38,6 +126,7 @@ void Intervention::setDateInter(const QDate &value) { m_dateInter = value; }
 void Intervention::setReference(const QString &value) { m_reference = value; }
 void Intervention::setDuree(double value) { m_duree = value; }
 void Intervention::setCout(double value) { m_cout = value; }
+void Intervention::setMainOeuvre(double value) { m_mainOeuvre = value; }
 void Intervention::setStatut(const QString &value) { m_statut = value; }
 void Intervention::setType(const QString &value) { m_type = value; }
 void Intervention::setPriorite(const QString &value) { m_priorite = value; }
@@ -45,10 +134,16 @@ void Intervention::setIdBac(int value) { m_idBac = value; }
 void Intervention::setTechnicien(const QString &value) { m_technicien = value; }
 void Intervention::setAdresse(const QString &value) { m_adresse = value; }
 void Intervention::setDescript(const QString &value) { m_descript = value; }
+void Intervention::setPhotoAvant(const QString &value) { m_photoAvant = value; }
+void Intervention::setPhotoApres(const QString &value) { m_photoApres = value; }
 
 // ---------- CRUD ----------
 bool Intervention::ajouter()
 {
+    if (!ensureInterventionExtendedColumnsExist(m_lastError)) {
+        return false;
+    }
+
     QSqlQuery query;
     int nextId = m_idInter;
     if (nextId <= 0) {
@@ -80,14 +175,15 @@ bool Intervention::ajouter()
     }
 
     query.prepare(
-        "INSERT INTO INTERVENTION (ID_INTER, DATE_INTER, REFERENCE, DUREE, COUT, STATUT, TYPE, PRIORITE, ID_BAC, TECHNICIEN, ADRESSE, DESCRIPT) "
-        "VALUES (:id, :date_inter, :reference, :duree, :cout, :statut, :type, :priorite, :id_bac, :technicien, :adresse, :descript)"
+        "INSERT INTO INTERVENTION (ID_INTER, DATE_INTER, REFERENCE, DUREE, COUT, MAIN_OEUVRE, STATUT, TYPE, PRIORITE, ID_BAC, TECHNICIEN, ADRESSE, DESCRIPT, PHOTO_AVANT, PHOTO_APRES) "
+        "VALUES (:id, :date_inter, :reference, :duree, :cout, :main_oeuvre, :statut, :type, :priorite, :id_bac, :technicien, :adresse, :descript, :photo_avant, :photo_apres)"
     );
     query.bindValue(":id", nextId);
     query.bindValue(":date_inter", m_dateInter);
     query.bindValue(":reference", m_reference);
     query.bindValue(":duree", m_duree);
     query.bindValue(":cout", m_cout);
+    query.bindValue(":main_oeuvre", m_mainOeuvre);
     query.bindValue(":statut", m_statut);
     query.bindValue(":type", m_type);
     query.bindValue(":priorite", m_priorite);
@@ -95,6 +191,8 @@ bool Intervention::ajouter()
     query.bindValue(":technicien", m_technicien);
     query.bindValue(":adresse", m_adresse);
     query.bindValue(":descript", m_descript);
+    query.bindValue(":photo_avant", m_photoAvant);
+    query.bindValue(":photo_apres", m_photoApres);
 
     if (query.exec()) {
         m_idInter = nextId;
@@ -107,13 +205,18 @@ bool Intervention::ajouter()
 
 bool Intervention::modifier()
 {
+    if (!ensureInterventionExtendedColumnsExist(m_lastError)) {
+        return false;
+    }
+
     QSqlQuery query;
     query.prepare(
         "UPDATE INTERVENTION SET "
         "DATE_INTER = :date_inter, REFERENCE = :reference, DUREE = :duree, "
-        "COUT = :cout, STATUT = :statut, TYPE = :type, "
+        "COUT = :cout, MAIN_OEUVRE = :main_oeuvre, STATUT = :statut, TYPE = :type, "
         "PRIORITE = :priorite, ID_BAC = :id_bac, "
-        "TECHNICIEN = :technicien, ADRESSE = :adresse, DESCRIPT = :descript "
+        "TECHNICIEN = :technicien, ADRESSE = :adresse, DESCRIPT = :descript, "
+        "PHOTO_AVANT = :photo_avant, PHOTO_APRES = :photo_apres "
         "WHERE ID_INTER = :id"
     );
     query.bindValue(":id", m_idInter);
@@ -121,6 +224,7 @@ bool Intervention::modifier()
     query.bindValue(":reference", m_reference);
     query.bindValue(":duree", m_duree);
     query.bindValue(":cout", m_cout);
+    query.bindValue(":main_oeuvre", m_mainOeuvre);
     query.bindValue(":statut", m_statut);
     query.bindValue(":type", m_type);
     query.bindValue(":priorite", m_priorite);
@@ -128,6 +232,8 @@ bool Intervention::modifier()
     query.bindValue(":technicien", m_technicien);
     query.bindValue(":adresse", m_adresse);
     query.bindValue(":descript", m_descript);
+    query.bindValue(":photo_avant", m_photoAvant);
+    query.bindValue(":photo_apres", m_photoApres);
 
     if (query.exec()) {
         m_lastError.clear();
@@ -158,6 +264,11 @@ bool Intervention::supprimer(int idInter)
 
 QSqlQueryModel *Intervention::afficher(const QString &searchField, const QString &searchValue, const QString &sortCriteria)
 {
+    if (!ensureInterventionExtendedColumnsExist(m_lastError)) {
+        auto *failedModel = new QSqlQueryModel();
+        return failedModel;
+    }
+
     QSqlQueryModel *model = new QSqlQueryModel();
     QSqlQuery query;
     
@@ -200,7 +311,7 @@ QSqlQueryModel *Intervention::afficher(const QString &searchField, const QString
     }
     
     QString queryString = 
-        "SELECT ID_INTER, REFERENCE, DATE_INTER, DUREE, COUT, STATUT, TYPE, PRIORITE, ID_BAC, TECHNICIEN, ADRESSE, DESCRIPT "
+        "SELECT ID_INTER, REFERENCE, DATE_INTER, DUREE, COUT, MAIN_OEUVRE, STATUT, TYPE, PRIORITE, ID_BAC, TECHNICIEN, ADRESSE, DESCRIPT, PHOTO_AVANT, PHOTO_APRES "
         "FROM INTERVENTION ";
     
     if (!searchValue.isEmpty()) {

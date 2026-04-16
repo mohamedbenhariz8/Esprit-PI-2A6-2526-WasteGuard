@@ -40,10 +40,30 @@
 #include <QSslSocket>
 #include <QtMath>
 #include <QDebug>
+#include <cstdio>
 
 #include "connection.h"
 
 namespace {
+
+QtMessageHandler g_previousMessageHandler = nullptr;
+
+void filteredQtMessageHandler(QtMsgType type, const QMessageLogContext &context, const QString &msg)
+{
+    if (msg.startsWith("QPainter::end: Painter ended with")
+        || msg.startsWith("QWidget::setMaximumSize: (prod_rightSidebar/QFrame) The largest allowed size is")
+        || msg.startsWith("nmea: No known GPS device found.")) {
+        return;
+    }
+
+    if (g_previousMessageHandler) {
+        g_previousMessageHandler(type, context, msg);
+        return;
+    }
+
+    const QByteArray localMsg = msg.toLocal8Bit();
+    std::fprintf(stderr, "%s\n", localMsg.constData());
+}
 
 bool hasMissingColumnError(const QString &errorText)
 {
@@ -406,8 +426,6 @@ bool compareFacesWithApi(const QByteArray &probeImage,
 
 class LoginDialog : public QDialog
 {
-    Q_OBJECT
-
 public:
     LoginDialog(QWidget *parent = nullptr) : QDialog(parent)
     {
@@ -659,7 +677,7 @@ public:
         }
     }
 
-private slots:
+private:
     void attemptLogin()
     {
         const QString email = txtUser->text().trimmed();
@@ -1225,37 +1243,81 @@ private:
 
 int main(int argc, char *argv[])
 {
-    QApplication a(argc, argv);
-    qDebug() << "Drivers disponibles:" << QSqlDatabase::drivers();
-
-    LoginDialog login;
-    if (login.exec() != QDialog::Accepted || !login.isAuthenticated()) {
-        return 0;
+    if (!g_previousMessageHandler) {
+        g_previousMessageHandler = qInstallMessageHandler(filteredQtMessageHandler);
     }
 
-    Connection *c = Connection::instance();
-    const bool dbReady = c->isOpen() || c->createConnect();
-    if (!dbReady) {
-        if (!login.isAdminLogin()) {
-            QMessageBox::critical(
-                nullptr,
-                QObject::tr("database is not open"),
-                QObject::tr("connection failed.\nClick Cancel to exit."),
-                QMessageBox::Cancel);
+    // Stabilite Windows/Qt: evite certains crashes lies aux styles/renderers natifs.
+    if (qEnvironmentVariableIsEmpty("QT_STYLE_OVERRIDE")) {
+        qputenv("QT_STYLE_OVERRIDE", QByteArrayLiteral("Fusion"));
+    }
+    if (qEnvironmentVariableIsEmpty("QT_OPENGL")) {
+        qputenv("QT_OPENGL", QByteArrayLiteral("software"));
+    }
+    if (qEnvironmentVariableIsEmpty("QSG_RHI_BACKEND")) {
+        qputenv("QSG_RHI_BACKEND", QByteArrayLiteral("software"));
+    }
+    if (qEnvironmentVariableIsEmpty("QT_LOGGING_RULES")) {
+        qputenv("QT_LOGGING_RULES",
+                QByteArrayLiteral("qt.core.qmetaobject.connectslotsbyname.warning=false"));
+    }
+
+    QApplication a(argc, argv);
+    a.setQuitOnLastWindowClosed(false);
+    qDebug() << "Drivers disponibles:" << QSqlDatabase::drivers();
+
+    while (true) {
+        LoginDialog login;
+        if (login.exec() != QDialog::Accepted || !login.isAuthenticated()) {
             return 0;
         }
 
-        QMessageBox::warning(
-            nullptr,
-            QObject::tr("Mode admin hors ligne"),
-            QObject::tr("Connexion base indisponible.\nOuverture en mode admin hors ligne."));
+        Connection *c = Connection::instance();
+        const bool dbReady = c->isOpen() || c->createConnect();
+        if (!dbReady) {
+            if (!login.isAdminLogin()) {
+                QMessageBox::critical(
+                    nullptr,
+                    QObject::tr("database is not open"),
+                    QObject::tr("connection failed.\nClick Cancel to exit."),
+                    QMessageBox::Cancel);
+                return 0;
+            }
+
+            QMessageBox::warning(
+                nullptr,
+                QObject::tr("Mode admin hors ligne"),
+                QObject::tr("Connexion base indisponible.\nOuverture en mode admin hors ligne."));
+        }
+
+        auto *w = new MainWindow;
+        
+        QFile logFile("startup_crash_log.txt");
+        if(logFile.open(QIODevice::WriteOnly | QIODevice::Append)) {
+            QTextStream ts(&logFile);
+            ts << "MainWindow created successfully!\n";
+            logFile.close();
+        }
+        
+        bool logoutTriggered = false;
+        QEventLoop sessionLoop;
+
+        QObject::connect(w, &MainWindow::logoutRequested, &a, [&]() {
+            logoutTriggered = true;
+            w->close();
+        });
+        QObject::connect(w, &QObject::destroyed, &sessionLoop, &QEventLoop::quit);
+
+        w->setAttribute(Qt::WA_DeleteOnClose);
+        w->setSessionContext(login.isAdminLogin(), login.authenticatedEmail());
+        w->showMaximized();
+        sessionLoop.exec();
+
+        if (!logoutTriggered) {
+            break;
+        }
     }
 
-    MainWindow w;
-    w.setSessionContext(login.isAdminLogin(), login.authenticatedEmail());
-    w.showMaximized();
-    return a.exec();
+    return 0;
 }
-
-#include "main.moc"
 

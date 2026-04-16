@@ -11,8 +11,8 @@ public:
     Client();
     Client(int idClient, const QString &nom, const QString &matricule,
            const QString &email, const QString &typeContrat,
-           const QString &statutPaiement, const QString &dateExpiration = "",
-           int tauxTri = 0);
+           const QString &telephone, const QString &dateCreationContrat = "",
+           const QString &dateExpiration = "", int tauxTri = 0);
 
     // CRUD
     bool ajouter();
@@ -28,7 +28,8 @@ public:
     QString getMatricule() const;
     QString getEmail() const;
     QString getTypeContrat() const;
-    QString getStatutPaiement() const;
+    QString getTelephone() const;
+    QString getDateCreationContrat() const;
     QString getDateExpiration() const;
     int getTauxTri() const;
 
@@ -38,7 +39,8 @@ public:
     void setMatricule(const QString &value);
     void setEmail(const QString &value);
     void setTypeContrat(const QString &value);
-    void setStatutPaiement(const QString &value);
+    void setTelephone(const QString &value);
+    void setDateCreationContrat(const QString &value);
     void setDateExpiration(const QString &value);
     void setTauxTri(int value);
 
@@ -48,7 +50,8 @@ private:
     QString m_matricule;
     QString m_email;
     QString m_typeContrat;
-    QString m_statutPaiement;
+    QString m_telephone;
+    QString m_dateCreationContrat;
     QString m_dateExpiration;
     int m_tauxTri;
     QString m_lastError;

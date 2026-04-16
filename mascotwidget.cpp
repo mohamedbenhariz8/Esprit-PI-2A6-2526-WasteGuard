@@ -258,4 +258,7 @@ void MascotWidget::paintEvent(QPaintEvent *)
 
         painter.restore();
     }
+
+    // Balance the state saved before drawing the head block.
+    painter.restore();
 }

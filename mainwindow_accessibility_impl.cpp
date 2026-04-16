@@ -65,6 +65,10 @@ void MainWindow::addAccessibilityButtonsToMaintenance()
 {
     if (!ui) return;
 
+    if (m_btnMicrophone != nullptr) {
+        return;
+    }
+
     // Trouver le widget parent du module maintenance
     QWidget *maintWidget = maintenanceTable();
     if (!maintWidget) {

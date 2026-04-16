@@ -2,6 +2,7 @@
 
 #include <QSqlError>
 #include <QSqlQuery>
+#include <QDate>
 #include <QStringList>
 #include <QPair>
 
@@ -19,6 +20,25 @@ int resolveNextBacId(QString &error)
         return -1;
     }
     return q.value(0).toInt();
+}
+
+QString generateProduitBarcode(int idBac)
+{
+    const int safeId = qMax(1, idBac);
+    const QString body12 = QString("2%1%2")
+        .arg(QDate::currentDate().toString("yyMMdd"))
+        .arg(safeId, 5, 10, QChar('0'));
+
+    int sumOdd = 0;
+    int sumEven = 0;
+    for (int i = 0; i < body12.size(); ++i) {
+        const int digit = body12.mid(i, 1).toInt();
+        if ((i % 2) == 0) sumOdd += digit;
+        else sumEven += digit;
+    }
+    const int total = sumOdd + (sumEven * 3);
+    const int checkDigit = (10 - (total % 10)) % 10;
+    return body12 + QString::number(checkDigit);
 }
 }
 
@@ -41,6 +61,10 @@ bool Produit::ajouter()
         if (idToUse <= 0) {
             return false;
         }
+    }
+
+    if (m_reference.trimmed().isEmpty()) {
+        m_reference = generateProduitBarcode(idToUse);
     }
 
     QString locToUse = m_localisation;

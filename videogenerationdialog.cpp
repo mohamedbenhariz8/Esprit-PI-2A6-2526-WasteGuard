@@ -7,16 +7,31 @@
 #include <QMessageBox>
 #include <QPropertyAnimation>
 #include <QCoreApplication>
+#include <QFileInfo>
+#include <QGuiApplication>
+#include <QScreen>
+#include <QProcessEnvironment>
+#include <QKeyEvent>
+#include <QPixmap>
+#include <QShortcut>
 
-VideoGenerationDialog::VideoGenerationDialog(const QString &productName, const QString &reference, int capacity, int battery, const QStringList &features, const QString &imagePath, QWidget *parent)
+VideoGenerationDialog::VideoGenerationDialog(const QString &productName, const QString &reference, int capacity, int battery, const QStringList &features, const QString &provider, const QString &imagePath, QWidget *parent)
     : QDialog(parent), 
       m_productName(productName), 
       m_reference(reference), 
       m_capacity(capacity), 
       m_battery(battery), 
       m_features(features),
-      m_imagePath(imagePath)
+      m_provider(provider.trimmed().toLower()),
+      m_imagePath(imagePath),
+      m_blockingOverlay(nullptr),
+      m_overlayEnabled(isBlockingOverlayEnabled()),
+      m_overlayDismissed(false)
 {
+    if (m_provider != "meta") {
+        m_provider = "luma";
+    }
+
     m_nodeProcess = new QProcess(this);
     connect(m_nodeProcess, &QProcess::readyReadStandardOutput, this, &VideoGenerationDialog::onProcessOutput);
     connect(m_nodeProcess, &QProcess::readyReadStandardError, this, &VideoGenerationDialog::onProcessOutput);
@@ -29,9 +44,16 @@ VideoGenerationDialog::~VideoGenerationDialog()
 {
 }
 
+QString VideoGenerationDialog::providerLabel() const
+{
+    return m_provider == "meta"
+        ? QStringLiteral("Meta AI")
+        : QStringLiteral("Luma Labs");
+}
+
 void VideoGenerationDialog::setupUi()
 {
-    this->setWindowTitle("Luma Labs — Génération Vidéo Produit");
+    this->setWindowTitle(QString("Generation Video Produit - %1").arg(providerLabel()));
     this->resize(720, 520);
     this->setStyleSheet("QDialog { background-color: #0f172a; color: white; }");
     this->setWindowFlags(Qt::Dialog | Qt::FramelessWindowHint);
@@ -41,7 +63,7 @@ void VideoGenerationDialog::setupUi()
     mainLayout->setSpacing(15);
 
     // Title
-    m_lblTitle = new QLabel("🎬 Luma Labs — Génération Vidéo Produit", this);
+    m_lblTitle = new QLabel(QString("Generation Video Produit - %1").arg(providerLabel()), this);
     m_lblTitle->setStyleSheet("color: #60a5fa; font-size: 18px; font-weight: bold; font-family: 'Segoe UI';");
     m_lblTitle->setAlignment(Qt::AlignCenter);
     mainLayout->addWidget(m_lblTitle);
@@ -128,87 +150,185 @@ void VideoGenerationDialog::setupUi()
     a->start(QPropertyAnimation::DeleteWhenStopped);
 }
 
-void VideoGenerationDialog::onGenerateClicked()
+QString VideoGenerationDialog::resolveScriptPath(const QString &scriptFileName, const QString &envVarName) const
 {
-    m_btnGenerate->setEnabled(false);
-    m_progressBar->show();
-    m_lblStatus->setText("Lancement du Robot Luma Labs...");
-    m_logConsole->clear();
-
-    // Resolve the script path by walking up from the executable directory
-    QString scriptDir = QCoreApplication::applicationDirPath();
     QString scriptPath;
+    const QString scriptDir = QCoreApplication::applicationDirPath();
 
-    const QByteArray envPath = qgetenv("LUMA_VIDEO_BOT_PATH");
+    const QByteArray envPath = qgetenv(envVarName.toUtf8().constData());
     if (!envPath.isEmpty()) {
         const QString candidate = QString::fromUtf8(envPath);
         if (QFile::exists(candidate)) {
-            scriptPath = QDir::cleanPath(candidate);
+            return QDir::cleanPath(candidate);
         }
     }
 
-    if (scriptPath.isEmpty()) {
-        QDir dir(scriptDir);
-        for (int i = 0; i < 12; ++i) {
-            const QString candidate = dir.absoluteFilePath("luma_video_bot.js");
-            if (QFile::exists(candidate)) {
-                scriptPath = QDir::cleanPath(candidate);
-                break;
-            }
-            if (!dir.cdUp()) {
-                break;
-            }
-        }
-    }
-    if (scriptPath.isEmpty()) {
-        QDir dir(QDir::currentPath());
-        for (int i = 0; i < 12; ++i) {
-            const QString candidate = dir.absoluteFilePath("luma_video_bot.js");
-            if (QFile::exists(candidate)) {
-                scriptPath = QDir::cleanPath(candidate);
-                break;
-            }
-            if (!dir.cdUp()) {
-                break;
-            }
-        }
-    }
-
-    // Fallback: look next to the source file location (compile-time path)
-    if (scriptPath.isEmpty()) {
-        const QString sourceDir = QFileInfo(QStringLiteral(__FILE__)).absolutePath();
-        const QString candidate = QDir(sourceDir).absoluteFilePath("luma_video_bot.js");
+    QDir dir(scriptDir);
+    for (int i = 0; i < 12; ++i) {
+        const QString candidate = dir.absoluteFilePath(scriptFileName);
         if (QFile::exists(candidate)) {
-            scriptPath = QDir::cleanPath(candidate);
+            return QDir::cleanPath(candidate);
+        }
+        if (!dir.cdUp()) {
+            break;
         }
     }
 
-    if (scriptPath.isEmpty()) {
-        // Fallback: recursive search under the app directory (limited)
-        QDirIterator it(scriptDir, QStringList() << "luma_video_bot.js", QDir::Files, QDirIterator::Subdirectories);
-        if (it.hasNext()) {
-            scriptPath = QDir::cleanPath(it.next());
+    dir = QDir(QDir::currentPath());
+    for (int i = 0; i < 12; ++i) {
+        const QString candidate = dir.absoluteFilePath(scriptFileName);
+        if (QFile::exists(candidate)) {
+            return QDir::cleanPath(candidate);
+        }
+        if (!dir.cdUp()) {
+            break;
         }
     }
 
-    if (!QFile::exists(scriptPath)) {
-        m_logConsole->appendPlainText("ERREUR: luma_video_bot.js introuvable !");
-        m_logConsole->appendPlainText("Chemin cherche: " + (scriptPath.isEmpty() ? QString("<vide>") : scriptPath));
-        m_logConsole->appendPlainText("CWD: " + QDir::currentPath());
-        m_logConsole->appendPlainText("AppDir: " + QCoreApplication::applicationDirPath());
-        const QByteArray envPathErr = qgetenv("LUMA_VIDEO_BOT_PATH");
-        if (!envPathErr.isEmpty()) {
-            m_logConsole->appendPlainText("LUMA_VIDEO_BOT_PATH: " + QString::fromUtf8(envPathErr));
-        }
-        m_lblStatus->setText("Erreur: script introuvable");
-        m_btnGenerate->setEnabled(true);
-        m_progressBar->hide();
+    const QString sourceDir = QFileInfo(QStringLiteral(__FILE__)).absolutePath();
+    const QString sourceCandidate = QDir(sourceDir).absoluteFilePath(scriptFileName);
+    if (QFile::exists(sourceCandidate)) {
+        return QDir::cleanPath(sourceCandidate);
+    }
+
+    QDirIterator it(scriptDir, QStringList() << scriptFileName, QDir::Files, QDirIterator::Subdirectories);
+    if (it.hasNext()) {
+        return QDir::cleanPath(it.next());
+    }
+
+    return scriptPath;
+}
+
+bool VideoGenerationDialog::isBlockingOverlayEnabled() const
+{
+    const QString raw = QString::fromUtf8(qgetenv("VIDEO_BLOCKING_OVERLAY")).trimmed().toLower();
+    if (raw.isEmpty()) {
+        return true;
+    }
+    return !(raw == "0" || raw == "false" || raw == "no" || raw == "off");
+}
+
+void VideoGenerationDialog::showBlockingOverlay()
+{
+    if (!m_overlayEnabled || m_overlayDismissed) {
         return;
     }
 
+    if (!m_blockingOverlay) {
+        m_blockingOverlay = new QWidget(nullptr, Qt::FramelessWindowHint | Qt::WindowStaysOnTopHint);
+        m_blockingOverlay->setAttribute(Qt::WA_DeleteOnClose, false);
+        m_blockingOverlay->setFocusPolicy(Qt::StrongFocus);
+        m_blockingOverlay->setStyleSheet("background-color: black;");
+
+        // Ensure ESC works even when overlay takes focus.
+        QShortcut *escShortcut = new QShortcut(QKeySequence(Qt::Key_Escape), m_blockingOverlay);
+        escShortcut->setContext(Qt::ApplicationShortcut);
+        connect(escShortcut, &QShortcut::activated, this, [this]() {
+            m_overlayDismissed = true;
+            hideBlockingOverlay();
+        });
+
+        QVBoxLayout *overlayLayout = new QVBoxLayout(m_blockingOverlay);
+        overlayLayout->setContentsMargins(0, 0, 0, 0);
+        overlayLayout->setSpacing(0);
+
+        QLabel *img = new QLabel(m_blockingOverlay);
+        img->setAlignment(Qt::AlignCenter);
+        img->setStyleSheet("background-color: black;");
+
+        // Prefer an image named overlay_generating.png in the app dir or project root.
+        QString imgPath;
+        const QString appDir = QCoreApplication::applicationDirPath();
+        const QStringList candidates = {
+            QDir(appDir).absoluteFilePath("overlay_generating.png"),
+            QDir(appDir).absoluteFilePath("generating.png"),
+            QDir(QDir::currentPath()).absoluteFilePath("overlay_generating.png"),
+            QDir(QDir::currentPath()).absoluteFilePath("generating.png")
+        };
+        for (const QString &c : candidates) {
+            if (QFile::exists(c)) { imgPath = c; break; }
+        }
+
+        if (!imgPath.isEmpty()) {
+            QPixmap px(imgPath);
+            img->setPixmap(px);
+            img->setScaledContents(true);
+        } else {
+            img->setText("Generation video...\nAppuyez sur Echap pour masquer cet ecran.");
+            img->setStyleSheet("color: white; font-size: 28px; font-family: 'Segoe UI';");
+        }
+
+        overlayLayout->addWidget(img);
+    }
+
+    const QList<QScreen*> screens = QGuiApplication::screens();
+    if (!screens.isEmpty() && screens.first()) {
+        m_blockingOverlay->setGeometry(screens.first()->geometry());
+    }
+
+    m_blockingOverlay->showFullScreen();
+    m_blockingOverlay->raise();
+    m_blockingOverlay->activateWindow();
+    m_blockingOverlay->setFocus();
+}
+
+void VideoGenerationDialog::hideBlockingOverlay()
+{
+    if (m_blockingOverlay) {
+        m_blockingOverlay->hide();
+    }
+}
+
+void VideoGenerationDialog::keyPressEvent(QKeyEvent *event)
+{
+    if (event && event->key() == Qt::Key_Escape) {
+        m_overlayDismissed = true;
+        hideBlockingOverlay();
+        event->accept();
+        return;
+    }
+    QDialog::keyPressEvent(event);
+}
+
+void VideoGenerationDialog::onGenerateClicked()
+{
+    if (m_nodeProcess && m_nodeProcess->state() == QProcess::Running) {
+        m_lblStatus->setText("Generation deja en cours. Veuillez patienter...");
+        m_logConsole->appendPlainText("INFO: Une generation est deja en cours.");
+        return;
+    }
+
+    // Reset overlay dismissal each run
+    m_overlayDismissed = false;
+
+    m_btnGenerate->setEnabled(false);
+    m_progressBar->show();
+    m_lblStatus->setText(QString("Lancement du Robot %1...").arg(providerLabel()));
+    m_logConsole->clear();
+
+    showBlockingOverlay();
+
+    const QString selectedScript = (m_provider == "meta")
+        ? QStringLiteral("meta_video_bot.js")
+        : QStringLiteral("luma_video_bot.js");
+    const QString envVarName = (m_provider == "meta")
+        ? QStringLiteral("META_VIDEO_BOT_PATH")
+        : QStringLiteral("LUMA_VIDEO_BOT_PATH");
+
+    const QString scriptPath = resolveScriptPath(selectedScript, envVarName);
+
+    if (!QFile::exists(scriptPath)) {
+        m_logConsole->appendPlainText("ERREUR: " + selectedScript + " introuvable !");
+        m_lblStatus->setText("Erreur: script introuvable");
+        m_btnGenerate->setEnabled(true);
+        m_progressBar->hide();
+        hideBlockingOverlay();
+        return;
+    }
+
+    m_logConsole->appendPlainText("Modele: " + providerLabel());
     m_logConsole->appendPlainText("Script: " + scriptPath);
 
-    QString program = "node";
     QStringList arguments;
     arguments << scriptPath;
     arguments << "--product_name" << m_productName;
@@ -225,14 +345,27 @@ void VideoGenerationDialog::onGenerateClicked()
         m_logConsole->appendPlainText("ATTENTION: Aucune image de produit. La vidéo sera générée sans image de référence.");
     }
 
-    // Use UI automation (no CDP) for now
     QProcessEnvironment env = QProcessEnvironment::systemEnvironment();
-    env.insert("LUMA_USE_UI", "1");
+    if (m_provider == "luma") {
+        // Luma bot currently uses UI automation.
+        env.insert("LUMA_USE_UI", "1");
+    }
     m_nodeProcess->setProcessEnvironment(env);
 
-    // Set working directory to the script's directory
     m_nodeProcess->setWorkingDirectory(QFileInfo(scriptPath).absolutePath());
-    m_nodeProcess->start(program, arguments);
+    m_nodeProcess->start("node", arguments);
+
+    if (!m_nodeProcess->waitForStarted(3000)) {
+        m_logConsole->appendPlainText("ERREUR: Echec du lancement du processus Node.");
+        m_logConsole->appendPlainText("DETAIL: " + m_nodeProcess->errorString());
+        m_lblStatus->setText("Erreur: lancement impossible");
+        m_btnGenerate->setEnabled(true);
+        m_progressBar->hide();
+        hideBlockingOverlay();
+        return;
+    }
+
+    m_logConsole->appendPlainText("INFO: Processus lance avec succes.");
 }
 
 void VideoGenerationDialog::onProcessOutput()
@@ -258,7 +391,8 @@ void VideoGenerationDialog::onProcessFinished(int exitCode, QProcess::ExitStatus
 {
     m_progressBar->hide();
     m_btnGenerate->setEnabled(true);
-    
+    hideBlockingOverlay();
+
     if (exitStatus == QProcess::NormalExit && exitCode == 0) {
         m_lblStatus->setText("Processus terminé normalement.");
     } else {
@@ -274,6 +408,7 @@ void VideoGenerationDialog::closeDialog()
         m_nodeProcess->kill();
         m_nodeProcess->waitForFinished(3000);
     }
+    hideBlockingOverlay();
     QGraphicsOpacityEffect *eff = new QGraphicsOpacityEffect(this);
     this->setGraphicsEffect(eff);
     QPropertyAnimation *a = new QPropertyAnimation(eff, "opacity");
@@ -284,5 +419,4 @@ void VideoGenerationDialog::closeDialog()
     connect(a, &QPropertyAnimation::finished, this, &QDialog::accept);
     a->start(QPropertyAnimation::DeleteWhenStopped);
 }
-
 

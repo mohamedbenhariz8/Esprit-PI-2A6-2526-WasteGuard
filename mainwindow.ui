@@ -796,7 +796,7 @@ QPushButton#btnFichePaie, QPushButton#btnGoMission, QPushButton#btnGoPointage, Q
 QPushButton#btnOrder, QPushButton#btnPrediction, QPushButton#btnAlerts,
 QPushButton#facture, QPushButton#score, QPushButton#exportclient,
 QPushButton#btnPdf,
-QPushButton#prod_btnPdf, QPushButton#prod_btnMap3D, QPushButton#prod_btnVideo3D, QPushButton#prod_btnOpenStats {
+QPushButton#prod_btnPdf, QPushButton#prod_btnMap3D, QPushButton#prod_btnVideo3D, QPushButton#prod_btn3DModel, QPushButton#prod_btnOpenStats {
     background-color: #ffffff;
     color: #1f2d3d;
     border: 1px solid #dce1e6;
@@ -812,7 +812,7 @@ QPushButton#btnFichePaie:hover, QPushButton#btnGoMission:hover, QPushButton#btnG
 QPushButton#btnOrder:hover, QPushButton#btnPrediction:hover, QPushButton#btnAlerts:hover,
 QPushButton#facture:hover, QPushButton#score:hover, QPushButton#exportclient:hover,
 QPushButton#btnPdf:hover,
-QPushButton#prod_btnPdf:hover, QPushButton#prod_btnMap3D:hover, QPushButton#prod_btnVideo3D:hover, QPushButton#prod_btnOpenStats:hover {
+QPushButton#prod_btnPdf:hover, QPushButton#prod_btnMap3D:hover, QPushButton#prod_btnVideo3D:hover, QPushButton#prod_btn3DModel:hover, QPushButton#prod_btnOpenStats:hover {
     background-color: #e3f2fd;
     border: 1px solid #3498db;
     color: #0f2b4c;
@@ -1386,7 +1386,7 @@ QLabel#userLabel_Aj {
           </string>
          </property>
          <property name="text">
-          <string>☰</string>
+          <string>Menu</string>
          </property>
         </widget>
        </item>
@@ -1421,52 +1421,43 @@ QLabel#userLabel_Aj {
        <item>
         <widget class="QPushButton" name="btnAccueil">
          <property name="text">
-          <string>🏠 Accueils</string>
+          <string>Accueils</string>
          </property>
         </widget>
        </item>
        <item>
         <widget class="QPushButton" name="btnStock">
          <property name="text">
-          <string>📦 Stock</string>
+          <string>Stock</string>
          </property>
         </widget>
        </item>
        <item>
         <widget class="QPushButton" name="btnProduits">
          <property name="text">
-          <string>🛍️ Produits</string>
+          <string>Produits</string>
          </property>
         </widget>
        </item>
        <item>
         <widget class="QPushButton" name="btnClient">
          <property name="text">
-          <string>👥 Clients</string>
+          <string>Clients</string>
          </property>
         </widget>
        </item>
        <item>
         <widget class="QPushButton" name="btnEmployes">
          <property name="text">
-          <string>👷 Employes</string>
+          <string>Employes</string>
          </property>
         </widget>
        </item>
-       <item>
-        <widget class="QPushButton" name="btnStatistiques">
-         <property name="visible">
-          <bool>false</bool>
-         </property>
-         <property name="text">
-          <string>📊 Statistiques</string>
-         </property>
-        </widget>
-       </item>
+
        <item>
         <widget class="QPushButton" name="btnMaintenance">
          <property name="text">
-          <string>🔧 Maintenances</string>
+          <string>Maintenances</string>
          </property>
         </widget>
        </item>
@@ -1483,7 +1474,14 @@ QLabel#userLabel_Aj {
        <item>
         <widget class="QPushButton" name="btnCommandes">
          <property name="text">
-          <string>📝 Commandes</string>
+          <string>Commandes</string>
+         </property>
+        </widget>
+       </item>
+       <item>
+        <widget class="QPushButton" name="btnArduino">
+         <property name="text">
+          <string>Arduino</string>
          </property>
         </widget>
        </item>
@@ -1671,7 +1669,7 @@ QLabel#userLabel_Aj {
                   </size>
                  </property>
                  <property name="placeholderText">
-                  <string>Rechercher un employé par matricule</string>
+                  <string>Rechercher un employe par matricule</string>
                  </property>
                 </widget>
                </item>
@@ -1768,12 +1766,12 @@ QLabel#userLabel_Aj {
                </column>
                <column>
                 <property name="text">
-                 <string>SPÉCIALITÉ</string>
+                 <string>SPECIALITE</string>
                 </property>
                </column>
                <column>
                 <property name="text">
-                 <string>DISPONIBILITÉ</string>
+                 <string>DISPONIBILITE</string>
                 </property>
                </column>
                <column>
@@ -1793,7 +1791,7 @@ QLabel#userLabel_Aj {
                </item>
                <item row="0" column="2">
                 <property name="text">
-                 <string>Mécanicien</string>
+                 <string>Mecanicien</string>
                 </property>
                </item>
                <item row="0" column="3">
@@ -1803,7 +1801,7 @@ QLabel#userLabel_Aj {
                </item>
                <item row="0" column="4">
                 <property name="text">
-                 <string>✏️ | 🗑️</string>
+                 <string>| </string>
                 </property>
                 <property name="textAlignment">
                  <set>AlignCenter</set>
@@ -1831,7 +1829,7 @@ QLabel#userLabel_Aj {
                </item>
                <item row="1" column="4">
                 <property name="text">
-                 <string>✏️ | 🗑️</string>
+                 <string>| </string>
                 </property>
                 <property name="textAlignment">
                  <set>AlignCenter</set>
@@ -1849,7 +1847,7 @@ QLabel#userLabel_Aj {
                </item>
                <item row="2" column="2">
                 <property name="text">
-                 <string>Électronicien</string>
+                 <string>Electronicien</string>
                 </property>
                </item>
                <item row="2" column="3">
@@ -1859,7 +1857,7 @@ QLabel#userLabel_Aj {
                </item>
                <item row="2" column="4">
                 <property name="text">
-                 <string>✏️ | 🗑️</string>
+                 <string>| </string>
                 </property>
                 <property name="textAlignment">
                  <set>AlignCenter</set>
@@ -1887,7 +1885,7 @@ QLabel#userLabel_Aj {
                </item>
                <item row="3" column="4">
                 <property name="text">
-                 <string>✏️ | 🗑️</string>
+                 <string>| </string>
                 </property>
                 <property name="textAlignment">
                  <set>AlignCenter</set>
@@ -2176,7 +2174,7 @@ QLabel#userLabel_Aj {
                    <cursorShape>PointingHandCursor</cursorShape>
                   </property>
                   <property name="text">
-                   <string>📷 Charger une photo</string>
+                   <string>Charger une photo</string>
                   </property>
                  </widget>
                 </item>
@@ -2243,7 +2241,7 @@ QLabel#userLabel_Aj {
                    <widget class="QComboBox" name="cbSpecialite">
                     <item>
                      <property name="text">
-                      <string>Mécanicien</string>
+                      <string>Mecanicien</string>
                      </property>
                     </item>
                     <item>
@@ -2253,7 +2251,7 @@ QLabel#userLabel_Aj {
                     </item>
                     <item>
                      <property name="text">
-                      <string>Électronicien</string>
+                      <string>Electronicien</string>
                      </property>
                     </item>
                    </widget>
@@ -2524,7 +2522,7 @@ QLabel#userLabel_Aj {
                    <cursorShape>PointingHandCursor</cursorShape>
                   </property>
                   <property name="text">
-                   <string>📷 Charger une photo</string>
+                   <string>Charger une photo</string>
                   </property>
                  </widget>
                 </item>
@@ -2574,7 +2572,7 @@ QLabel#userLabel_Aj {
                    <widget class="QComboBox" name="cbSpecialite_Ajout">
                     <item>
                      <property name="text">
-                      <string>Mécanicien</string>
+                      <string>Mecanicien</string>
                      </property>
                     </item>
                     <item>
@@ -2747,7 +2745,7 @@ QLabel#userLabel_Aj {
            <item>
             <widget class="QLabel" name="lblTitreMission">
              <property name="text">
-              <string>📢 Définition de la Mission</string>
+              <string>Definition de la Mission</string>
              </property>
             </widget>
            </item>
@@ -2767,14 +2765,14 @@ QLabel#userLabel_Aj {
               <cursorShape>PointingHandCursor</cursorShape>
              </property>
              <property name="text">
-              <string>🤖 Lancer l'Analyse IA &amp; Trouver l'Équipe</string>
+              <string>Lancer l'Analyse IA &amp; Trouver l'Equipe</string>
              </property>
             </widget>
            </item>
            <item>
             <widget class="QLabel" name="lblResultat">
              <property name="text">
-              <string>✅ Équipe Optimale Recommandée (Score: 98%)</string>
+              <string>Equipe Optimale Recommandee (Score: 98%)</string>
              </property>
             </widget>
            </item>
@@ -2841,14 +2839,14 @@ QLabel#userLabel_Aj {
            <item>
             <widget class="QLabel" name="lblTitrePointage">
              <property name="text">
-              <string>État du Lecteur RFID :</string>
+              <string>Etat du Lecteur RFID :</string>
              </property>
             </widget>
            </item>
            <item>
             <widget class="QLabel" name="lblStatutRFID">
              <property name="text">
-              <string>🕒 EN ATTENTE DE BADGE...</string>
+              <string>EN ATTENTE DE BADGE...</string>
              </property>
              <property name="alignment">
               <set>Qt::AlignmentFlag::AlignCenter</set>
@@ -2861,14 +2859,14 @@ QLabel#userLabel_Aj {
               <cursorShape>PointingHandCursor</cursorShape>
              </property>
              <property name="text">
-              <string>🔮 Simuler un passage de badge (Démo)</string>
+              <string>Simuler un passage de badge (Demo)</string>
              </property>
             </widget>
            </item>
            <item>
             <widget class="QLabel" name="lblLog">
              <property name="text">
-              <string>📋 Historique des Entrées / Sorties (Aujourd'hui)</string>
+              <string>Historique des Entrees / Sorties (Aujourd'hui)</string>
              </property>
             </widget>
            </item>
@@ -3398,12 +3396,12 @@ QLabel#userLabel_Aj {
                                </property>
                                <item>
                                 <property name="text">
-                                 <string>capacité (Croissant)</string>
+                                 <string>capacite (Croissant)</string>
                                 </property>
                                </item>
                                <item>
                                 <property name="text">
-                                 <string>capacité (Decroissant)</string>
+                                 <string>capacite (Decroissant)</string>
                                 </property>
                                </item>
                               </widget>
@@ -3426,7 +3424,7 @@ QLabel#userLabel_Aj {
                                 <string>Changer de vue (Tableau/Cartes)</string>
                                </property>
                                <property name="text">
-                                <string>⊞</string>
+                                <string>âŠž</string>
                                </property>
                               </widget>
                              </item>
@@ -3678,7 +3676,7 @@ QLabel#userLabel_Aj {
                                <item>
                                 <widget class="QLabel" name="prod_st_lbl3">
                                  <property name="text">
-                                  <string>Équipements en Panne</string>
+                                  <string>Equipements en Panne</string>
                                  </property>
                                  <property name="class" stdset="0">
                                   <string>statLabel</string>
@@ -3876,6 +3874,26 @@ text-align: center;</string>
                              </widget>
                             </item>
                             <item>
+                             <widget class="QPushButton" name="prod_btn3DModel">
+                              <property name="cursor">
+                               <cursorShape>PointingHandCursor</cursorShape>
+                              </property>
+                              <property name="styleSheet">
+                               <string notr="true">background-color: #ffffff;
+color: #1f2d3d;
+border: 1px solid #dce1e6;
+border-radius: 10px;
+padding: 12px 16px;
+font-size: 14px;
+font-weight: 700;
+text-align: center;</string>
+                              </property>
+                              <property name="text">
+                               <string>Generer Modele 3D</string>
+                              </property>
+                             </widget>
+                            </item>
+                            <item>
                              <spacer>
                               <property name="orientation">
                                <enum>Qt::Orientation::Vertical</enum>
@@ -3992,7 +4010,7 @@ text-align: center;</string>
                                <item>
                                 <widget class="QPushButton" name="prod_btnUpload_Add">
                                  <property name="text">
-                                  <string>📤 Importer Image</string>
+                                  <string>Importer Image</string>
                                  </property>
                                 </widget>
                                </item>
@@ -4250,37 +4268,37 @@ text-align: center;</string>
                                      </property>
                                      <item>
                                       <property name="text">
-                                       <string>📍 GPS Tracking</string>
+                                       <string>GPS Tracking</string>
                                       </property>
                                      </item>
                                      <item>
                                       <property name="text">
-                                       <string>📡 Capteur Ultrason</string>
+                                       <string>Capteur Ultrason</string>
                                       </property>
                                      </item>
                                      <item>
                                       <property name="text">
-                                       <string>☀️ Compacteur Solaire</string>
+                                                                             <string>Compacteur Solaire</string>
                                       </property>
                                      </item>
                                      <item>
                                       <property name="text">
-                                       <string>🔥 Détecteur de Flamme</string>
+                                       <string>Detecteur de Flamme</string>
                                       </property>
                                      </item>
                                      <item>
                                       <property name="text">
-                                       <string>🔒 Verrouillage Auto</string>
+                                       <string>Verrouillage Auto</string>
                                       </property>
                                      </item>
                                      <item>
                                       <property name="text">
-                                       <string>🌐 Intégration IoT</string>
+                                       <string>Integration IoT</string>
                                       </property>
                                      </item>
                                      <item>
                                       <property name="text">
-                                       <string>🌬️ Anti-Odeur</string>
+                                       <string>Anti-Odeur</string>
                                       </property>
                                      </item>
                                     </widget>
@@ -4403,7 +4421,7 @@ text-align: center;</string>
                                <item>
                                 <widget class="QPushButton" name="prod_btnUpload_Mod">
                                  <property name="text">
-                                  <string>📤 Importer Image</string>
+                                  <string>Importer Image</string>
                                  </property>
                                 </widget>
                                </item>
@@ -4668,37 +4686,37 @@ text-align: center;</string>
                                      </property>
                                      <item>
                                       <property name="text">
-                                       <string>📍 GPS Tracking</string>
+                                       <string>GPS Tracking</string>
                                       </property>
                                      </item>
                                      <item>
                                       <property name="text">
-                                       <string>📡 Capteur Ultrason</string>
+                                       <string>Capteur Ultrason</string>
                                       </property>
                                      </item>
                                      <item>
                                       <property name="text">
-                                       <string>☀️ Compacteur Solaire</string>
+                                                                             <string>Compacteur Solaire</string>
                                       </property>
                                      </item>
                                      <item>
                                       <property name="text">
-                                       <string>🔥 Détecteur de Flamme</string>
+                                       <string>Detecteur de Flamme</string>
                                       </property>
                                      </item>
                                      <item>
                                       <property name="text">
-                                       <string>🔒 Verrouillage Auto</string>
+                                       <string>Verrouillage Auto</string>
                                       </property>
                                      </item>
                                      <item>
                                       <property name="text">
-                                       <string>🌐 Intégration IoT</string>
+                                       <string>Integration IoT</string>
                                       </property>
                                      </item>
                                      <item>
                                       <property name="text">
-                                       <string>🌬️ Anti-Odeur</string>
+                                       <string>Anti-Odeur</string>
                                       </property>
                                      </item>
                                     </widget>
@@ -4782,7 +4800,7 @@ text-align: center;</string>
                      </string>
                              </property>
                              <property name="text">
-                              <string>⬅️ Retour</string>
+                              <string>Retour</string>
                              </property>
                             </widget>
                            </item>
@@ -4865,7 +4883,7 @@ text-align: center;</string>
                               <item>
                                <widget class="QLabel" name="prod_graphFrame1Title">
                                 <property name="text">
-                                 <string>Graphique 1 — Répartition (exemple)</string>
+                                 <string>Graphique 1 - Repartition (exemple)</string>
                                 </property>
                                </widget>
                               </item>
@@ -4942,7 +4960,7 @@ text-align: center;</string>
                               <item>
                                <widget class="QLabel" name="prod_graphFrame2Title">
                                 <property name="text">
-                                 <string>Graphique 2 — Évolution (exemple)</string>
+                                 <string>Graphique 2 - Evolution (exemple)</string>
                                 </property>
                                </widget>
                               </item>
@@ -5332,7 +5350,7 @@ font-weight: 700;
 text-align: center;</string>
                      </property>
                      <property name="text">
-                      <string>Alertes échéance</string>
+                      <string>Alertes echeance</string>
                      </property>
                     </widget>
                    </item>
@@ -5356,7 +5374,7 @@ font-weight: 700;
 text-align: center;</string>
                      </property>
                      <property name="text">
-                      <string>📧 Contacter Fournisseur</string>
+                      <string>Contacter Fournisseur</string>
                      </property>
                     </widget>
                    </item>
@@ -5885,14 +5903,14 @@ Chef d'Atelier</string>
                         <item>
                          <widget class="QPushButton" name="btnNotif">
                           <property name="text">
-                           <string>🔔</string>
+                           <string></string>
                           </property>
                          </widget>
                         </item>
                         <item>
                          <widget class="QPushButton" name="btnProfil">
                           <property name="text">
-                           <string>👤</string>
+                           <string></string>
                           </property>
                          </widget>
                         </item>
@@ -6017,12 +6035,12 @@ Chef d'Atelier</string>
                             </column>
                             <column>
                              <property name="text">
-                              <string>Durée</string>
+                              <string>Duree</string>
                              </property>
                             </column>
                             <column>
                              <property name="text">
-                              <string>Priorité</string>
+                              <string>Priorite</string>
                              </property>
                             </column>
                             <column>
@@ -6083,7 +6101,7 @@ Chef d'Atelier</string>
                            <item>
                             <widget class="QLabel" name="st_icon1">
                              <property name="text">
-                              <string>🧩</string>
+                              <string></string>
                              </property>
                             </widget>
                            </item>
@@ -6113,7 +6131,7 @@ Chef d'Atelier</string>
                            <item>
                             <widget class="QLabel" name="st_icon2">
                              <property name="text">
-                              <string>👷</string>
+                              <string></string>
                              </property>
                             </widget>
                            </item>
@@ -6143,7 +6161,7 @@ Chef d'Atelier</string>
                            <item>
                             <widget class="QLabel" name="st_icon3">
                              <property name="text">
-                              <string>💰</string>
+                              <string></string>
                              </property>
                             </widget>
                            </item>
@@ -6295,7 +6313,7 @@ Chef d'Atelier</string>
                            </size>
                           </property>
                           <property name="text">
-                           <string>Préventive</string>
+                           <string>Preventive</string>
                           </property>
                          </widget>
                         </item>
@@ -6468,7 +6486,7 @@ Chef d'Atelier</string>
                         <string>background-color: #e67e22; color: white; font-weight: bold; border-radius: 5px; padding: 8px;</string>
                        </property>
                        <property name="text">
-                        <string>⬅️ Retour au Tableau de Bord</string>
+                        <string>Retour au Tableau de Bord</string>
                        </property>
                       </widget>
                      </item>
@@ -6624,7 +6642,7 @@ Chef d'Atelier</string>
                               <item>
                                <widget class="QLabel" name="lblEuroAdd">
                                 <property name="text">
-                                 <string>€</string>
+                                 <string>DT</string>
                                 </property>
                                </widget>
                               </item>
@@ -6662,7 +6680,7 @@ Chef d'Atelier</string>
                               </item>
                               <item>
                                <property name="text">
-                                <string>élevée</string>
+                                <string>elevee</string>
                                </property>
                               </item>
                              </widget>
@@ -6736,7 +6754,7 @@ Chef d'Atelier</string>
                             <item>
                              <widget class="QLineEdit" name="editTypeAdd">
                               <property name="placeholderText">
-                               <string>Curative / Préventive</string>
+                               <string>Curative / Preventive</string>
                               </property>
                              </widget>
                             </item>
@@ -6862,7 +6880,7 @@ Chef d'Atelier</string>
                                </size>
                               </property>
                               <property name="text">
-                               <string>Cliquez ou déposez vos images ici pour les télécharger</string>
+                               <string>Cliquez ou deposez vos images ici pour les telecharger</string>
                               </property>
                               <property name="alignment">
                                <set>Qt::AlignmentFlag::AlignCenter</set>
@@ -6879,7 +6897,7 @@ Chef d'Atelier</string>
                             <item>
                              <widget class="QLabel" name="lblPhotosApresAdd">
                               <property name="text">
-                               <string>Photos Après</string>
+                               <string>Photos Apres</string>
                               </property>
                              </widget>
                             </item>
@@ -6892,7 +6910,7 @@ Chef d'Atelier</string>
                                </size>
                               </property>
                               <property name="text">
-                               <string>Cliquez ou déposez vos images ici pour les télécharger</string>
+                               <string>Cliquez ou deposez vos images ici pour les telecharger</string>
                               </property>
                               <property name="alignment">
                                <set>Qt::AlignmentFlag::AlignCenter</set>
@@ -6939,7 +6957,7 @@ Chef d'Atelier</string>
                           <cursorShape>PointingHandCursor</cursorShape>
                          </property>
                          <property name="text">
-                          <string>❌  Annuler</string>
+                          <string>Annuler</string>
                          </property>
                         </widget>
                        </item>
@@ -6955,7 +6973,7 @@ Chef d'Atelier</string>
                           <cursorShape>PointingHandCursor</cursorShape>
                          </property>
                          <property name="text">
-                          <string>✅  Enregistrer</string>
+                          <string>Enregistrer</string>
                          </property>
                         </widget>
                        </item>
@@ -7067,7 +7085,7 @@ Chef d'Atelier</string>
                         <string>background-color: #e67e22; color: white; font-weight: bold; border-radius: 5px; padding: 8px;</string>
                        </property>
                        <property name="text">
-                        <string>⬅️ Retour au Tableau de Bord</string>
+                        <string>Retour au Tableau de Bord</string>
                        </property>
                       </widget>
                      </item>
@@ -7092,7 +7110,7 @@ Chef d'Atelier</string>
                         <item>
                          <widget class="QLabel" name="lblTitreFormMod">
                           <property name="text">
-                           <string>✏️  Modifier Intervention</string>
+                           <string>Modifier Intervention</string>
                           </property>
                           <property name="class" stdset="0">
                            <string>formLabel</string>
@@ -7224,7 +7242,7 @@ Chef d'Atelier</string>
                               <item>
                                <widget class="QLabel" name="lblEuroMod">
                                 <property name="text">
-                                 <string>€</string>
+                                 <string>DT</string>
                                 </property>
                                </widget>
                               </item>
@@ -7262,7 +7280,7 @@ Chef d'Atelier</string>
                               </item>
                               <item>
                                <property name="text">
-                                <string>élevée</string>
+                                <string>elevee</string>
                                </property>
                               </item>
                              </widget>
@@ -7284,7 +7302,7 @@ Chef d'Atelier</string>
                         <item>
                          <widget class="QLabel" name="lblSecTechMod">
                           <property name="text">
-                           <string>👤  Technicien &amp; Localisation</string>
+                           <string>Technicien &amp; Localisation</string>
                           </property>
                          </widget>
                         </item>
@@ -7343,7 +7361,7 @@ Chef d'Atelier</string>
                             <item>
                              <widget class="QLineEdit" name="editTypeMod">
                               <property name="placeholderText">
-                               <string>Curative / Préventive</string>
+                               <string>Curative / Preventive</string>
                               </property>
                              </widget>
                             </item>
@@ -7410,7 +7428,7 @@ Chef d'Atelier</string>
                         <item>
                          <widget class="QLabel" name="lblSecDescMod">
                           <property name="text">
-                           <string>📝  Description</string>
+                           <string>Description</string>
                           </property>
                          </widget>
                         </item>
@@ -7469,7 +7487,7 @@ Chef d'Atelier</string>
                         <item>
                          <widget class="QLabel" name="lblSecPhotoMod">
                           <property name="text">
-                           <string>📷  Photos Avant / Après</string>
+                           <string>Photos Avant / Apres</string>
                           </property>
                          </widget>
                         </item>
@@ -7505,7 +7523,7 @@ Chef d'Atelier</string>
                                </size>
                               </property>
                               <property name="text">
-                               <string>📷  Déposez vos images AVANT / APRÈS ici</string>
+                               <string>Deposez vos images AVANT / APRES ici</string>
                               </property>
                               <property name="alignment">
                                <set>Qt::AlignmentFlag::AlignCenter</set>
@@ -7556,7 +7574,7 @@ Chef d'Atelier</string>
                           <cursorShape>PointingHandCursor</cursorShape>
                          </property>
                          <property name="text">
-                          <string>❌  Annuler</string>
+                          <string>Annuler</string>
                          </property>
                         </widget>
                        </item>
@@ -7572,7 +7590,7 @@ Chef d'Atelier</string>
                           <cursorShape>PointingHandCursor</cursorShape>
                          </property>
                          <property name="text">
-                          <string>✅  Enregistrer</string>
+                          <string>Enregistrer</string>
                          </property>
                         </widget>
                        </item>
@@ -7696,7 +7714,7 @@ Responsable Commercial</string>
                     <string notr="true">QLineEdit { border: 1px solid #d1d5db; border-radius: 8px; padding: 6px 12px; font-size: 13px; background: white; color: #333; } QLineEdit:focus { border-color: #2a5298; }</string>
                    </property>
                    <property name="placeholderText">
-                    <string>🔍  Rechercher (Matricule, Nom)</string>
+                    <string>Rechercher (Matricule, Nom)</string>
                    </property>
                   </widget>
                  </item>
@@ -7957,7 +7975,7 @@ font-weight: 700;
 text-align: center;</string>
                       </property>
                       <property name="text">
-                       <string>📄  Export PDF</string>
+                       <string>Export PDF</string>
                       </property>
                      </widget>
                     </item>
@@ -7977,7 +7995,7 @@ font-weight: 700;
 text-align: center;</string>
                       </property>
                       <property name="text">
-                       <string>📊  Statistiques</string>
+                       <string>Statistiques</string>
                       </property>
                      </widget>
                     </item>
@@ -8131,7 +8149,7 @@ text-align: center;</string>
                      <widget class="QComboBox" name="input_paiement_ajouter">
                       <item>
                        <property name="text">
-                        <string>Payé</string>
+                        <string>Paye</string>
                        </property>
                       </item>
                       <item>
@@ -8355,7 +8373,7 @@ text-align: center;</string>
                      <widget class="QComboBox" name="input_paiement_modifier">
                       <item>
                        <property name="text">
-                        <string>Payé</string>
+                        <string>Paye</string>
                        </property>
                       </item>
                       <item>
@@ -8474,7 +8492,7 @@ text-align: center;</string>
                     <string notr="true">font-size: 18px; font-weight: bold; color: #0f2b4c;</string>
                    </property>
                    <property name="text">
-                    <string>📊  EcoScore Client — Taux de Tri Correct</string>
+                    <string>EcoScore Client - Taux de Tri Correct</string>
                    </property>
                   </widget>
                  </item>
@@ -8500,7 +8518,7 @@ text-align: center;</string>
                     <string notr="true">background-color: #0f2b4c; color: white; border-radius: 8px; padding: 8px 18px; font-weight: bold; font-size: 13px;</string>
                    </property>
                    <property name="text">
-                    <string>← Retour</string>
+                    <string>Retour</string>
                    </property>
                   </widget>
                  </item>
@@ -8660,7 +8678,7 @@ Chef d'Atelier</string>
                   <bool>false</bool>
                  </property>
                  <property name="text">
-                  <string>🔔</string>
+                  <string></string>
                  </property>
                 </widget>
                </item>
@@ -8670,7 +8688,7 @@ Chef d'Atelier</string>
                   <bool>false</bool>
                  </property>
                  <property name="text">
-                  <string>👤</string>
+                  <string></string>
                  </property>
                 </widget>
                </item>
@@ -8726,7 +8744,7 @@ Chef d'Atelier</string>
                       <widget class="QComboBox" name="cbSortDashboard">
                        <item>
                         <property name="text">
-                         <string>R�f�rence</string>
+                         <string>Rï¿½fï¿½rence</string>
                         </property>
                        </item>
                        <item>
@@ -8736,7 +8754,7 @@ Chef d'Atelier</string>
                        </item>
                        <item>
                         <property name="text">
-                         <string>Prix (D�croissant)</string>
+                         <string>Prix (Dï¿½croissant)</string>
                         </property>
                        </item>
                        <item>
@@ -8787,12 +8805,12 @@ Chef d'Atelier</string>
                      </column>
                      <column>
                       <property name="text">
-                       <string>Quantit�</string>
+                       <string>Quantitï¿½</string>
                       </property>
                      </column>
                      <column>
                       <property name="text">
-                       <string>Priorit�</string>
+                       <string>Prioritï¿½</string>
                       </property>
                      </column>
                      <column>
@@ -8861,7 +8879,7 @@ Chef d'Atelier</string>
                       <widget class="QComboBox" name="cbSort_2">
                        <item>
                         <property name="text">
-                         <string>Référence</string>
+                         <string>Reference</string>
                         </property>
                        </item>
                        <item>
@@ -8871,7 +8889,7 @@ Chef d'Atelier</string>
                        </item>
                        <item>
                         <property name="text">
-                         <string>Prix (Décroissant)</string>
+                         <string>Prix (Decroissant)</string>
                         </property>
                        </item>
                        <item>
@@ -8928,12 +8946,12 @@ Chef d'Atelier</string>
                      </column>
                      <column>
                       <property name="text">
-                       <string>Quantité</string>
+                       <string>Quantite</string>
                       </property>
                      </column>
                      <column>
                       <property name="text">
-                       <string>Priorité</string>
+                       <string>Priorite</string>
                       </property>
                      </column>
                      <column>
@@ -9246,14 +9264,14 @@ Chef d'Atelier</string>
                <item>
                 <widget class="QPushButton" name="btnnotif_5">
                  <property name="text">
-                  <string>🔔</string>
+                  <string></string>
                  </property>
                 </widget>
                </item>
                <item>
                 <widget class="QPushButton" name="btnprofil_5">
                  <property name="text">
-                  <string>👤</string>
+                  <string></string>
                  </property>
                 </widget>
                </item>
@@ -9328,7 +9346,7 @@ Chef d'Atelier</string>
                        </size>
                       </property>
                       <property name="text">
-                       <string>📋  Ajouter Une Commande</string>
+                       <string>Ajouter Une Commande</string>
                       </property>
                      </widget>
                     </item>
@@ -9354,7 +9372,7 @@ Chef d'Atelier</string>
                       <item row="0" column="0">
                        <widget class="QLabel" name="l1_4">
                         <property name="text">
-                         <string>Référence</string>
+                         <string>Reference</string>
                         </property>
                        </widget>
                       </item>
@@ -9386,7 +9404,7 @@ Chef d'Atelier</string>
                         </item>
                         <item>
                          <property name="text">
-                          <string>trés importante</string>
+                          <string>tres importante</string>
                          </property>
                         </item>
                         <item>
@@ -9410,12 +9428,12 @@ Chef d'Atelier</string>
                         </item>
                         <item>
                          <property name="text">
-                          <string>Livrée</string>
+                          <string>Livree</string>
                          </property>
                         </item>
                         <item>
                          <property name="text">
-                          <string>Annulée</string>
+                          <string>Annulee</string>
                          </property>
                         </item>
                         <item>
@@ -9431,14 +9449,14 @@ Chef d'Atelier</string>
                       <item row="1" column="2">
                        <widget class="QLabel" name="l_qty_4">
                         <property name="text">
-                         <string>Quantité</string>
+                         <string>Quantite</string>
                         </property>
                        </widget>
                       </item>
                       <item row="0" column="2">
                        <widget class="QLabel" name="l2_4">
                         <property name="text">
-                         <string>Priorité</string>
+                         <string>Priorite</string>
                         </property>
                        </widget>
                       </item>
@@ -9447,7 +9465,7 @@ Chef d'Atelier</string>
                     <item>
                      <widget class="QLabel" name="lblBacSelect">
                       <property name="text">
-                       <string>🧺  Bacs disponibles</string>
+                       <string>Bacs disponibles</string>
                       </property>
                      </widget>
                     </item>
@@ -9493,7 +9511,7 @@ Chef d'Atelier</string>
                     <item>
                      <widget class="QLabel" name="lblSectionDates">
                       <property name="text">
-                       <string>📅  Dates</string>
+                       <string>Dates</string>
                       </property>
                      </widget>
                     </item>
@@ -9505,7 +9523,7 @@ Chef d'Atelier</string>
                       <item>
                        <widget class="QLabel" name="label_27">
                         <property name="text">
-                         <string>📆  Date Demande :</string>
+                         <string>Date Demande :</string>
                         </property>
                        </widget>
                       </item>
@@ -9544,7 +9562,7 @@ Chef d'Atelier</string>
                       <item>
                        <widget class="QLabel" name="label_30">
                         <property name="text">
-                         <string>Année</string>
+                         <string>Annee</string>
                         </property>
                        </widget>
                       </item>
@@ -9567,7 +9585,7 @@ Chef d'Atelier</string>
                       <item>
                        <widget class="QLabel" name="label_31">
                         <property name="text">
-                         <string>📦  Date Livraison :</string>
+                         <string>Date Livraison :</string>
                         </property>
                        </widget>
                       </item>
@@ -9606,7 +9624,7 @@ Chef d'Atelier</string>
                       <item>
                        <widget class="QLabel" name="label_34">
                         <property name="text">
-                         <string>Année</string>
+                         <string>Annee</string>
                         </property>
                        </widget>
                       </item>
@@ -9650,7 +9668,7 @@ Chef d'Atelier</string>
                     <item>
                      <widget class="QLabel" name="lblSectionAdresse">
                       <property name="text">
-                       <string>📍  Adresse de Livraison</string>
+                       <string>Adresse de Livraison</string>
                       </property>
                      </widget>
                     </item>
@@ -9757,7 +9775,7 @@ Chef d'Atelier</string>
                          <cursorShape>PointingHandCursor</cursorShape>
                         </property>
                         <property name="text">
-                         <string>✅  Sauvegarder</string>
+                         <string>Sauvegarder</string>
                         </property>
                        </widget>
                       </item>
@@ -9779,7 +9797,7 @@ Chef d'Atelier</string>
                          <cursorShape>PointingHandCursor</cursorShape>
                         </property>
                         <property name="text">
-                         <string>❌  Annuler</string>
+                         <string>Annuler</string>
                         </property>
                        </widget>
                       </item>
@@ -9891,14 +9909,14 @@ Chef d'Atelier</string>
                <item>
                 <widget class="QPushButton" name="btnnotif_3">
                  <property name="text">
-                  <string>🔔</string>
+                  <string></string>
                  </property>
                 </widget>
                </item>
                <item>
                 <widget class="QPushButton" name="btnprofil_3">
                  <property name="text">
-                  <string>👤</string>
+                  <string></string>
                  </property>
                 </widget>
                </item>
@@ -9973,7 +9991,7 @@ Chef d'Atelier</string>
                        </size>
                       </property>
                       <property name="text">
-                       <string>✏️  Modifier Une Commande</string>
+                       <string>Modifier Une Commande</string>
                       </property>
                      </widget>
                     </item>
@@ -9999,7 +10017,7 @@ Chef d'Atelier</string>
                       <item row="1" column="2">
                        <widget class="QLabel" name="l_qty_2">
                         <property name="text">
-                         <string>Quantité</string>
+                         <string>Quantite</string>
                         </property>
                        </widget>
                       </item>
@@ -10017,12 +10035,12 @@ Chef d'Atelier</string>
                         </item>
                         <item>
                          <property name="text">
-                          <string>Livrée</string>
+                          <string>Livree</string>
                          </property>
                         </item>
                         <item>
                          <property name="text">
-                          <string>Annulée</string>
+                          <string>Annulee</string>
                          </property>
                         </item>
                         <item>
@@ -10042,14 +10060,14 @@ Chef d'Atelier</string>
                       <item row="0" column="2">
                        <widget class="QLabel" name="l2_2">
                         <property name="text">
-                         <string>Priorité</string>
+                         <string>Priorite</string>
                         </property>
                        </widget>
                       </item>
                       <item row="0" column="0">
                        <widget class="QLabel" name="l1_2">
                         <property name="text">
-                         <string>Référence</string>
+                         <string>Reference</string>
                         </property>
                        </widget>
                       </item>
@@ -10073,7 +10091,7 @@ Chef d'Atelier</string>
                         </item>
                         <item>
                          <property name="text">
-                          <string>trés importante</string>
+                          <string>tres importante</string>
                          </property>
                         </item>
                         <item>
@@ -10088,7 +10106,7 @@ Chef d'Atelier</string>
                     <item>
                      <widget class="QLabel" name="lblBacSelectMod">
                       <property name="text">
-                       <string>🧺  Bacs disponibles</string>
+                       <string>Bacs disponibles</string>
                       </property>
                      </widget>
                     </item>
@@ -10134,7 +10152,7 @@ Chef d'Atelier</string>
                     <item>
                      <widget class="QLabel" name="lblSectionDates_Mod">
                       <property name="text">
-                       <string>📅  Dates</string>
+                       <string>Dates</string>
                       </property>
                      </widget>
                     </item>
@@ -10146,7 +10164,7 @@ Chef d'Atelier</string>
                       <item>
                        <widget class="QLabel" name="label_11">
                         <property name="text">
-                         <string>📆  Date Demande :</string>
+                         <string>Date Demande :</string>
                         </property>
                        </widget>
                       </item>
@@ -10185,7 +10203,7 @@ Chef d'Atelier</string>
                       <item>
                        <widget class="QLabel" name="label_14">
                         <property name="text">
-                         <string>Année</string>
+                         <string>Annee</string>
                         </property>
                        </widget>
                       </item>
@@ -10208,7 +10226,7 @@ Chef d'Atelier</string>
                       <item>
                        <widget class="QLabel" name="label_19">
                         <property name="text">
-                         <string>📦  Date Livraison :</string>
+                         <string>Date Livraison :</string>
                         </property>
                        </widget>
                       </item>
@@ -10247,7 +10265,7 @@ Chef d'Atelier</string>
                       <item>
                        <widget class="QLabel" name="label_22">
                         <property name="text">
-                         <string>Année</string>
+                         <string>Annee</string>
                         </property>
                        </widget>
                       </item>
@@ -10291,7 +10309,7 @@ Chef d'Atelier</string>
                     <item>
                      <widget class="QLabel" name="lblSectionAdresse_Mod">
                       <property name="text">
-                       <string>📍  Adresse de Livraison</string>
+                       <string>Adresse de Livraison</string>
                       </property>
                      </widget>
                     </item>
@@ -10412,7 +10430,7 @@ QPushButton:hover {
 }</string>
                         </property>
                         <property name="text">
-                         <string>✅  Sauvegarder</string>
+                         <string>Sauvegarder</string>
                         </property>
                        </widget>
                       </item>
@@ -10450,7 +10468,7 @@ QPushButton:hover {
 }</string>
                         </property>
                         <property name="text">
-                         <string>❌  Annuler</string>
+                         <string>Annuler</string>
                         </property>
                        </widget>
                       </item>
@@ -10595,3 +10613,5 @@ QPushButton:hover {
   </connection>
  </connections>
 </ui>
+
+

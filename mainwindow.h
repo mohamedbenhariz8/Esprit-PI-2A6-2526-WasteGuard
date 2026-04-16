@@ -38,6 +38,9 @@
 #include <QTimer>
 #include <QSystemTrayIcon>
 #include <QMenu>
+#include <QQuickWidget>
+#include <QQmlContext>
+#include <QQuickItem>
 
 #include "employe.h"
 #include "produit.h"
@@ -46,6 +49,7 @@
 #include "client.h"
 #include "intervention.h"
 #include "stockmapwidget.h"
+#include "triposr3ddialog.h"
 #include "accessibilityhelper.h"
 #include "voiceassistant.h"
 #include "labibassistant.h"
@@ -69,6 +73,9 @@ public:
     void setSessionContext(bool isAdmin, const QString &email);
     bool eventFilter(QObject *obj, QEvent *event) override;
 
+signals:
+    void logoutRequested();
+
 private slots:
     // Employe
     void on_btnNouveau_clicked();
@@ -82,6 +89,7 @@ private slots:
     void on_cbProjetStats_currentIndexChanged(const QString &arg1);
     void on_btnFichePaie_clicked();
     void on_btnCommsSend_clicked();
+    void on_btnLogout_clicked();
     
    
     // Client module slots (from mainwindowcl)
@@ -90,8 +98,8 @@ private slots:
     void on_btn_modifier_client_clicked();
     void on_btn_annuler_client_clicked();
     void on_btnNouveau_client_clicked();
-    void onClientAdded(QString matricule, QString nom, QString email, QString type_contrat, QString date_expiration, QString paiement);
-    void onClientModified(int row, QString matricule, QString nom, QString email, QString type_contrat, QString date_expiration, QString paiement);
+    void onClientAdded(QString matricule, QString nom, QString email, QString type_contrat, QString date_creation, QString date_expiration, QString telephone);
+    void onClientModified(int row, QString matricule, QString nom, QString email, QString type_contrat, QString date_creation, QString date_expiration, QString telephone);
 
     // Stock
     void on_btnSave_add_clicked();
@@ -121,6 +129,7 @@ private slots:
     void onProductImageDownloaded(QNetworkReply *reply, const QString &numSerie);
     void openStockMap3D();
     void on_prod_btnVideo3D_clicked();
+    void on_prod_btn3DModel_clicked();
 
     void handleEditClicked();
     void handleDeleteClicked();
@@ -172,9 +181,9 @@ private slots:
 
     // ============ ACCESSIBILITÉ ET VOIX (SLOTS) ============
     void on_btnMicrophone_clicked();
-    void on_btnHighContrast_clicked();
-    void on_btnZoomPlus_clicked();
-    void on_btnZoomMinus_clicked();
+    void handleHighContrastToggle();
+    void handleZoomInClicked();
+    void handleZoomOutClicked();
 
     // Voice Assistant Slots
     void onVoiceListeningStarted();
@@ -220,6 +229,7 @@ private:
     void buildStatsCharts();
     void refreshProduitTable();
     void addExampleRow();
+    void verifyFournisseurEmail(QLineEdit *emailField);
     void loadProduitToModificationForm(int row);
     void installActionButtonsForRow(int row);
     void ensureProduitModuleVisible();
@@ -298,6 +308,7 @@ private:
     void refreshDashboardTable(const QString &searchField = "", const QString &searchValue = "", const QString &sortCriteria = "");
     QString getCmdSortCriteria(QComboBox* cb);
     void on_btnPdf_Cmd_clicked();
+    void generateCommandePdfForOrder(int commandeId, int row);
     void installCmdActions(int row);
     void installCmdActions2(int row);
     void reindexCmdActions();
@@ -311,6 +322,18 @@ private:
     void loadCmdToModificationForm(int row);
     void openEmployeeTasksDialog();
     void openEmployeeLeaveDialog();
+    bool isModuleAccessAllowed(const QString &moduleKey) const;
+    bool guardModuleAccess(const QString &moduleKey, const QString &moduleLabel);
+    void applySessionAccessControl();
+    void installPageAccessGuard();
+    void applyHomogeneousTheme();
+    void polishHomogeneousSurfaces();
+    void ensureRetractableRightPanels();
+    QWidget *ensureStockRightSidebarWidget();
+    void installRetractableRightPanel(QWidget *panel);
+    void updateRetractableRightPanel(QWidget *panel);
+    void toggleRetractableRightPanel(const QString &panelObjectName);
+    bool retractableRightPanelAvailable(const QString &panelObjectName) const;
 
 
     // Helpers for merged UI
@@ -326,6 +349,8 @@ private:
     QWidget *homeDashboardPage;
     bool m_isAdminSession;
     QString m_sessionEmail;
+    QString m_sessionSpecialite;
+    QString m_employeeAllowedModule;
 
     bool m_employeeTaskPromptShown;
     int currentEmployeRow;
@@ -352,6 +377,8 @@ private:
     void openEcoScoreInterface();
     void exportSingleClientContratPdf();
     void filterClients();
+    bool validateClientForm(bool isModificationForm) const;
+    void updateClientFormValidationState();
     void forceApplySidebarStyles();
 
     // Card View state (Produit)
@@ -377,6 +404,7 @@ private:
     QGridLayout *m_clientCardLayout = nullptr;
     int m_clientCurrentPage = 0;
     int m_clientItemsPerPage = 6;
+    QMap<QString, bool> m_rightPanelCollapsedStates;
 
     // Card View state (Maintenance)
     bool m_isMaintCardView = false;
@@ -426,6 +454,9 @@ private:
     // Labib AI Assistant
     LabibAssistant *m_labibAssistant = nullptr;
     void openLabibAssistant();
+
+    QQuickWidget *m_mapAddOrder = nullptr;
+    QQuickWidget *m_mapModOrder = nullptr;
 
     // Floating AI Button
     QPushButton *m_floatingAIButton = nullptr;

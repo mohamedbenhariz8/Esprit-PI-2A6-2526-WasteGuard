@@ -307,10 +307,9 @@ QSqlQueryModel *Employe::afficher()
     }
 
     QSqlQueryModel *model = new QSqlQueryModel();
-    model->setQuery("SELECT id_emp, matricule, cin, nom, email, specialite, disponibilite, photo FROM EMPLOYE");
-    if (model->lastError().isValid() && isMissingPhotoColumnError(model->lastError().text())) {
-        model->setQuery("SELECT id_emp, matricule, cin, nom, email, specialite, disponibilite FROM EMPLOYE");
-    }
+    // Avoid fetching BLOB photo data in the generic startup model. On some Oracle/ODBC
+    // setups, loading LOB columns here is unstable and can crash the process.
+    model->setQuery("SELECT id_emp, matricule, cin, nom, email, specialite, disponibilite FROM EMPLOYE");
     m_lastError = model->lastError().isValid() ? model->lastError().text() : QString();
     return model;
 }
