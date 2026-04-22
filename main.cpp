@@ -40,9 +40,12 @@
 #include <QSslSocket>
 #include <QtMath>
 #include <QDebug>
+#include <QSettings>
+#include <QProcessEnvironment>
 #include <cstdio>
 
 #include "connection.h"
+#include "thememanager.h"
 
 namespace {
 
@@ -218,10 +221,31 @@ double cosineSimilarity(const QVector<float> &a, const QVector<float> &b)
     return dot / qSqrt(na * nb);
 }
 
+QString faceApiCredential(const char *envKey, const QString &settingsKey, const QString &fallback = QString())
+{
+    // 1) Process env (what qEnvironmentVariable reads).
+    const QString envValue = qEnvironmentVariable(envKey).trimmed();
+    if (!envValue.isEmpty()) return envValue;
+
+    // 2) System env snapshot (redundant but harmless safety net).
+    const QString sysValue =
+        QProcessEnvironment::systemEnvironment().value(QString::fromLatin1(envKey)).trimmed();
+    if (!sysValue.isEmpty()) return sysValue;
+
+    // 3) Persistent QSettings fallback — immune to Windows env-var propagation
+    //    quirks (setx / SetEnvironmentVariable not visible to already-running
+    //    parent processes like Qt Creator / Explorer).
+    QSettings settings("WasteGuard", "WasteGuard");
+    const QString stored = settings.value(settingsKey).toString().trimmed();
+    if (!stored.isEmpty()) return stored;
+
+    return fallback;
+}
+
 bool isFaceApiEnabled()
 {
-    const QString key = qEnvironmentVariable("WG_FACE_API_KEY").trimmed();
-    const QString secret = qEnvironmentVariable("WG_FACE_API_SECRET").trimmed();
+    const QString key = faceApiCredential("WG_FACE_API_KEY", "faceApi/key");
+    const QString secret = faceApiCredential("WG_FACE_API_SECRET", "faceApi/secret");
     return !key.isEmpty() && !secret.isEmpty();
 }
 
@@ -290,14 +314,35 @@ bool compareFacesWithApi(const QByteArray &probeImage,
     strictThreshold = -1.0;
     errorText.clear();
 
-    const QString key = qEnvironmentVariable("WG_FACE_API_KEY").trimmed();
-    const QString secret = qEnvironmentVariable("WG_FACE_API_SECRET").trimmed();
-    const QString endpoint = qEnvironmentVariable(
-        "WG_FACE_API_URL",
-        "https://api-us.faceplusplus.com/facepp/v3/compare").trimmed();
+    const QString key = faceApiCredential("WG_FACE_API_KEY", "faceApi/key");
+    const QString secret = faceApiCredential("WG_FACE_API_SECRET", "faceApi/secret");
+    QString endpoint = faceApiCredential("WG_FACE_API_URL", "faceApi/url",
+                                         "https://api-us.faceplusplus.com/facepp/v3/compare");
+    if (endpoint.isEmpty()) {
+        endpoint = "https://api-us.faceplusplus.com/facepp/v3/compare";
+    }
+    // Auto-correct common misconfiguration: base URL without /compare action.
+    // Face++ replies "API_NOT_FOUND" when hitting /facepp/v3 directly.
+    {
+        QString trimmedEndpoint = endpoint.trimmed();
+        while (trimmedEndpoint.endsWith('/')) trimmedEndpoint.chop(1);
+        const bool missingAction =
+            trimmedEndpoint.endsWith("/facepp/v3", Qt::CaseInsensitive) ||
+            trimmedEndpoint.endsWith("/facepp/v3.0", Qt::CaseInsensitive) ||
+            trimmedEndpoint.endsWith("faceplusplus.com", Qt::CaseInsensitive);
+        if (missingAction) {
+            const QString corrected = trimmedEndpoint + "/compare";
+            qWarning().nospace()
+                << "[FaceAPI] URL endpoint semble incomplet (" << endpoint
+                << "), redirection automatique vers " << corrected;
+            endpoint = corrected;
+        }
+    }
 
     if (key.isEmpty() || secret.isEmpty()) {
-        errorText = "Face API non configuree.";
+        errorText = "Face API non configuree. Definissez WG_FACE_API_KEY / WG_FACE_API_SECRET "
+                    "(relancez Qt Creator apres setx) ou les cles faceApi/key et faceApi/secret "
+                    "dans QSettings WasteGuard.";
         return false;
     }
     if (probeImage.isEmpty() || referenceImage.isEmpty()) {
@@ -346,6 +391,13 @@ bool compareFacesWithApi(const QByteArray &probeImage,
     appendImagePart("image_file1", probeNormalized, "probe.jpg");
     appendImagePart("image_file2", referenceNormalized, "reference.jpg");
 
+    qInfo().nospace() << "[FaceAPI] POST " << endpoint
+                      << " ssl=" << QSslSocket::supportsSsl()
+                      << " sslBuild=" << QSslSocket::sslLibraryBuildVersionString()
+                      << " sslRuntime=" << QSslSocket::sslLibraryVersionString()
+                      << " probe=" << probeNormalized.size() << "B"
+                      << " ref=" << referenceNormalized.size() << "B";
+
     QNetworkAccessManager manager;
     QEventLoop loop;
     QNetworkReply *reply = manager.post(req, multiPart);
@@ -356,21 +408,32 @@ bool compareFacesWithApi(const QByteArray &probeImage,
         for (const QSslError &e : errors) {
             sslErrors << e.errorString();
         }
+        qWarning() << "[FaceAPI] SSL errors:" << sslErrors;
     });
+    QObject::connect(reply, &QNetworkReply::errorOccurred, &loop, [&](QNetworkReply::NetworkError err) {
+        qWarning() << "[FaceAPI] errorOccurred:" << err << reply->errorString();
+    });
+    bool timedOut = false;
     QTimer timeoutTimer;
     timeoutTimer.setSingleShot(true);
     QObject::connect(&timeoutTimer, &QTimer::timeout, &loop, [&]() {
         if (reply && reply->isRunning()) {
+            qWarning() << "[FaceAPI] Timeout after 20s, aborting.";
+            timedOut = true;
             reply->abort();
         }
         loop.quit();
     });
     QObject::connect(reply, &QNetworkReply::finished, &loop, &QEventLoop::quit);
-    timeoutTimer.start(8000);
+    timeoutTimer.start(20000);
     loop.exec();
     timeoutTimer.stop();
 
-    const QByteArray body = reply->readAll();
+    const QByteArray body = timedOut ? QByteArray() : reply->readAll();
+    qInfo().nospace() << "[FaceAPI] reply err=" << reply->error()
+                      << " http=" << reply->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt()
+                      << " bodyBytes=" << body.size()
+                      << " bodyHead=" << QString::fromUtf8(body.left(300));
     const QJsonDocument docForError = QJsonDocument::fromJson(body);
     const QString apiBodyError = docForError.isObject()
                                      ? docForError.object().value("error_message").toString().trimmed()
@@ -389,6 +452,7 @@ bool compareFacesWithApi(const QByteArray &probeImage,
         } else {
             errorText = "Face API indisponible: " + reply->errorString();
         }
+        qWarning() << "[FaceAPI] FAIL ->" << errorText << "(netErr=" << netErr << ")";
         reply->deleteLater();
         return false;
     }
@@ -1327,7 +1391,42 @@ int main(int argc, char *argv[])
 
     QApplication a(argc, argv);
     a.setQuitOnLastWindowClosed(false);
+    QCoreApplication::setOrganizationName("WasteGuard");
+    QCoreApplication::setOrganizationDomain("wasteguard.local");
+    QCoreApplication::setApplicationName("WasteGuard");
+    ThemeManager::instance()->applyToApplication();
     qDebug() << "Drivers disponibles:" << QSqlDatabase::drivers();
+
+    // One-shot CLI registration for Face API creds (bypasses Windows env-var
+    // propagation issues). Usage:
+    //   WasteGuard.exe --set-face-api KEY SECRET [URL]
+    {
+        const QStringList args = QCoreApplication::arguments();
+        const int idx = args.indexOf("--set-face-api");
+        if (idx >= 0 && idx + 2 < args.size()) {
+            QSettings settings("WasteGuard", "WasteGuard");
+            settings.setValue("faceApi/key", args.at(idx + 1).trimmed());
+            settings.setValue("faceApi/secret", args.at(idx + 2).trimmed());
+            if (idx + 3 < args.size() && !args.at(idx + 3).startsWith("--")) {
+                settings.setValue("faceApi/url", args.at(idx + 3).trimmed());
+            }
+            settings.sync();
+            qInfo() << "[FaceAPI] Cles enregistrees dans QSettings WasteGuard.";
+            return 0;
+        }
+    }
+
+    // Diagnostic: report which source (env / settings) provided Face API creds.
+    {
+        const bool envKey = !qEnvironmentVariable("WG_FACE_API_KEY").trimmed().isEmpty();
+        const bool envSec = !qEnvironmentVariable("WG_FACE_API_SECRET").trimmed().isEmpty();
+        QSettings s("WasteGuard", "WasteGuard");
+        const bool setKey = !s.value("faceApi/key").toString().trimmed().isEmpty();
+        const bool setSec = !s.value("faceApi/secret").toString().trimmed().isEmpty();
+        qInfo().nospace() << "[FaceAPI] env(KEY=" << envKey << ",SECRET=" << envSec
+                          << ") settings(KEY=" << setKey << ",SECRET=" << setSec
+                          << ") -> enabled=" << isFaceApiEnabled();
+    }
 
     while (true) {
         LoginDialog login;

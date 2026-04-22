@@ -13,7 +13,7 @@ Commande::Commande(int id, int idClient, int qte, const QString &priorite,
                    const QString &statut, const QDate &dateCommande,
                    const QDate &dateLivraison, double prixTotal)
     : m_id(id), m_idClient(idClient), m_qte(qte), 
-      m_prixTotal(prixTotal), m_adresse(""), m_dateCommande(dateCommande),
+      m_prixTotal(prixTotal), m_adresse(""), m_startAdresse(""), m_pathHistory(""), m_dateCommande(dateCommande),
       m_dateLivraison(dateLivraison)
 {
     setPriorite(priorite);
@@ -30,6 +30,8 @@ QDate Commande::dateCommande() const { return m_dateCommande; }
 QDate Commande::dateLivraison() const { return m_dateLivraison; }
 double Commande::prixTotal() const { return m_prixTotal; }
 QString Commande::adresse() const { return m_adresse; }
+QString Commande::startAdresse() const { return m_startAdresse; }
+QString Commande::pathHistory() const { return m_pathHistory; }
 
 void Commande::setId(int id) { m_id = id; }
 void Commande::setRefer(const QString &refer) { m_refer = refer.trimmed(); }
@@ -43,18 +45,26 @@ void Commande::setPriorite(const QString &priorite) {
     else m_priorite = "NORMALE";
 }
 
-void Commande::setStatut(const QString &statut) { 
-    QString s = statut.toUpper();
-    if (s.contains("PENDANTE") || s.contains("PREPAR")) m_statut = "EN_PREPARATION";
-    else if (s.contains("LIVR")) m_statut = "LIVREE";
-    else if (s.contains("INSTALL")) m_statut = "INSTALLEE";
-    else if (s.contains("ANNUL")) m_statut = "ANNULEE";
-    else m_statut = "EN_PREPARATION"; // fallback for database integrity
+void Commande::setStatut(const QString &statut) {
+    QString s = statut.trimmed().toUpper();
+    // Map UI combobox display values to the DB-allowed values (CHK_STATUT constraint):
+    // EN_PREPARATION | LIVREE | LIVRAISON_EN_COURS | ANNULEE
+    if (s.contains("COURS"))
+        m_statut = "LIVRAISON_EN_COURS";
+    else if (s.contains("LIVR"))
+        m_statut = "LIVREE";
+    else if (s.contains("ANNUL"))
+        m_statut = "ANNULEE";
+    else
+        m_statut = "EN_PREPARATION"; // "Confirmation Pendante" and any unknown value
 }
+
 void Commande::setDateCommande(const QDate &date) { m_dateCommande = date; }
 void Commande::setDateLivraison(const QDate &date) { m_dateLivraison = date; }
 void Commande::setPrixTotal(double prix) { m_prixTotal = prix; }
 void Commande::setAdresse(const QString &adresse) { m_adresse = adresse; }
+void Commande::setStartAdresse(const QString &startAdresse) { m_startAdresse = startAdresse; }
+void Commande::setPathHistory(const QString &pathHistory) { m_pathHistory = pathHistory; }
 
 bool Commande::ajouter()
 {
@@ -70,8 +80,8 @@ bool Commande::ajouter()
         }
     }
 
-    query.prepare("INSERT INTO COMMANDE (ID_COMMANDE, ID_CLIENT, QTE, PRIORITE, STATUT, DATE_COMMANDE, DATE_LIVRAISON, PRIX_TOTAL, ADRESSE, REFER) "
-                  "VALUES (:id, :client, :qte, :prio, :stat, TO_DATE(:dcmd, 'DD-MM-YYYY'), TO_DATE(:dliv, 'DD-MM-YYYY'), :prix, :adresse, :refer)");
+    query.prepare("INSERT INTO COMMANDE (ID_COMMANDE, ID_CLIENT, QTE, PRIORITE, STATUT, DATE_COMMANDE, DATE_LIVRAISON, PRIX_TOTAL, ADRESSE, REFER, START_ADRESSE, PATH_HISTORY) "
+                  "VALUES (:id, :client, :qte, :prio, :stat, TO_DATE(:dcmd, 'DD-MM-YYYY'), TO_DATE(:dliv, 'DD-MM-YYYY'), :prix, :adresse, :refer, :startAdresse, :pathHistory)");
     query.bindValue(":id", nextId);
     query.bindValue(":client", m_idClient);
     query.bindValue(":qte", m_qte);
@@ -87,6 +97,8 @@ bool Commande::ajouter()
     query.bindValue(":prix", m_prixTotal);
     query.bindValue(":adresse", m_adresse);
     query.bindValue(":refer", m_refer.trimmed());
+    query.bindValue(":startAdresse", m_startAdresse);
+    query.bindValue(":pathHistory", m_pathHistory.isEmpty() ? QString("%1").arg(m_startAdresse) : m_pathHistory);
 
     if (query.exec()) {
         m_id = nextId;
@@ -101,7 +113,7 @@ bool Commande::modifier()
     QSqlQuery query;
     query.prepare("UPDATE COMMANDE SET ID_CLIENT=:client, QTE=:qte, PRIORITE=:prio, STATUT=:stat, "
                   "DATE_COMMANDE=TO_DATE(:dcmd, 'DD-MM-YYYY'), DATE_LIVRAISON=TO_DATE(:dliv, 'DD-MM-YYYY'), "
-                  "PRIX_TOTAL=:prix, ADRESSE=:adresse, REFER=:refer "
+                  "PRIX_TOTAL=:prix, ADRESSE=:adresse, REFER=:refer, START_ADRESSE=:startAdresse, PATH_HISTORY=:pathHistory "
                   "WHERE ID_COMMANDE=:id");
     query.bindValue(":id", m_id);
     query.bindValue(":client", m_idClient);
@@ -117,6 +129,8 @@ bool Commande::modifier()
     query.bindValue(":prix", m_prixTotal);
     query.bindValue(":adresse", m_adresse);
     query.bindValue(":refer", m_refer.trimmed());
+    query.bindValue(":startAdresse", m_startAdresse);
+    query.bindValue(":pathHistory", m_pathHistory);
 
     if (query.exec()) return true;
     m_lastError = query.lastError().text();
@@ -174,7 +188,7 @@ QSqlQueryModel *Commande::afficher(const QString &searchField, const QString &se
     }
     
     QString queryString = 
-        "SELECT c.REFER, cl.MATRICULE, c.QTE, c.PRIORITE, c.STATUT, c.DATE_COMMANDE, c.DATE_LIVRAISON, c.PRIX_TOTAL, c.ID_CLIENT, c.ADRESSE, c.ID_COMMANDE "
+        "SELECT c.REFER, cl.MATRICULE, c.QTE, c.PRIORITE, c.STATUT, c.DATE_COMMANDE, c.DATE_LIVRAISON, c.PRIX_TOTAL, c.ID_CLIENT, c.ADRESSE, c.ID_COMMANDE, c.START_ADRESSE, c.PATH_HISTORY "
         "FROM COMMANDE c "
         "LEFT JOIN CLIENT cl ON c.ID_CLIENT = cl.ID_CLIENT ";
     

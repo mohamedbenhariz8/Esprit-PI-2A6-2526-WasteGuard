@@ -28,7 +28,8 @@ SOURCES += \
     accessibilityhelper.cpp \
     voiceassistant.cpp \
     labibassistant.cpp \
-    emailnotificationmanager.cpp
+    emailnotificationmanager.cpp \
+    thememanager.cpp
 
 HEADERS += \
     client.h \
@@ -48,7 +49,8 @@ HEADERS += \
     accessibilityhelper.h \
     voiceassistant.h \
     labibassistant.h \
-    emailnotificationmanager.h
+    emailnotificationmanager.h \
+    thememanager.h
 
 FORMS += \
     mainwindow.ui

@@ -41,6 +41,44 @@
 #include <QQuickWidget>
 #include <QQmlContext>
 #include <QQuickItem>
+#include <QCalendarWidget>
+#include <QPainter>
+
+class DotCalendar : public QCalendarWidget {
+    Q_OBJECT
+public:
+    explicit DotCalendar(QWidget *parent = nullptr) : QCalendarWidget(parent) {}
+    void setDayDots(const QDate &date, const QList<QColor> &dots) {
+        m_dayData[date] = dots;
+        update();
+    }
+    void clearDayDots() { m_dayData.clear(); update(); }
+protected:
+    void paintCell(QPainter *painter, const QRect &rect, QDate date) const override {
+        QCalendarWidget::paintCell(painter, rect, date);
+        if (m_dayData.contains(date)) {
+            const auto &dots = m_dayData[date];
+            int n = qMin(dots.size(), 8);
+            if (n > 0) {
+                painter->save();
+                painter->setRenderHint(QPainter::Antialiasing);
+                int dotSize = 5;
+                int spacing = 2;
+                int totalWidth = n * dotSize + (n - 1) * spacing;
+                int startX = rect.center().x() - totalWidth / 2;
+                int y = rect.bottom() - dotSize - 4;
+                for (int i = 0; i < n; ++i) {
+                    painter->setPen(Qt::NoPen);
+                    painter->setBrush(dots[i]);
+                    painter->drawEllipse(startX + i * (dotSize + spacing), y, dotSize, dotSize);
+                }
+                painter->restore();
+            }
+        }
+    }
+private:
+    QMap<QDate, QList<QColor>> m_dayData;
+};
 
 #include "employe.h"
 #include "produit.h"
@@ -62,6 +100,9 @@ class QStackedWidget;
 class QTableWidget;
 class QWidget;
 class QPushButton;
+class QDockWidget;
+class QResizeEvent;
+class QMoveEvent;
 
 class MainWindow : public QMainWindow
 {
@@ -75,6 +116,10 @@ public:
 
 signals:
     void logoutRequested();
+
+public slots:
+    Q_INVOKABLE void fetchDeviceLocation(QObject* mapObject);
+    Q_INVOKABLE void fetchMyPosition();
 
 private slots:
     // Employe
@@ -293,6 +338,7 @@ private:
     void generateMaintenancePdf();
 
     void setupCommandesModule();
+    void setupCommandesNavigation();
     void refreshCommandes(const QString &searchField = "", const QString &searchValue = "", const QString &sortCriteria = "");
     void refreshCmdStats();
     void buildCommandeStats();
@@ -313,6 +359,9 @@ private:
     void installCmdActions2(int row);
     void reindexCmdActions();
     void reindexCmdActions2();
+    void showCalendarView();
+    void refreshCalendarEvents();
+    void checkScheduledDeliveries();
     int currentCmdRow = -1;
     QTableWidget* m_lastCmdTable = nullptr;
     int m_lastCmdIndex = -1;
@@ -374,7 +423,7 @@ private:
     int getRowForClientWidget(QWidget *widget);
     void refreshClients();
     void checkAndNotifyExpiringContracts();
-    void sendContractExpirationEmail(const QString &clientEmail, const QString &clientName, const QString &expirationDate);
+    bool sendContractExpirationEmail(const QString &clientEmail, const QString &clientName, const QString &expirationDate, const QString &contractType = QString());
     void exportClientPdf();
     void showClientStats();
     void openEcoScoreInterface();
@@ -428,6 +477,7 @@ private:
 
     // Notification system
     QTimer *m_stockNotifTimer = nullptr;
+    QTimer *m_clientContractNotifTimer = nullptr;
     QSystemTrayIcon *m_trayIcon = nullptr;
 
     // Produit photo paths
@@ -456,6 +506,7 @@ private:
 
     // Labib AI Assistant
     LabibAssistant *m_labibAssistant = nullptr;
+    QDockWidget *m_labibDock = nullptr;
     void openLabibAssistant();
 
     QQuickWidget *m_mapAddOrder = nullptr;
@@ -475,8 +526,19 @@ private:
     void addAccessibilityButtonsToMaintenance();
     void ensureScrollbarsVisible();
 
+    // Settings / Theme customization module
+    QWidget *m_settingsPage = nullptr;
+    QPushButton *m_btnParametres = nullptr;
+    void setupSettingsModule();
+    void openSettingsPage();
+    void rebuildSettingsCustomColorsList();
+    void applyThemeFromManager();
+    void recolorHardcodedStylesForTheme();
+
 protected:
     void closeEvent(QCloseEvent *event) override;
+    void resizeEvent(QResizeEvent *event) override;
+    void moveEvent(QMoveEvent *event) override;
 
 private slots:
     void on_btnToggleSidebar_clicked();

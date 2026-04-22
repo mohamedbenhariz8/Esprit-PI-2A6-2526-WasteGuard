@@ -1,0 +1,78 @@
+
+void MainWindow::setupCommandesNavigation()
+{
+    auto safeConnectCmd = [this](const QString& btnName, const QString& targetPageName){
+        QPushButton* btn = findChild<QPushButton*>(btnName);
+        QWidget* target = findChild<QWidget*>(targetPageName);
+        if (btn && target && mainStacked()) {
+            connect(btn, &QPushButton::clicked, this, [this, target](){
+                mainStacked()->setCurrentWidget(target);
+            });
+        }
+    };
+
+    safeConnectCmd("btnTempToModifier", "pageCmdModifier");
+    safeConnectCmd("btnCancel_Mod", "pageCmdDashboard");
+    safeConnectCmd("btnCancel_Mod_3", "pageCmdDashboard");
+
+    if (QPushButton* btnAdd = findChild<QPushButton*>("btnAddDashboard")) {
+        connect(btnAdd, &QPushButton::clicked, this, [this](){
+            if (auto *sw = mainStacked()) {
+                if (auto *page = sw->findChild<QWidget*>("pageCmdAjout", Qt::FindDirectChildrenOnly)) {
+                    sw->setCurrentWidget(page);
+                    if (ui->sb_qty_add_4) ui->sb_qty_add_4->setValue(0);
+                    if (ui->cb_model_add_4) ui->cb_model_add_4->setCurrentIndex(0);
+                    if (ui->cb_status_add_4) ui->cb_status_add_4->setCurrentIndex(0);
+                    if (ui->dsb_price_add_4) ui->dsb_price_add_4->setValue(0.0);
+                    if (ui->textEdit) ui->textEdit->clear();
+                    populateCommandeBacList();
+
+                    QDate now = QDate::currentDate();
+                    if (ui->comboBox_19) ui->comboBox_19->setCurrentText(QString("%1").arg(now.day(), 2, 10, QChar('0')));
+                    if (ui->comboBox_20) ui->comboBox_20->setCurrentText(QString("%1").arg(now.month(), 2, 10, QChar('0')));
+                    if (ui->comboBox_21) ui->comboBox_21->setCurrentText(QString::number(now.year()));
+
+                    QDate dLiv = now.addDays(7);
+                    if (ui->comboBox_22) ui->comboBox_22->setCurrentText(QString("%1").arg(dLiv.day(), 2, 10, QChar('0')));
+                    if (ui->comboBox_23) ui->comboBox_23->setCurrentText(QString("%1").arg(dLiv.month(), 2, 10, QChar('0')));
+                    if (ui->comboBox_24) ui->comboBox_24->setCurrentText(QString::number(dLiv.year()));
+
+                    if (ui->cb_model_add_4) ui->cb_model_add_4->show();
+                    if (ui->comboBox_22) ui->comboBox_22->show();
+                    if (ui->comboBox_23) ui->comboBox_23->show();
+                    if (ui->comboBox_24) ui->comboBox_24->show();
+                    for (auto* lbl : page->findChildren<QLabel*>()) {
+                        QString t = lbl->text().toLower();
+                        if (t.contains("priorit") || (t.contains("date") && t.contains("livraison"))) {
+                            lbl->show();
+                        }
+                    }
+                }
+            }
+        });
+    }
+
+    auto connectCmdModifierCancelToCommandesUnique = [this](const QString &btnName) {
+        QWidget *cmdModPage = findChild<QWidget*>("pageCmdModifier");
+        if (!cmdModPage) return;
+        QPushButton *btn = cmdModPage->findChild<QPushButton*>(btnName);
+        if (!btn) return;
+        connect(btn, &QPushButton::clicked, this, [this]() {
+            if (auto *sw = mainStacked()) {
+                if (auto *cmdDashboard = sw->findChild<QWidget*>("pageCmdDashboard", Qt::FindDirectChildrenOnly)) {
+                    sw->setCurrentWidget(cmdDashboard);
+                    if (auto *content = cmdDashboard->findChild<QStackedWidget*>("contentStack")) {
+                        if (auto *pageCommandes = cmdDashboard->findChild<QWidget*>("pageCommandes")) {
+                            content->setCurrentWidget(pageCommandes);
+                        } else {
+                            content->setCurrentIndex(1);
+                        }
+                    }
+                }
+            }
+        });
+    };
+
+    connectCmdModifierCancelToCommandesUnique("btnCancel_Mod1");
+    connectCmdModifierCancelToCommandesUnique("btnCancel_Mod");
+}

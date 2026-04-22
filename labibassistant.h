@@ -1,15 +1,17 @@
 #ifndef LABIBASSISTANT_H
 #define LABIBASSISTANT_H
 
-#include <QDialog>
+#include <QWidget>
+#include <QEvent>
+#include <QLabel>
 #include <QTextEdit>
-#include <QLineEdit>
 #include <QPushButton>
 #include <QTableWidget>
 #include <QListWidget>
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QSqlQueryModel>
+#include <QTimer>
 
 /**
  * Labib AI Assistant Dialog
@@ -20,7 +22,7 @@
  * - Bulk operations on Clients, Employees, Products, Maintenance, Orders
  * - Accessible from anywhere in the application
  */
-class LabibAssistant : public QDialog
+class LabibAssistant : public QWidget
 {
     Q_OBJECT
 
@@ -28,8 +30,14 @@ public:
     explicit LabibAssistant(QWidget *parent = nullptr);
     ~LabibAssistant();
 
+signals:
+    void requestAddClient();
+    void requestViewStock();
+    void requestCheckOrders();
+
 protected:
     void showEvent(QShowEvent *event) override;
+    bool eventFilter(QObject *watched, QEvent *event) override;
 
 private slots:
     void onSendMessage();
@@ -43,7 +51,7 @@ private slots:
 private:
     // UI Components
     QTextEdit *m_chatHistory;
-    QLineEdit *m_userInput;
+    QTextEdit *m_userInput;
     QPushButton *m_sendButton;
     QPushButton *m_importButton;
     QPushButton *m_processButton;
@@ -62,8 +70,19 @@ private:
     bool modifyRecordInDatabase(const QJsonObject &record, const QString &module);
     QList<QJsonObject> parseImportedFile(const QString &filePath);
     QString getModuleDescription(const QString &module);
+    void appendChatBubble(const QString &message, bool fromUser, bool allowHtml = false);
+    void scrollChatToBottom();
+    void refreshSmartStats();
+    void startTypingIndicator();
+    void stopTypingIndicator();
     void setupUI();
     void setupConnections();
+
+    QLabel *m_statsLabel = nullptr;
+    QLabel *m_typingLabel = nullptr;
+    QTimer *m_typingTimer = nullptr;
+    int m_typingStep = 0;
+    QString m_lastAssistantHtml;
 };
 
 #endif // LABIBASSISTANT_H

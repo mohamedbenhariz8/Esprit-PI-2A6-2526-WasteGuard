@@ -34,6 +34,8 @@ public:
     QDate dateLivraison() const;
     double prixTotal() const;
     QString adresse() const;
+    QString startAdresse() const;
+    QString pathHistory() const;
 
     void setId(int id);
     void setRefer(const QString &refer);
@@ -45,6 +47,8 @@ public:
     void setDateLivraison(const QDate &date);
     void setPrixTotal(double prix);
     void setAdresse(const QString &adresse);
+    void setStartAdresse(const QString &startAdresse);
+    void setPathHistory(const QString &pathHistory);
 
 private:
     int m_id;
@@ -57,6 +61,8 @@ private:
     QString m_dateLivStr;
     double m_prixTotal;
     QString m_adresse;
+    QString m_startAdresse;
+    QString m_pathHistory;
     QString m_lastError;
 
     // We'll keep QDate versions for getters if needed, but primary focus is now the strings

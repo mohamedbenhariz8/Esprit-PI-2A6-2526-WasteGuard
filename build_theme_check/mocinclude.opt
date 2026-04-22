@@ -1,5 +1,5 @@
 -IC:/Qt/6.7.3/mingw_64/mkspecs/win32-g++
--IC:/Users/gigabyte/Downloads/INTEGRATIONNNNNNNN/INTEGRATION_FINALE1111/INTEGRATION_FINALE1
+-IC:/Users/moham/Music/INTEGRATION_FINALE1111/INTEGRATION_FINALE1
 -IC:/Qt/6.7.3/mingw_64/include
 -IC:/Qt/6.7.3/mingw_64/include/QtCharts
 -IC:/Qt/6.7.3/mingw_64/include/QtOpenGLWidgets
@@ -36,6 +36,7 @@
 -IC:/Qt/6.7.3/mingw_64/include/QtQmlBuiltins/6.7.3
 -IC:/Qt/6.7.3/mingw_64/include/QtQmlBuiltins/6.7.3/QtQmlBuiltins
 -IC:/Qt/6.7.3/mingw_64/include/QtQmlBuiltins
+-I.
 -IC:/Qt/Tools/mingw1120_64/lib/gcc/x86_64-w64-mingw32/11.2.0/include/c++
 -IC:/Qt/Tools/mingw1120_64/lib/gcc/x86_64-w64-mingw32/11.2.0/include/c++/x86_64-w64-mingw32
 -IC:/Qt/Tools/mingw1120_64/lib/gcc/x86_64-w64-mingw32/11.2.0/include/c++/backward

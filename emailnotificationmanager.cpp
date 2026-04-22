@@ -1,24 +1,42 @@
 #include "emailnotificationmanager.h"
 #include <QSettings>
 #include <QDebug>
-#include <QMessageBox>
 #include <QDir>
 #include <QFile>
 #include <QProcess>
 #include <QTextStream>
+#include <QDateTime>
+#include <QProcessEnvironment>
 
 EmailNotificationManager::EmailNotificationManager()
     : m_smtpPort(587), m_useSSL(false), m_useTLS(true)
 {
+    const QProcessEnvironment env = QProcessEnvironment::systemEnvironment();
+
     // Load configuration from settings
     QSettings settings("WasteGuard", "EmailNotifications");
-    m_config.smtpServer = settings.value("smtp_server", "smtp.gmail.com").toString();
-    m_config.smtpPort = settings.value("smtp_port", 587).toInt();
-    // Hardcoded for your presentation! (REPLACE WITH YOUR GOOGLE APP PASSWORD)
-    m_config.senderEmail = settings.value("sender_email", "[EMAIL_ADDRESS]").toString();
-    m_config.senderPassword = settings.value("sender_password", "bizz mvkx depj lnop").toString();
-    m_config.useSSL = settings.value("use_ssl", false).toBool();
-    m_config.useTLS = settings.value("use_tls", true).toBool();
+    m_config.smtpServer = env.value("WASTEGUARD_SMTP_SERVER").trimmed().isEmpty()
+                              ? settings.value("smtp_server", "smtp.gmail.com").toString()
+                              : env.value("WASTEGUARD_SMTP_SERVER").trimmed();
+    m_config.smtpPort = env.value("WASTEGUARD_SMTP_PORT").trimmed().isEmpty()
+                            ? settings.value("smtp_port", 587).toInt()
+                            : env.value("WASTEGUARD_SMTP_PORT").trimmed().toInt();
+    m_config.senderEmail = env.value("WASTEGUARD_SMTP_EMAIL").trimmed().isEmpty()
+                               ? settings.value("sender_email", "").toString()
+                               : env.value("WASTEGUARD_SMTP_EMAIL").trimmed();
+    m_config.senderPassword = env.value("WASTEGUARD_SMTP_APP_PASSWORD").trimmed().isEmpty()
+                                  ? settings.value("sender_password", "").toString()
+                                  : env.value("WASTEGUARD_SMTP_APP_PASSWORD").trimmed();
+    m_config.useSSL = env.value("WASTEGUARD_SMTP_SSL").trimmed().isEmpty()
+                          ? settings.value("use_ssl", false).toBool()
+                          : (env.value("WASTEGUARD_SMTP_SSL").trimmed().toLower() == "1"
+                             || env.value("WASTEGUARD_SMTP_SSL").trimmed().toLower() == "true"
+                             || env.value("WASTEGUARD_SMTP_SSL").trimmed().toLower() == "yes");
+    m_config.useTLS = env.value("WASTEGUARD_SMTP_TLS").trimmed().isEmpty()
+                          ? settings.value("use_tls", true).toBool()
+                          : (env.value("WASTEGUARD_SMTP_TLS").trimmed().toLower() == "1"
+                             || env.value("WASTEGUARD_SMTP_TLS").trimmed().toLower() == "true"
+                             || env.value("WASTEGUARD_SMTP_TLS").trimmed().toLower() == "yes");
     
     // Apply loaded config
     m_smtpServer = m_config.smtpServer;
@@ -83,20 +101,14 @@ bool EmailNotificationManager::sendContractExpirationNotice(const QString &clien
                                                             const QString &expirationDate)
 {
     if (m_senderEmail.isEmpty() || m_senderPassword.isEmpty()) {
-        qWarning() << "Email configuration incomplete: sender email or password missing";
+        qWarning() << "Configuration email incomplete: email expediteur ou mot de passe manquant";
         return false;
     }
     
-    QString subject = "Contract Expiration Notice - Action Required";
+    QString subject = "Alerte contrat WasteGuard - Action requise";
     QString htmlBody = generateContractExpirationHtml(clientName, contractType, expirationDate);
-    
-    // Log the notification (in production, this would actually send via SMTP)
-    qDebug() << "Email Notification - Contract Expiration";
-    qDebug() << "To:" << clientEmail;
-    qDebug() << "From:" << m_senderEmail;
-    qDebug() << "Subject:" << subject;
-    
-    return true;
+
+    return sendEmail(clientEmail, subject, htmlBody);
 }
 
 bool EmailNotificationManager::sendClientConfirmation(const QString &clientEmail,
@@ -104,20 +116,14 @@ bool EmailNotificationManager::sendClientConfirmation(const QString &clientEmail
                                                       const QString &contractType)
 {
     if (m_senderEmail.isEmpty() || m_senderPassword.isEmpty()) {
-        qWarning() << "Email configuration incomplete: sender email or password missing";
+        qWarning() << "Configuration email incomplete: email expediteur ou mot de passe manquant";
         return false;
     }
     
-    QString subject = "Welcome to WasteGuard - Smart Waste Collection";
+    QString subject = "Bienvenue chez WasteGuard";
     QString htmlBody = generateClientConfirmationHtml(clientName, contractType);
-    
-    // Log the notification
-    qDebug() << "Email Notification - Client Confirmation";
-    qDebug() << "To:" << clientEmail;
-    qDebug() << "From:" << m_senderEmail;
-    qDebug() << "Subject:" << subject;
-    
-    return true;
+
+    return sendEmail(clientEmail, subject, htmlBody);
 }
 
 bool EmailNotificationManager::sendBillingNotification(const QString &clientEmail,
@@ -126,48 +132,79 @@ bool EmailNotificationManager::sendBillingNotification(const QString &clientEmai
                                                        const QString &dueDate)
 {
     if (m_senderEmail.isEmpty() || m_senderPassword.isEmpty()) {
-        qWarning() << "Email configuration incomplete: sender email or password missing";
+        qWarning() << "Configuration email incomplete: email expediteur ou mot de passe manquant";
         return false;
     }
     
-    QString subject = "Billing Notification - Invoice Payment Due";
+    QString subject = "Rappel de paiement - Facture a echeance";
     QString htmlBody = generateBillingNotificationHtml(clientName, amount, dueDate);
-    
-    // Log the notification
-    qDebug() << "Email Notification - Billing";
-    qDebug() << "To:" << clientEmail;
-    qDebug() << "From:" << m_senderEmail;
-    qDebug() << "Subject:" << subject;
-    
-    return true;
+
+    return sendEmail(clientEmail, subject, htmlBody);
 }
 
 bool EmailNotificationManager::sendEmail(const QString &to, const QString &subject, const QString &htmlBody)
 {
-    if (m_senderEmail.isEmpty() || m_senderPassword.isEmpty() || m_senderPassword == "ton_mot_de_passe_d_application_ici") {
-        QMessageBox::critical(nullptr, "Erreur d'Email", "Vous devez configurer votre Email et votre Mot de Passe d'Application Google dans 'emailnotificationmanager.cpp' ligne 13 !");
-        qWarning() << "Email configuration incomplete: sender email or password missing. You must generate an App Password in your Google Account.";
+    // Refresh runtime SMTP config each send to support env changes without recompiling.
+    const QProcessEnvironment env = QProcessEnvironment::systemEnvironment();
+    QSettings settings("WasteGuard", "EmailNotifications");
+
+    const QString envServer = env.value("WASTEGUARD_SMTP_SERVER").trimmed();
+    const QString envPort = env.value("WASTEGUARD_SMTP_PORT").trimmed();
+    const QString envEmail = env.value("WASTEGUARD_SMTP_EMAIL").trimmed();
+    const QString envPassword = env.value("WASTEGUARD_SMTP_APP_PASSWORD").trimmed();
+
+    if (!envServer.isEmpty()) m_smtpServer = envServer;
+    else if (m_smtpServer.trimmed().isEmpty()) m_smtpServer = settings.value("smtp_server", "smtp.gmail.com").toString().trimmed();
+
+    if (!envPort.isEmpty()) m_smtpPort = envPort.toInt();
+    else if (m_smtpPort <= 0) m_smtpPort = settings.value("smtp_port", 587).toInt();
+
+    if (!envEmail.isEmpty()) m_senderEmail = envEmail;
+    else if (m_senderEmail.trimmed().isEmpty()) m_senderEmail = settings.value("sender_email", "").toString().trimmed();
+
+    if (!envPassword.isEmpty()) m_senderPassword = envPassword;
+    else if (m_senderPassword.trimmed().isEmpty()) m_senderPassword = settings.value("sender_password", "").toString().trimmed();
+
+    QStringList missing;
+    if (m_senderEmail.trimmed().isEmpty()) missing << "WASTEGUARD_SMTP_EMAIL";
+    if (m_senderPassword.trimmed().isEmpty()) missing << "WASTEGUARD_SMTP_APP_PASSWORD";
+    if (m_smtpServer.trimmed().isEmpty()) missing << "WASTEGUARD_SMTP_SERVER";
+    if (m_smtpPort <= 0) missing << "WASTEGUARD_SMTP_PORT";
+
+    if (!missing.isEmpty()) {
+        qWarning() << "Email configuration incomplete. Missing:" << missing.join(", ");
         return false;
     }
     
-    // We dynamically create a PowerShell script to bypass missing OpenSSL DLLs on student machines.
-    // This perfectly sends the email using native Windows .NET components instantly.
-    QString escapedSubject = QString(subject).replace("'", "''");
-    QString escapedBody = QString(htmlBody).replace("'", "''");
+    // Script PowerShell dynamique pour envoyer l'email via .NET natif sur Windows.
+    const QString escapedFrom = QString(m_senderEmail).replace("'", "''");
+    const QString escapedTo = QString(to).replace("'", "''");
+    const QString escapedSubject = QString(subject).replace("'", "''");
+    const QString escapedBody = QString(htmlBody).replace("'", "''");
+    const QString escapedServer = QString(m_smtpServer).replace("'", "''");
+    const QString escapedPassword = QString(m_senderPassword).replace("'", "''");
+    const QString enableSslLiteral = ((m_useSSL || m_useTLS) ? "$true" : "$false");
     
     QString psCode = QString(
         "$EmailFrom = '%1'\n"
         "$EmailTo = '%2'\n"
         "$Subject = '%3'\n"
         "$Body = @'\n%4\n'@\n"
-        "$SMTPServer = 'smtp.gmail.com'\n"
-        "$SMTPClient = New-Object Net.Mail.SmtpClient($SmtpServer, 587)\n"
-        "$SMTPClient.EnableSsl = $true\n"
-        "$SMTPClient.Credentials = New-Object System.Net.NetworkCredential('%1', '%5')\n"
+        "$SMTPServer = '%5'\n"
+        "$SMTPClient = New-Object Net.Mail.SmtpClient($SmtpServer, %6)\n"
+        "$SMTPClient.EnableSsl = %7\n"
+        "$SMTPClient.Credentials = New-Object System.Net.NetworkCredential('%1', '%8')\n"
         "$Message = New-Object Net.Mail.MailMessage($EmailFrom, $EmailTo, $Subject, $Body)\n"
         "$Message.IsBodyHtml = $true\n"
         "$SMTPClient.Send($Message)\n"
-    ).arg(m_senderEmail, to, escapedSubject, htmlBody, m_senderPassword);
+    ).arg(escapedFrom,
+          escapedTo,
+          escapedSubject,
+          escapedBody,
+          escapedServer,
+          QString::number(m_smtpPort),
+          enableSslLiteral,
+          escapedPassword);
 
     QString tempPath = QDir::tempPath() + "/send_wasteguard_mail_" + QString::number(QDateTime::currentMSecsSinceEpoch()) + ".ps1";
     QFile file(tempPath);
@@ -175,13 +212,32 @@ bool EmailNotificationManager::sendEmail(const QString &to, const QString &subje
         file.write(psCode.toUtf8());
         file.close();
 
-        // Run powerShell script completely ASYNCHRONOUSLY to prevent UI lag!
-        QProcess *proc = new QProcess();
-        QObject::connect(proc, QOverload<int, QProcess::ExitStatus>::of(&QProcess::finished), [proc, tempPath]() {
-            QFile::remove(tempPath); // Clean up temp file safely after finish
-            proc->deleteLater();
-        });
-        proc->start("powershell.exe", QStringList() << "-ExecutionPolicy" << "Bypass" << "-WindowStyle" << "Hidden" << "-File" << tempPath);
+        QProcess proc;
+        proc.start("powershell.exe", QStringList() << "-ExecutionPolicy" << "Bypass" << "-WindowStyle" << "Hidden" << "-File" << tempPath);
+
+        if (!proc.waitForStarted(5000)) {
+            QFile::remove(tempPath);
+            qWarning() << "Echec envoi email: PowerShell n'a pas demarre.";
+            return false;
+        }
+
+        if (!proc.waitForFinished(30000)) {
+            proc.kill();
+            QFile::remove(tempPath);
+            qWarning() << "Echec envoi email: delai depasse.";
+            return false;
+        }
+
+        const int exitCode = proc.exitCode();
+        const QByteArray stderrBytes = proc.readAllStandardError();
+        QFile::remove(tempPath);
+        if (exitCode != 0) {
+            qWarning() << "Echec envoi email:" << QString::fromUtf8(stderrBytes).trimmed();
+            return false;
+        }
+    } else {
+        qWarning() << "Echec envoi email: impossible de creer le script temporaire.";
+        return false;
     }
 
     qDebug() << "═══════════════════════════════════════════════════════════";
@@ -197,15 +253,15 @@ bool EmailNotificationManager::sendEmail(const QString &to, const QString &subje
 bool EmailNotificationManager::testConnection()
 {
     if (m_smtpServer.isEmpty() || m_senderEmail.isEmpty() || m_senderPassword.isEmpty()) {
-        qWarning() << "Email configuration incomplete";
+        qWarning() << "Configuration email incomplete";
         return false;
     }
     
-    qDebug() << "Testing email connection...";
-    qDebug() << "SMTP Server:" << m_smtpServer;
-    qDebug() << "SMTP Port:" << m_smtpPort;
-    qDebug() << "Use SSL:" << m_useSSL;
-    qDebug() << "Use TLS:" << m_useTLS;
+    qDebug() << "Test connexion email...";
+    qDebug() << "Serveur SMTP:" << m_smtpServer;
+    qDebug() << "Port SMTP:" << m_smtpPort;
+    qDebug() << "SSL actif:" << m_useSSL;
+    qDebug() << "TLS actif:" << m_useTLS;
     
     return true;
 }
@@ -218,16 +274,16 @@ QString EmailNotificationManager::generateContractExpirationHtml(const QString &
         "<html><body style='font-family: Arial, sans-serif;'>"
         "<div style='max-width: 600px; margin: 0 auto;'>"
         "<div style='background: linear-gradient(135deg, #0f2b4c 0%, #1d4f91 100%); color: white; padding: 30px; text-align: center; border-radius: 8px 8px 0 0;'>"
-        "<h1 style='margin: 0;'>Contract Expiration Notice</h1>"
+        "<h1 style='margin: 0;'>Notification d'expiration de contrat</h1>"
         "</div>"
         "<div style='background: #f8fafc; padding: 30px; border-radius: 0 0 8px 8px;'>"
-        "<p>Dear <strong>%1</strong>,</p>"
-        "<p>We are writing to inform you that your <strong>%2</strong> contract is set to expire on <strong>%3</strong>.</p>"
+        "<p>Bonjour <strong>%1</strong>,</p>"
+        "<p>Votre contrat <strong>%2</strong> arrive a expiration le <strong>%3</strong>.</p>"
         "<div style='background: #fef3c7; border-left: 4px solid #f59e0b; padding: 15px; margin: 20px 0; border-radius: 4px;'>"
-        "<p style='margin: 0;'><strong>Action Required:</strong> Please contact us to renew your contract before the expiration date to avoid service interruption.</p>"
+        "<p style='margin: 0;'><strong>Action requise :</strong> Contactez-nous pour renouveler votre contrat avant la date d'expiration afin d'eviter une interruption de service.</p>"
         "</div>"
-        "<p>Thank you for using WasteGuard's Smart Waste Collection System.</p>"
-        "<p>Best regards,<br><strong>WasteGuard Team</strong></p>"
+        "<p>Merci d'utiliser WasteGuard pour votre gestion intelligente des dechets.</p>"
+        "<p>Cordialement,<br><strong>Equipe WasteGuard</strong></p>"
         "</div>"
         "</div>"
         "</body></html>"
@@ -241,21 +297,21 @@ QString EmailNotificationManager::generateClientConfirmationHtml(const QString &
         "<html><body style='font-family: Arial, sans-serif;'>"
         "<div style='max-width: 600px; margin: 0 auto;'>"
         "<div style='background: linear-gradient(135deg, #0f2b4c 0%, #1d4f91 100%); color: white; padding: 30px; text-align: center; border-radius: 8px 8px 0 0;'>"
-        "<h1 style='margin: 0;'>Welcome to WasteGuard</h1>"
+        "<h1 style='margin: 0;'>Bienvenue chez WasteGuard</h1>"
         "</div>"
         "<div style='background: #f8fafc; padding: 30px; border-radius: 0 0 8px 8px;'>"
-        "<p>Dear <strong>%1</strong>,</p>"
-        "<p>Thank you for choosing WasteGuard for your smart waste management needs!</p>"
-        "<p>Your <strong>%2</strong> contract has been successfully activated. You can now access:</p>"
+        "<p>Bonjour <strong>%1</strong>,</p>"
+        "<p>Merci d'avoir choisi WasteGuard.</p>"
+        "<p>Votre contrat <strong>%2</strong> est active avec succes. Vous pouvez maintenant acceder a :</p>"
         "<ul>"
-        "<li>Real-time bin monitoring</li>"
-        "<li>Predictive fill-level analysis</li>"
-        "<li>Optimized collection routes</li>"
-        "<li>Environmental impact tracking</li>"
-        "<li>Automated notifications</li>"
+        "<li>Suivi en temps reel des bacs</li>"
+        "<li>Analyse predictive du niveau de remplissage</li>"
+        "<li>Optimisation des tournees de collecte</li>"
+        "<li>Suivi de l'impact environnemental</li>"
+        "<li>Notifications automatiques</li>"
         "</ul>"
-        "<p>If you have any questions, please don't hesitate to contact our support team.</p>"
-        "<p>Best regards,<br><strong>WasteGuard Team</strong></p>"
+        "<p>Pour toute question, notre equipe support est a votre disposition.</p>"
+        "<p>Cordialement,<br><strong>Equipe WasteGuard</strong></p>"
         "</div>"
         "</div>"
         "</body></html>"
@@ -270,17 +326,17 @@ QString EmailNotificationManager::generateBillingNotificationHtml(const QString 
         "<html><body style='font-family: Arial, sans-serif;'>"
         "<div style='max-width: 600px; margin: 0 auto;'>"
         "<div style='background: linear-gradient(135deg, #0f2b4c 0%, #1d4f91 100%); color: white; padding: 30px; text-align: center; border-radius: 8px 8px 0 0;'>"
-        "<h1 style='margin: 0;'>Payment Due</h1>"
+        "<h1 style='margin: 0;'>Paiement a echeance</h1>"
         "</div>"
         "<div style='background: #f8fafc; padding: 30px; border-radius: 0 0 8px 8px;'>"
-        "<p>Dear <strong>%1</strong>,</p>"
-        "<p>This is a reminder that your invoice payment is due.</p>"
+        "<p>Bonjour <strong>%1</strong>,</p>"
+        "<p>Nous vous rappelons que le paiement de votre facture arrive a echeance.</p>"
         "<div style='background: white; border: 2px solid #e2e8f0; padding: 20px; margin: 20px 0; border-radius: 4px;'>"
-        "<p style='margin: 5px 0;'><strong>Amount Due:</strong> %2</p>"
-        "<p style='margin: 5px 0;'><strong>Due Date:</strong> %3</p>"
+        "<p style='margin: 5px 0;'><strong>Montant du:</strong> %2</p>"
+        "<p style='margin: 5px 0;'><strong>Date limite:</strong> %3</p>"
         "</div>"
-        "<p>Please arrange payment by the due date to avoid any service interruption.</p>"
-        "<p>Best regards,<br><strong>WasteGuard Team</strong></p>"
+        "<p>Merci d'effectuer le reglement avant la date limite afin d'eviter toute interruption de service.</p>"
+        "<p>Cordialement,<br><strong>Equipe WasteGuard</strong></p>"
         "</div>"
         "</div>"
         "</body></html>"
