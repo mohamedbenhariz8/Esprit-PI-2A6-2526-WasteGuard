@@ -99,7 +99,8 @@ protected:
         const qreal circleR       = 17.0;
         const int   edgePad       = 18;
         const int   labelMaxW     = qBound(130, width() / 5, 220);
-        const int   pillH         = 34;
+        const int   pillH1Line    = 34;
+        const int   pillH2Line    = 50;
         const int   gapCirclePill = 8;
         const int   gapLeaderStart = 4;
 
@@ -135,11 +136,11 @@ protected:
         sortCol(rightCol);
 
         const int maxRows = qMax(leftCol.size(), rightCol.size());
-        int rowHeight = 62;
+        int rowHeight = 78;
         if (maxRows > 0) {
             const int availH = qMax(160, height() - 140);
             if (maxRows * rowHeight > availH) {
-                rowHeight = qMax(40, availH / maxRows);
+                rowHeight = qMax(54, availH / maxRows);
             }
         }
 
@@ -219,24 +220,56 @@ protected:
                            QString::number(k + 1 + (leftSide ? 0 : leftCol.size())));
 
                 const QString rawText = features.at(i).trimmed();
-                const QString elided = fm.elidedText(rawText, Qt::ElideRight, labelMaxW - 22);
-                const int tw = fm.horizontalAdvance(elided);
-                const qreal pillW = tw + 26;
+                const int textBudget = labelMaxW - 22;
+                QString line1, line2;
+                bool useTwoLines = false;
+                // Always break a multi-word feature name onto two lines so the
+                // first word ("Capteur", "Module", etc.) is fully visible and
+                // the rest fits on the second line — even when the available
+                // width would otherwise truncate the suffix to "Capteur na".
+                const int firstSpace = rawText.indexOf(' ');
+                if (firstSpace > 0 && firstSpace < rawText.size() - 1) {
+                    line1 = rawText.left(firstSpace).trimmed();
+                    line2 = rawText.mid(firstSpace + 1).trimmed();
+                    line2 = fm.elidedText(line2, Qt::ElideRight, textBudget);
+                    useTwoLines = !line2.isEmpty();
+                } else if (fm.horizontalAdvance(rawText) > textBudget) {
+                    // Single very long word with no space: split in half so the
+                    // full label still appears across two lines.
+                    const int splitPos = rawText.size() / 2;
+                    line1 = rawText.left(splitPos).trimmed();
+                    line2 = rawText.mid(splitPos).trimmed();
+                    line2 = fm.elidedText(line2, Qt::ElideRight, textBudget);
+                    useTwoLines = !line2.isEmpty();
+                }
+                if (!useTwoLines) {
+                    line1 = fm.elidedText(rawText, Qt::ElideRight, textBudget);
+                    line2.clear();
+                }
+
+                const int pillH = useTwoLines ? pillH2Line : pillH1Line;
+                const int line1W = fm.horizontalAdvance(line1);
+                const int line2W = useTwoLines ? fm.horizontalAdvance(line2) : 0;
+                // Pill must fit text PLUS the inset textRect padding (12 + 20 = 32)
+                // PLUS the colored accent dot on one side (~14). Use 48px so both
+                // lines stay fully visible regardless of which side the pill is on.
+                const qreal pillW = qMax(line1W, line2W) + 48;
                 const qreal pillX = leftSide
                     ? circleC.x() - circleR - gapCirclePill - pillW
                     : circleC.x() + circleR + gapCirclePill;
                 const QRectF pillRect(pillX, circleC.y() - pillH / 2.0, pillW, pillH);
+                const qreal pillRadius = pillH1Line / 2.0;
 
                 p.setBrush(QColor(0, 0, 0, 140));
                 p.setPen(Qt::NoPen);
-                p.drawRoundedRect(pillRect.translated(0, 2), pillH / 2.0, pillH / 2.0);
+                p.drawRoundedRect(pillRect.translated(0, 2), pillRadius, pillRadius);
 
                 QLinearGradient pg(pillRect.topLeft(), pillRect.bottomLeft());
                 pg.setColorAt(0.0, QColor(253, 252, 238));
                 pg.setColorAt(1.0, QColor(238, 233, 208));
                 p.setBrush(pg);
                 p.setPen(QPen(accent, 1.8));
-                p.drawRoundedRect(pillRect, pillH / 2.0, pillH / 2.0);
+                p.drawRoundedRect(pillRect, pillRadius, pillRadius);
 
                 p.setPen(Qt::NoPen);
                 p.setBrush(accent);
@@ -251,7 +284,15 @@ protected:
                 const QRectF textRect = leftSide
                     ? pillRect.adjusted(12, 0, -20, 0)
                     : pillRect.adjusted(20, 0, -12, 0);
-                p.drawText(textRect, Qt::AlignVCenter | Qt::AlignLeft, elided);
+                if (useTwoLines) {
+                    p.drawText(textRect,
+                               Qt::AlignHCenter | Qt::AlignVCenter | Qt::TextDontClip,
+                               line1 + "\n" + line2);
+                } else {
+                    p.drawText(textRect,
+                               Qt::AlignVCenter | Qt::AlignLeft | Qt::TextDontClip,
+                               line1);
+                }
             }
         };
 

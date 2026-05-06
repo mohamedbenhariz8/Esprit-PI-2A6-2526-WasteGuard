@@ -2207,7 +2207,7 @@ QLabel#userLabel_Aj {
                 <item>
                  <layout class="QFormLayout" name="formLayout_Modif">
                   <property name="verticalSpacing">
-                   <number>65</number>
+                   <number>20</number>
                   </property>
                   <item row="0" column="0">
                    <widget class="QLabel" name="lblMatricule">
@@ -2359,6 +2359,78 @@ QLabel#userLabel_Aj {
                      <string>xyz@emeple.com</string>
                     </property>
                    </widget>
+                  </item>
+                  <item row="7" column="0">
+                   <widget class="QLabel" name="lblRFID_Modif">
+                    <property name="text">
+                     <string>RFID (facultatif)</string>
+                    </property>
+                   </widget>
+                  </item>
+                  <item row="7" column="1">
+                   <layout class="QVBoxLayout" name="rfidWrap_Modif">
+                    <property name="spacing">
+                     <number>6</number>
+                    </property>
+                    <item>
+                     <layout class="QHBoxLayout" name="rfidRow_Modif">
+                      <property name="spacing">
+                       <number>10</number>
+                      </property>
+                      <item>
+                       <widget class="QLineEdit" name="txtRFID_Modif">
+                        <property name="minimumSize">
+                         <size>
+                          <width>0</width>
+                          <height>38</height>
+                         </size>
+                        </property>
+                        <property name="placeholderText">
+                         <string>Badge RFID (optionnel)</string>
+                        </property>
+                        <property name="clearButtonEnabled">
+                         <bool>true</bool>
+                        </property>
+                       </widget>
+                      </item>
+                      <item>
+                       <widget class="QPushButton" name="btnScanRFID_Modif">
+                        <property name="minimumSize">
+                         <size>
+                          <width>140</width>
+                          <height>38</height>
+                         </size>
+                        </property>
+                        <property name="maximumSize">
+                         <size>
+                          <width>160</width>
+                          <height>38</height>
+                         </size>
+                        </property>
+                        <property name="cursor">
+                         <cursorShape>PointingHandCursor</cursorShape>
+                        </property>
+                        <property name="styleSheet">
+                         <string>QPushButton { background-color: #f39c12; color: white; border: none; border-radius: 6px; font-weight: 600; padding: 6px 12px; } QPushButton:hover { background-color: #e67e22; } QPushButton:pressed { background-color: #d35400; }</string>
+                        </property>
+                        <property name="text">
+                         <string>Scanner badge</string>
+                        </property>
+                       </widget>
+                      </item>
+                     </layout>
+                    </item>
+                    <item>
+                     <widget class="QLabel" name="lblRFIDStatus_Modif">
+                      <property name="text">
+                       <string>Aucun badge RFID attribue a cet employe</string>
+                      </property>
+                      <property name="styleSheet">
+                       <string>QLabel { color: #95a5a6; font-size: 11px; font-style: italic; padding-left: 2px; }</string>
+                      </property>
+                     </widget>
+                    </item>
+                   </layout>
                   </item>
                  </layout>
                 </item>
@@ -2555,7 +2627,7 @@ QLabel#userLabel_Aj {
                 <item>
                  <layout class="QFormLayout" name="formLayout_Ajout">
                   <property name="verticalSpacing">
-                   <number>65</number>
+                   <number>20</number>
                   </property>
                   <item row="0" column="0">
                    <widget class="QLabel" name="label_7">
@@ -2687,6 +2759,78 @@ QLabel#userLabel_Aj {
                     </property>
                    </widget>
                   </item>
+                  <item row="6" column="0">
+                   <widget class="QLabel" name="lblRFID_Ajout">
+                    <property name="text">
+                     <string>RFID (facultatif)</string>
+                    </property>
+                   </widget>
+                  </item>
+                  <item row="6" column="1">
+                   <layout class="QVBoxLayout" name="rfidWrap_Ajout">
+                    <property name="spacing">
+                     <number>6</number>
+                    </property>
+                    <item>
+                     <layout class="QHBoxLayout" name="rfidRow_Ajout">
+                      <property name="spacing">
+                       <number>10</number>
+                      </property>
+                      <item>
+                       <widget class="QLineEdit" name="txtRFID_Ajout">
+                        <property name="minimumSize">
+                         <size>
+                          <width>0</width>
+                          <height>38</height>
+                         </size>
+                        </property>
+                        <property name="placeholderText">
+                         <string>Badge RFID (optionnel)</string>
+                        </property>
+                        <property name="clearButtonEnabled">
+                         <bool>true</bool>
+                        </property>
+                       </widget>
+                      </item>
+                      <item>
+                       <widget class="QPushButton" name="btnScanRFID_Ajout">
+                        <property name="minimumSize">
+                         <size>
+                          <width>140</width>
+                          <height>38</height>
+                         </size>
+                        </property>
+                        <property name="maximumSize">
+                         <size>
+                          <width>160</width>
+                          <height>38</height>
+                         </size>
+                        </property>
+                        <property name="cursor">
+                         <cursorShape>PointingHandCursor</cursorShape>
+                        </property>
+                        <property name="styleSheet">
+                         <string>QPushButton { background-color: #f39c12; color: white; border: none; border-radius: 6px; font-weight: 600; padding: 6px 12px; } QPushButton:hover { background-color: #e67e22; } QPushButton:pressed { background-color: #d35400; }</string>
+                        </property>
+                        <property name="text">
+                         <string>Scanner badge</string>
+                        </property>
+                       </widget>
+                      </item>
+                     </layout>
+                    </item>
+                    <item>
+                     <widget class="QLabel" name="lblRFIDStatus_Ajout">
+                      <property name="text">
+                       <string>Aucun badge scanne. Cliquez sur Scanner badge ou saisissez un identifiant.</string>
+                      </property>
+                      <property name="styleSheet">
+                       <string>QLabel { color: #95a5a6; font-size: 11px; font-style: italic; padding-left: 2px; }</string>
+                      </property>
+                     </widget>
+                    </item>
+                   </layout>
+                  </item>
                  </layout>
                 </item>
                 <item>
@@ -2771,7 +2915,7 @@ QLabel#userLabel_Aj {
               <cursorShape>PointingHandCursor</cursorShape>
              </property>
              <property name="text">
-              <string>Lancer l&apos;Analyse IA &amp;&amp; Trouver l&apos;Equipe</string>
+              <string>chercher l agent convenable a votre mission</string>
              </property>
             </widget>
            </item>
@@ -3931,6 +4075,19 @@ text-align: center;</string>
                              <widget class="QPushButton" name="prod_btnPdf">
                               <property name="text">
                                <string>Rapport PDF</string>
+                              </property>
+                             </widget>
+                            </item>
+                            <item>
+                             <widget class="QPushButton" name="prod_btnBacStatus">
+                              <property name="cursor">
+                               <cursorShape>PointingHandCursor</cursorShape>
+                              </property>
+                              <property name="toolTip">
+                               <string>Consulter l'etat d'un bac et de ses compartiments</string>
+                              </property>
+                              <property name="text">
+                               <string>Etat des Bacs</string>
                               </property>
                              </widget>
                             </item>

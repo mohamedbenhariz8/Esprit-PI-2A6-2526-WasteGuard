@@ -42,6 +42,8 @@
 #include <QDebug>
 #include <QSettings>
 #include <QProcessEnvironment>
+#include <QtSerialPort/QSerialPort>
+#include <QtSerialPort/QSerialPortInfo>
 #include <cstdio>
 
 #include "connection.h"
@@ -497,7 +499,7 @@ public:
         setMinimumSize(450, 650);
         setStyleSheet("QDialog { background-color: #1F110B; }");
 
-        setFixedSize(460, 680);
+        setFixedSize(460, 720);
         setWindowFlags(Qt::FramelessWindowHint);
         setAttribute(Qt::WA_TranslucentBackground);
 
@@ -584,8 +586,8 @@ public:
         containerLayout->addWidget(formArea);
 
         mascot = new MascotWidget(this);
-        mascot->setMinimumHeight(200);
-        mascot->setMaximumHeight(200);
+        mascot->setMinimumHeight(170);
+        mascot->setMaximumHeight(170);
         formAreaLayout->addWidget(mascot);
 
         QLabel *lblMascotName = new QLabel("LABIB", this);
@@ -649,18 +651,35 @@ public:
         );
         loginLayout->addWidget(btnLogin);
 
-        QPushButton *btnFaceId = new QPushButton("Connexion par reconnaissance faciale", this);
+        QHBoxLayout *altAuthRow = new QHBoxLayout();
+        altAuthRow->setSpacing(10);
+        altAuthRow->setContentsMargins(0, 0, 0, 0);
+
+        QPushButton *btnFaceId = new QPushButton("Visage", this);
         btnFaceId->setStyleSheet(
             "QPushButton { background: transparent; color: #1e40af; font-weight: 700; "
             "font-size: 13px; border-radius: 10px; padding: 10px; "
             "border: 1.5px solid #bfdbfe; } "
             "QPushButton:hover { background-color: #eff6ff; border-color: #1e40af; }"
         );
-        btnFaceId->setMinimumHeight(44);
+        btnFaceId->setMinimumHeight(42);
         btnFaceId->setCursor(Qt::PointingHandCursor);
-        loginLayout->addWidget(btnFaceId);
+        altAuthRow->addWidget(btnFaceId, 1);
 
-        QLabel *lblAuthModes = new QLabel("Email + CIN  ou  Visage + Email", this);
+        QPushButton *btnRfidLogin = new QPushButton("Badge RFID", this);
+        btnRfidLogin->setStyleSheet(
+            "QPushButton { background: transparent; color: #b45309; font-weight: 700; "
+            "font-size: 13px; border-radius: 10px; padding: 10px; "
+            "border: 1.5px solid #fde68a; } "
+            "QPushButton:hover { background-color: #fffbeb; border-color: #b45309; }"
+        );
+        btnRfidLogin->setMinimumHeight(42);
+        btnRfidLogin->setCursor(Qt::PointingHandCursor);
+        altAuthRow->addWidget(btnRfidLogin, 1);
+
+        loginLayout->addLayout(altAuthRow);
+
+        QLabel *lblAuthModes = new QLabel("Email + CIN  ·  Visage  ·  Badge RFID", this);
         lblAuthModes->setAlignment(Qt::AlignCenter);
         lblAuthModes->setStyleSheet("color:#94a3b8;font-size:11px;background:transparent;");
         loginLayout->addWidget(lblAuthModes);
@@ -732,6 +751,8 @@ public:
             startFaceId();
             mascot->setState(MascotWidget::Magnifier);
         });
+
+        connect(btnRfidLogin, &QPushButton::clicked, this, &LoginDialog::attemptRfidLogin);
 
         connect(btnBack, &QPushButton::clicked, this, [this]() {
             stopFaceId();
@@ -869,6 +890,206 @@ private:
             "Email ou CIN invalide.\n\nUtilisez un email/CIN employe valide, ou admin@wasteguard.com / 0000.");
         txtPass->clear();
         txtPass->setFocus();
+    }
+
+    void attemptRfidLogin()
+    {
+        Connection *connection = Connection::instance();
+        if (!connection->isOpen() && !connection->createConnect()) {
+            QMessageBox::critical(
+                this,
+                "Connexion base",
+                "Impossible de joindre la base de donnees.\n\nDetails: " + connection->lastError());
+            return;
+        }
+
+        // Locate an Arduino-like serial port and open it.
+        QString portName;
+        for (const QSerialPortInfo &info : QSerialPortInfo::availablePorts()) {
+            const QString desc = info.description().toLower();
+            const QString mfr = info.manufacturer().toLower();
+            if (desc.contains("bluetooth") || mfr.contains("bluetooth")) continue;
+            if (info.hasVendorIdentifier() && info.vendorIdentifier() == 9025
+                && info.hasProductIdentifier() && info.productIdentifier() == 67) {
+                portName = info.portName();
+                break;
+            }
+            if (portName.isEmpty()
+                && (desc.contains("arduino") || desc.contains("ch340")
+                    || desc.contains("ch341") || desc.contains("usb-serial")
+                    || desc.contains("ftdi") || desc.contains("cp210")
+                    || mfr.contains("arduino") || mfr.contains("ftdi")
+                    || mfr.contains("silicon labs") || mfr.contains("wch"))) {
+                portName = info.portName();
+            }
+        }
+
+        QSerialPort *rfidSerial = new QSerialPort(this);
+        if (!portName.isEmpty()) {
+            rfidSerial->setPortName(portName);
+            rfidSerial->setBaudRate(QSerialPort::Baud9600);
+            rfidSerial->setDataBits(QSerialPort::Data8);
+            rfidSerial->setParity(QSerialPort::NoParity);
+            rfidSerial->setStopBits(QSerialPort::OneStop);
+            rfidSerial->setFlowControl(QSerialPort::NoFlowControl);
+            if (!rfidSerial->open(QIODevice::ReadOnly)) {
+                qWarning() << "[RFID Login] Failed to open" << portName << ":" << rfidSerial->errorString();
+            }
+        }
+
+        QDialog dlg(this);
+        dlg.setWindowTitle("Connexion par badge RFID");
+        dlg.setModal(true);
+        dlg.setMinimumWidth(420);
+
+        auto *layout = new QVBoxLayout(&dlg);
+        layout->setContentsMargins(24, 24, 24, 20);
+        layout->setSpacing(14);
+
+        auto *info = new QLabel(QString::fromUcs4(U"\U0001F4E1") +
+                                "  Approchez votre badge du lecteur...", &dlg);
+        info->setAlignment(Qt::AlignCenter);
+        info->setStyleSheet("font-size: 15px; font-weight: 600; color:#1e293b; padding: 8px;");
+        layout->addWidget(info);
+
+        auto *portLbl = new QLabel(&dlg);
+        portLbl->setAlignment(Qt::AlignCenter);
+        portLbl->setStyleSheet("font-size: 12px; color: #475569;");
+        if (rfidSerial->isOpen()) {
+            portLbl->setText(QString("Lecteur connecte sur %1 (9600 bauds)").arg(portName));
+        } else {
+            portLbl->setText(portName.isEmpty()
+                                 ? "Lecteur RFID non detecte. Branchez l'Arduino puis cliquez Reessayer."
+                                 : QString("Echec ouverture %1. Fermez le moniteur serie puis Reessayer.").arg(portName));
+            portLbl->setStyleSheet("font-size: 12px; color: #c0392b; font-weight: 600;");
+        }
+        layout->addWidget(portLbl);
+
+        auto *status = new QLabel(&dlg);
+        status->setAlignment(Qt::AlignCenter);
+        status->setStyleSheet("font-size: 13px; color: #475569;");
+        status->setWordWrap(true);
+        layout->addWidget(status);
+
+        auto *btnRow = new QHBoxLayout();
+        auto *retryBtn = new QPushButton("Reessayer", &dlg);
+        auto *cancelBtn = new QPushButton("Annuler", &dlg);
+        btnRow->addWidget(retryBtn);
+        btnRow->addStretch();
+        btnRow->addWidget(cancelBtn);
+        layout->addLayout(btnRow);
+
+        QByteArray buffer;
+        QString matchedEmail;
+
+        auto tryReopen = [rfidSerial, portLbl, status]() {
+            if (rfidSerial->isOpen()) rfidSerial->close();
+            QString newPort;
+            for (const QSerialPortInfo &i : QSerialPortInfo::availablePorts()) {
+                const QString d = i.description().toLower();
+                const QString m = i.manufacturer().toLower();
+                if (d.contains("bluetooth") || m.contains("bluetooth")) continue;
+                if (d.contains("arduino") || d.contains("ch340") || d.contains("ch341")
+                    || d.contains("usb-serial") || d.contains("ftdi") || d.contains("cp210")
+                    || m.contains("arduino") || m.contains("ftdi")
+                    || m.contains("silicon labs") || m.contains("wch")) {
+                    newPort = i.portName();
+                    break;
+                }
+            }
+            if (newPort.isEmpty()) {
+                portLbl->setText("Lecteur RFID non detecte. Branchez l'Arduino puis Reessayer.");
+                portLbl->setStyleSheet("font-size: 12px; color: #c0392b; font-weight: 600;");
+                return;
+            }
+            rfidSerial->setPortName(newPort);
+            rfidSerial->setBaudRate(QSerialPort::Baud9600);
+            rfidSerial->setDataBits(QSerialPort::Data8);
+            rfidSerial->setParity(QSerialPort::NoParity);
+            rfidSerial->setStopBits(QSerialPort::OneStop);
+            rfidSerial->setFlowControl(QSerialPort::NoFlowControl);
+            if (rfidSerial->open(QIODevice::ReadOnly)) {
+                portLbl->setText(QString("Lecteur connecte sur %1 (9600 bauds)").arg(newPort));
+                portLbl->setStyleSheet("font-size: 12px; color: #16a34a; font-weight: 600;");
+                status->setText("");
+            } else {
+                portLbl->setText(QString("Echec ouverture %1.").arg(newPort));
+                portLbl->setStyleSheet("font-size: 12px; color: #c0392b; font-weight: 600;");
+            }
+        };
+
+        connect(retryBtn, &QPushButton::clicked, &dlg, tryReopen);
+        connect(cancelBtn, &QPushButton::clicked, &dlg, &QDialog::reject);
+
+        connect(rfidSerial, &QSerialPort::readyRead, &dlg, [&]() {
+            buffer.append(rfidSerial->readAll());
+            while (true) {
+                const int nl = buffer.indexOf('\n');
+                if (nl < 0) break;
+                const QByteArray line = buffer.left(nl);
+                buffer.remove(0, nl + 1);
+                const QString text = QString::fromLatin1(line).trimmed();
+                if (text.isEmpty()) continue;
+                static const QString kRfidPrefix = "RFID_TAG:";
+                if (!text.startsWith(kRfidPrefix, Qt::CaseInsensitive)) continue;
+                const QString tag = text.mid(kRfidPrefix.length()).trimmed().toUpper();
+                if (tag.isEmpty()) continue;
+
+                QSqlQuery q;
+                q.prepare(
+                    "SELECT id_emp, email FROM EMPLOYE "
+                    "WHERE UPPER(TRIM(rfid)) = UPPER(TRIM(:tag)) "
+                    "AND rfid IS NOT NULL");
+                q.bindValue(":tag", tag);
+                if (!q.exec()) {
+                    status->setText(QString("Erreur base: %1").arg(q.lastError().text()));
+                    status->setStyleSheet("font-size: 13px; color: #c0392b; font-weight: 700;");
+                    continue;
+                }
+                if (q.next()) {
+                    const int idEmp = q.value(0).toInt();
+                    matchedEmail = q.value(1).toString().trimmed();
+
+                    QSqlQuery upd;
+                    upd.prepare(
+                        "UPDATE EMPLOYE "
+                        "SET disponibilite = 'DISPONIBLE', last_pointage_date = SYSDATE "
+                        "WHERE id_emp = :id");
+                    upd.bindValue(":id", idEmp);
+                    if (!upd.exec()) {
+                        qWarning() << "[RFID Login] Pointage update failed (with date):"
+                                   << upd.lastError().text();
+                        QSqlQuery fallback;
+                        fallback.prepare(
+                            "UPDATE EMPLOYE SET disponibilite = 'DISPONIBLE' "
+                            "WHERE id_emp = :id");
+                        fallback.bindValue(":id", idEmp);
+                        if (!fallback.exec()) {
+                            qWarning() << "[RFID Login] Pointage fallback failed:"
+                                       << fallback.lastError().text();
+                        }
+                    }
+
+                    status->setText(QString::fromUcs4(U"✓") +
+                                    QString(" Badge reconnu : %1\nPresence enregistree.").arg(matchedEmail));
+                    status->setStyleSheet("font-size: 14px; color: #16a34a; font-weight: 800;");
+                    QTimer::singleShot(550, &dlg, &QDialog::accept);
+                    return;
+                }
+                status->setText(QString("Badge inconnu : %1. Approchez un autre badge.").arg(tag));
+                status->setStyleSheet("font-size: 13px; color: #c0392b; font-weight: 700;");
+            }
+        });
+
+        const int rc = dlg.exec();
+        if (rfidSerial->isOpen()) rfidSerial->close();
+        rfidSerial->deleteLater();
+
+        if (rc == QDialog::Accepted && !matchedEmail.isEmpty()) {
+            if (txtUser) txtUser->setText(matchedEmail);
+            m_faceMatchedEmail.clear();
+            grantAccess(false);
+        }
     }
 
     void startFaceId()

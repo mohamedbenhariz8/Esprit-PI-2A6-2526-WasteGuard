@@ -70,10 +70,24 @@ CREATE TABLE EMPLOYE (
     SPECIALITE               VARCHAR2(80),
     DISPONIBILITE            VARCHAR2(20)  DEFAULT 'DISPONIBLE'
         CHECK (DISPONIBILITE IN ('DISPONIBLE', 'INDISPONIBLE', 'EN_INTERVENTION', 'CONGE_NORMALE', 'CONGE_MALADIE', 'EN_CONGE', 'EN_CONGE_MALADIE')),
+    SALAIRE                  NUMBER(12,3)  DEFAULT 1200 CHECK (SALAIRE >= 0),
     PHOTO                    BLOB,
     FACE_TEMPLATE            CLOB,
     FACE_TEMPLATE_UPDATED_AT DATE,
-    FACE_ENABLED             NUMBER(1)     DEFAULT 1
+    FACE_ENABLED             NUMBER(1)     DEFAULT 1,
+    -- Etat courant + agregats des conges (historique detaille en data/employee_leaves.json)
+    CURRENT_LEAVE_STATUS     VARCHAR2(32),
+    CURRENT_LEAVE_START      DATE,
+    CURRENT_LEAVE_END        DATE,
+    CURRENT_LEAVE_REASON     VARCHAR2(500),
+    TOTAL_LEAVE_DAYS         NUMBER        DEFAULT 0,
+    -- Etat courant + agregats des missions (historique detaille en data/employee_missions.json)
+    CURRENT_MISSION_TEXT     VARCHAR2(1000),
+    CURRENT_MISSION_SCORE    NUMBER(6,2)   DEFAULT 0,
+    CURRENT_MISSION_STATUS   VARCHAR2(20),
+    TOTAL_MISSIONS           NUMBER        DEFAULT 0,
+    TOTAL_REWARD             NUMBER(10,2)  DEFAULT 0,
+    TOTAL_EXPERIENCE         NUMBER        DEFAULT 0
 );
 
 CREATE TABLE COMMANDE (

@@ -8,6 +8,8 @@
 #include <QDir>
 #include <QSet>
 #include <QProcessEnvironment>
+#include <QStandardPaths>
+#include <QRegularExpression>
 #include <cstdlib>
 #include <QString>
 
@@ -177,6 +179,24 @@ bool VoiceAssistant::initialize(const QString &pythonScriptPath)
     const QString virtualEnv = env.value("VIRTUAL_ENV");
     if (!virtualEnv.trimmed().isEmpty()) {
         addCandidate(QDir::fromNativeSeparators(virtualEnv) + "/Scripts/python.exe");
+    }
+
+    // Optional explicit Python path override.
+    const QStringList pythonEnvKeys = {"WG_PYTHON_EXE", "PYTHON_EXE", "PYTHON"};
+    for (const QString &key : pythonEnvKeys) {
+        const QString value = env.value(key).trimmed();
+        if (!value.isEmpty()) {
+            addCandidate(value);
+        }
+    }
+
+    // Resolve known command names to absolute executables when possible.
+    const QStringList pythonNames = {"python", "py", "python3", "python3.11", "python3.14"};
+    for (const QString &name : pythonNames) {
+        const QString resolved = QStandardPaths::findExecutable(name).trimmed();
+        if (!resolved.isEmpty()) {
+            addCandidate(resolved);
+        }
     }
 
     // Common command aliases / user-local python fallbacks.
@@ -391,14 +411,31 @@ void VoiceAssistant::processReceivedData(const QString &data)
 
             // Identifier la commande
             QStringList commands = parseVoiceCommand(recognizedMsg);
+            if (commands.isEmpty()) {
+                emit error(QString("Commande non reconnue: \"%1\". Dites \"aide\" pour les commandes.")
+                               .arg(recognizedMsg.left(120)));
+            }
             for (const QString &cmd : commands) {
                 emit commandRecognized(cmd);
+            }
+            if (m_listening) {
+                m_listening = false;
+                emit listeningFinished();
+            }
+        } else if (line.startsWith("LISTENING_STOPPED")) {
+            if (m_listening) {
+                m_listening = false;
+                emit listeningFinished();
             }
         } else if (line.startsWith("SPEECH_DONE")) {
             emit speechFinished();
         } else if (line.startsWith("ERROR:")) {
             QString errorMsg = line.mid(6).trimmed();
             emit error(errorMsg);
+            if (m_listening) {
+                m_listening = false;
+                emit listeningFinished();
+            }
         }
     }
 }
@@ -407,46 +444,84 @@ QStringList VoiceAssistant::parseVoiceCommand(const QString &text)
 {
     QStringList commands;
     QString lowerText = text.toLower();
+    QString foldedText = lowerText.normalized(QString::NormalizationForm_D);
+    foldedText.remove(QRegularExpression("[\\u0300-\\u036f]"));
 
-    if (lowerText.contains("ajouter") && lowerText.contains("intervention")) {
+    auto hasAny = [&foldedText](const QStringList &tokens) -> bool {
+        for (const QString &t : tokens) {
+            if (foldedText.contains(t)) return true;
+        }
+        return false;
+    };
+
+    const bool addVerb = hasAny({"ajouter", "ajoute", "ajout", "creer", "cree", "nouvelle", "nouveau", "new", "add"});
+    const bool modVerb = hasAny({"modifier", "modifie", "modif", "update", "edit", "changer", "corriger"});
+    const bool delVerb = hasAny({"supprimer", "supprime", "effacer", "retirer", "delete", "remove"});
+    const bool saveVerb = hasAny({"enregistrer", "valider", "save"});
+    const bool openVerb = hasAny({"ouvrir", "ouvre", "aller", "go", "page", "module", "afficher", "montre", "show"});
+
+    const bool hasIntervention = hasAny({"intervention", "maintenance"});
+    const bool hasProduit = hasAny({"produit", "produits", "bac"});
+    const bool hasStock = hasAny({"stock", "inventaire", "matiere", "matiere premiere"});
+    const bool hasClient = hasAny({"client", "clients"});
+    const bool hasEmploye = hasAny({"employe", "employes", "employee", "employees", "staff"});
+
+    if (openVerb && hasProduit) commands.append("OPEN_PRODUITS");
+    if (openVerb && hasStock) commands.append("OPEN_STOCK");
+    if (openVerb && hasClient) commands.append("OPEN_CLIENTS");
+    if (openVerb && hasEmploye) commands.append("OPEN_EMPLOYES");
+    if (openVerb && hasIntervention) commands.append("OPEN_MAINTENANCE");
+
+    if (hasIntervention && addVerb) {
         commands.append("ADD_INTERVENTION");
     }
 
-    if ((lowerText.contains("modifier") || lowerText.contains("modifie") || lowerText.contains("update") || lowerText.contains("edit"))
-            && lowerText.contains("intervention")) {
+    if (hasIntervention && modVerb) {
         commands.append("MODIFY_INTERVENTION");
     }
 
-    if ((lowerText.contains("enregistrer") || lowerText.contains("valider") || lowerText.contains("save"))
-            && (lowerText.contains("ajout") || lowerText.contains("nouvelle") || lowerText.contains("new"))) {
+    if (saveVerb
+            && hasAny({"ajout", "nouvelle", "new", "creation", "creer", "ajouter"})) {
         commands.append("SAVE_ADD_INTERVENTION");
     }
 
-    if ((lowerText.contains("enregistrer") || lowerText.contains("valider") || lowerText.contains("save"))
-            && (lowerText.contains("modification") || lowerText.contains("modif") || lowerText.contains("modifier") || lowerText.contains("edit"))) {
+    if (saveVerb
+            && hasAny({"modification", "modif", "modifier", "edit", "update", "mise a jour"})) {
         commands.append("SAVE_MOD_INTERVENTION");
     }
 
-    if ((lowerText.contains("supprimer") || lowerText.contains("effacer") || lowerText.contains("retirer") || lowerText.contains("delete"))
-            && lowerText.contains("intervention")) {
+    if (hasIntervention && delVerb) {
         commands.append("DELETE_INTERVENTION");
     }
 
-    if (lowerText.contains("rechercher") || lowerText.contains("search")) {
+    if (hasProduit && addVerb) commands.append("ADD_PRODUIT");
+    if (hasProduit && delVerb) commands.append("DELETE_PRODUIT");
+
+    if (hasStock && addVerb) commands.append("ADD_STOCK");
+    if (hasStock && delVerb) commands.append("DELETE_STOCK");
+
+    if (hasClient && addVerb) commands.append("ADD_CLIENT");
+    if (hasClient && delVerb) commands.append("DELETE_CLIENT");
+
+    if (hasEmploye && addVerb) commands.append("ADD_EMPLOYE");
+    if (hasEmploye && delVerb) commands.append("DELETE_EMPLOYE");
+
+    if (hasAny({"rechercher", "cherche", "trouver", "search", "find"})) {
         commands.append("SEARCH");
     }
 
-    if (lowerText.contains("afficher") || lowerText.contains("show")) {
+    if (hasAny({"afficher", "montre", "show", "liste"})) {
         commands.append("SHOW_LIST");
     }
 
-    if (lowerText.contains("exporter") || lowerText.contains("export")) {
+    if (hasAny({"exporter", "export"})) {
         commands.append("EXPORT");
     }
 
-    if (lowerText.contains("aide") || lowerText.contains("help")) {
+    if (hasAny({"aide", "help"})) {
         commands.append("HELP");
     }
 
+    commands.removeDuplicates();
     return commands;
 }

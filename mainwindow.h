@@ -43,6 +43,7 @@
 #include <QQuickItem>
 #include <QCalendarWidget>
 #include <QPainter>
+#include <QProcess>
 
 class DotCalendar : public QCalendarWidget {
     Q_OBJECT
@@ -92,6 +93,9 @@ private:
 #include "voiceassistant.h"
 #include "labibassistant.h"
 #include "emailnotificationmanager.h"
+#include "maintenancestatusdelegate.h"
+#include "arduino.h"
+#include "repairdialog.h"
 QT_BEGIN_NAMESPACE
 namespace Ui { class MainWindow; }
 QT_END_NAMESPACE
@@ -100,6 +104,7 @@ class QStackedWidget;
 class QTableWidget;
 class QWidget;
 class QPushButton;
+class QLineEdit;
 class QDockWidget;
 class QResizeEvent;
 class QMoveEvent;
@@ -130,12 +135,13 @@ private slots:
     void on_btnSave_clicked();
     void on_btnAnalyser_clicked();
     void on_btnSimulerBadge_clicked();
+    void onRfidSerialDataReady();
     void on_btnSupprimer_clicked();
     void on_cbProjetStats_currentIndexChanged(const QString &arg1);
     void on_btnFichePaie_clicked();
     void on_btnCommsSend_clicked();
     void on_btnLogout_clicked();
-    
+
    
     // Client module slots (from mainwindowcl)
     void on_btnClient_clicked();
@@ -169,6 +175,7 @@ private slots:
     void on_prod_btnUpload_Mod_clicked();
     void applyProduitFilterAndSort();
     void on_prod_btnPdf_clicked();
+    void on_prod_btnBacStatus_clicked();
     void on_prod_btnMap3D_clicked();
     void onGeminiPdfReply(QNetworkReply *reply);
     void onProductImageDownloaded(QNetworkReply *reply, const QString &numSerie);
@@ -272,6 +279,7 @@ private:
     void applyStyleFix();
     void refreshActionButtons();
     void buildStatsCharts();
+    void refreshProduitDashboardSummary();
     void refreshProduitTable();
     void addExampleRow();
     void verifyFournisseurEmail(QLineEdit *emailField);
@@ -409,6 +417,8 @@ private:
     QByteArray m_employeePhotoAjout;
     QString m_employeeFaceTemplateAjout;
     QByteArray m_employeePhotoModif;
+    QString m_employeeFaceTemplateModif;
+    QString m_currentEmployeeRfidOriginal;
 
     int currentProduitRow;
     int currentClientRow;
@@ -475,6 +485,9 @@ private:
     QString m_photoApresPath;
     QString m_photoModPath;
 
+    // Maintenance status delegate for row coloring
+    MaintenanceStatusDelegate *m_maintenanceDelegate = nullptr;
+
     // Notification system
     QTimer *m_stockNotifTimer = nullptr;
     QTimer *m_clientContractNotifTimer = nullptr;
@@ -519,6 +532,97 @@ private:
 
     // Email Notification Manager for client notifications
     EmailNotificationManager *m_emailManager = nullptr;
+
+    // --- RFID / Pointage ---
+    Arduino *m_arduino = nullptr;
+    // Second Arduino dedicated to the servo block (lid + ultrasonic).
+    // MainWindow forwards LID:OPEN / LID:CLOSE / MEASURE lines from the
+    // main Arduino to this one, and parses the FILL:<pct> reply.
+    Arduino *m_servoArduino = nullptr;
+    QByteArray m_servoSerialBuffer;     // line accumulator for servo Arduino stdout
+    int        m_lastClassifiedBin = 0; // bin of the most recent AI:<material>
+    void ensureServoArduinoConnected();
+    void forwardLidCommand(const QByteArray &cmd);
+    void onServoArduinoSerialDataReady();
+    // Auto-swap m_arduino <-> m_servoArduino when we discover the COM-port
+    // assignments are reversed. Triggered by PING-probe mismatch, an IDENT
+    // line on the wrong port, or an ERR:unknown:AI:* reply on the main port.
+    void swapArduinoAssignments();
+    // Synchronous probe: sends "PING\n" on the given QSerialPort and waits
+    // briefly for "PONG". The servo sketch replies; the main sketch ignores.
+    bool probePortIsServo(class QSerialPort *port);
+    bool m_arduinoAssignmentVerified = false;
+    QByteArray m_rfidSerialBuffer;
+    QLineEdit *m_rfidScanTarget = nullptr;
+    QDialog *m_rfidScanDialog = nullptr;
+    void enterPointagePage();
+    void ensureArduinoConnected();
+    void performDailyAttendanceResetIfNeeded();
+    void handleRfidTag(const QString &rfidTag);
+    void appendPointageLog(const QString &rfidTag, const QString &employeName, const QString &status);
+    void appendPointageLog(const QString &rfidTag, const QString &employeName, const QString &status, const QString &hoursDisplay);
+    void startRfidCapture(QLineEdit *targetField);
+    void stopRfidCapture();
+
+    // --- Repair Mode (Technician RFID) ---
+    bool m_repairModeActive = false;
+    QString m_repairTechnicianName;
+    int m_repairTechnicianId = -1;
+    void handleTechnicianRfid(int empId, const QString &empName);
+    void openRepairDialog();
+    void closeRepairMode();
+
+    // --- Capteur de mouvement (PIR sur A0 du meme Arduino) ---
+    // Default: false (EN ATTENTE). Set to true when the sketch publishes
+    // a MOTION:1 frame; held true for 60 s after the last detection, then
+    // auto-revert to false. The bac status dialog listens to
+    // bacMotionStateChanged() to flip its global badge live, and BAC_INTEL.
+    // STATUT_BAC is updated in step (EN_ATTENTE <-> EN_SERVICE) - rows in
+    // EN_PANNE / A_VIDER are never overwritten.
+    bool m_bacMotionActive = false;
+    int  m_motionTargetBacId = 0;   // 0 = no bac selected -> motion ignored
+    QTimer *m_motionHoldTimer = nullptr;
+    QProcess *m_aiProcess = nullptr;          // persistent classify_service.py
+    QString   m_esp32CamUrl;                  // forwarded via ESP32_CAM_URL env var
+    QByteArray m_aiStdoutBuffer;              // line-accumulator for service stdout
+    bool      m_aiServiceReady = false;       // true once the daemon emits READY
+    bool      m_aiPendingClassify = false;    // queued trigger while model is loading
+    void onMotionHoldExpired();
+    void applyBacMotionDbState(bool active, int idBac);
+    void onAiServiceStdoutReady();
+    void onAiServiceErrorReady();
+    void onAiServiceFinished(int exitCode, QProcess::ExitStatus status);
+public:
+    // Lazy-starts the persistent waste-classification daemon. Safe to call
+    // multiple times. The dialog calls this on open so the model loads
+    // while the user is reading the bin info.
+    void ensureClassificationService();
+    bool isBacMotionActive() const { return m_bacMotionActive; }
+    int  motionTargetBacId() const { return m_motionTargetBacId; }
+    // Called by BacStatusDialog whenever the user picks a bac. Switching
+    // bacs while motion is active immediately reverts the previous bac
+    // back to EN_ATTENTE and resets the hold so the new bac will only
+    // become EN_SERVICE on the next PIR edge.
+    void setMotionTargetBac(int idBac);
+    // Public so BacStatusDialog can mirror the physical pin-5 button
+    // with an in-app button. Spawns classify_single.py, then forwards
+    // AI:<material> to the Arduino which rotates the NEMA17 90 deg per bin.
+    void triggerWasteClassification(const QString &source = QStringLiteral("manual"));
+    // The bac-status dialog calls this so classify_single.py uses the
+    // same ESP32-CAM URL the dialog is polling for the live preview.
+    void setEsp32CamUrl(const QString &url) { m_esp32CamUrl = url; }
+signals:
+    void bacMotionStateChanged(bool active);
+    // Emitted whenever a classification cycle progresses, so the bac
+    // status dialog can mirror the live state next to the camera feed.
+    // phase: "started" / "result" / "error"
+    void wasteClassificationUpdate(const QString &phase, const QString &material);
+    // Arduino published a fresh ultrasonic measurement after dropping
+    // waste in compartment <binIndex>. percent in [0..100], or -1 on error.
+    void binFillUpdated(int binIndex, int percent);
+    // Arduino-side power state (button-driven for now, PIR later).
+    void machineStateChanged(bool on);
+private:
 
     // Initialize accessibility features
     void setupAccessibilityModule();

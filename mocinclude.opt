@@ -1,5 +1,5 @@
 -IC:/Qt/6.7.3/mingw_64/mkspecs/win32-g++
--IC:/Users/gigabyte/Downloads/INTEGRATIONNNNNNNN/INTEGRATION_FINALE1111/INTEGRATION_FINALE1
+-IC:/Users/gigabyte/Downloads/final/INTEGRATION_FINALE1111/INTEGRATION_FINALE1
 -IC:/Qt/6.7.3/mingw_64/include
 -IC:/Qt/6.7.3/mingw_64/include/QtCharts
 -IC:/Qt/6.7.3/mingw_64/include/QtOpenGLWidgets
@@ -32,6 +32,7 @@
 -IC:/Qt/6.7.3/mingw_64/include/QtPositioning
 -IC:/Qt/6.7.3/mingw_64/include/QtCore/6.7.3
 -IC:/Qt/6.7.3/mingw_64/include/QtCore/6.7.3/QtCore
+-IC:/Qt/6.7.3/mingw_64/include/QtConcurrent
 -IC:/Qt/6.7.3/mingw_64/include/QtCore
 -IC:/Qt/6.7.3/mingw_64/include/QtQmlBuiltins/6.7.3
 -IC:/Qt/6.7.3/mingw_64/include/QtQmlBuiltins/6.7.3/QtQmlBuiltins

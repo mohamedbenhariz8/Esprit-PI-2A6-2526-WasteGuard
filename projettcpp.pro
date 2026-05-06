@@ -29,7 +29,8 @@ SOURCES += \
     voiceassistant.cpp \
     labibassistant.cpp \
     emailnotificationmanager.cpp \
-    thememanager.cpp
+    thememanager.cpp \
+    employeehistorystore.cpp
 
 HEADERS += \
     client.h \
@@ -50,7 +51,8 @@ HEADERS += \
     voiceassistant.h \
     labibassistant.h \
     emailnotificationmanager.h \
-    thememanager.h
+    thememanager.h \
+    employeehistorystore.h
 
 FORMS += \
     mainwindow.ui

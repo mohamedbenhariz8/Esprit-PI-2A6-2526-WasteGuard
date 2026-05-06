@@ -1,10 +1,13 @@
 ﻿#include "produit.h"
 
+#include <QSqlDatabase>
 #include <QSqlError>
 #include <QSqlQuery>
 #include <QDate>
 #include <QStringList>
 #include <QPair>
+#include <QMap>
+#include <QVector>
 
 namespace {
 int resolveNextBacId(QString &error)
@@ -40,6 +43,108 @@ QString generateProduitBarcode(int idBac)
     const int checkDigit = (10 - (total % 10)) % 10;
     return body12 + QString::number(checkDigit);
 }
+
+bool fetchLotReferenceById(QSqlDatabase &db, int idBac, QString &reference, QString &error)
+{
+    QSqlQuery q(db);
+    q.prepare("SELECT num_serie FROM BAC_INTEL WHERE id_bac = :id_bac");
+    q.bindValue(":id_bac", idBac);
+    if (!q.exec()) {
+        error = q.lastError().text();
+        return false;
+    }
+    if (!q.next()) {
+        error = "Produit introuvable.";
+        return false;
+    }
+
+    reference = q.value(0).toString().trimmed();
+    if (reference.isEmpty()) {
+        error = "Reference lot invalide.";
+        return false;
+    }
+    return true;
+}
+
+QList<int> fetchLotIds(QSqlDatabase &db, const QString &reference, QString &error)
+{
+    QSqlQuery q(db);
+    q.prepare(
+        "SELECT id_bac "
+        "FROM BAC_INTEL "
+        "WHERE num_serie = :reference "
+        "ORDER BY NVL(num_unite, 0), id_bac"
+    );
+    q.bindValue(":reference", reference);
+    if (!q.exec()) {
+        error = q.lastError().text();
+        return {};
+    }
+
+    QList<int> ids;
+    while (q.next()) {
+        const int id = q.value(0).toInt();
+        if (id > 0) ids.append(id);
+    }
+    return ids;
+}
+
+bool lotReferenceExistsElsewhere(QSqlDatabase &db,
+                                 const QString &targetReference,
+                                 const QString &currentReference,
+                                 QString &error)
+{
+    QSqlQuery q(db);
+    q.prepare(
+        "SELECT COUNT(*) "
+        "FROM BAC_INTEL "
+        "WHERE num_serie = :target "
+        "  AND num_serie <> :current"
+    );
+    q.bindValue(":target", targetReference);
+    q.bindValue(":current", currentReference);
+    if (!q.exec() || !q.next()) {
+        error = q.lastError().text();
+        return false;
+    }
+    return q.value(0).toInt() > 0;
+}
+
+bool hasLinkedRows(QSqlDatabase &db, const QString &tableName, int idBac, QString &error)
+{
+    QSqlQuery q(db);
+    q.prepare(QString("SELECT COUNT(*) FROM %1 WHERE ID_BAC = :id_bac").arg(tableName));
+    q.bindValue(":id_bac", idBac);
+    if (!q.exec() || !q.next()) {
+        error = q.lastError().text();
+        return false;
+    }
+    return q.value(0).toInt() > 0;
+}
+
+bool deleteFabricationRow(QSqlDatabase &db, int idBac, QString &error)
+{
+    QSqlQuery q(db);
+    q.prepare("DELETE FROM FABRICATION WHERE ID_BAC = :id_bac");
+    q.bindValue(":id_bac", idBac);
+    if (!q.exec()) {
+        error = q.lastError().text();
+        return false;
+    }
+    return true;
+}
+
+bool deleteBacRow(QSqlDatabase &db, int idBac, QString &error)
+{
+    QSqlQuery q(db);
+    q.prepare("DELETE FROM BAC_INTEL WHERE ID_BAC = :id_bac");
+    q.bindValue(":id_bac", idBac);
+    if (!q.exec()) {
+        error = q.lastError().text();
+        return false;
+    }
+    return true;
+}
 }
 
 Produit::Produit()
@@ -54,11 +159,24 @@ Produit::Produit(int id_mp, const QString &reference, const QString &nom, int qu
 
 bool Produit::ajouter()
 {
-    QSqlQuery query;
+    const int qtyToInsert = m_quantite;
+    if (qtyToInsert <= 0) {
+        m_lastError = "La quantite doit etre superieure a 0.";
+        return false;
+    }
+
+    QSqlDatabase db = QSqlDatabase::database();
+    const bool useTx = db.isValid() && db.isOpen();
+    if (useTx && !db.transaction()) {
+        m_lastError = "Impossible de demarrer la transaction.";
+        return false;
+    }
+
     int idToUse = m_idMp;
     if (idToUse <= 0) {
         idToUse = resolveNextBacId(m_lastError);
         if (idToUse <= 0) {
+            if (useTx) db.rollback();
             return false;
         }
     }
@@ -72,39 +190,214 @@ bool Produit::ajouter()
         locToUse = QString("Stock principal (%1 L)").arg(m_capacite);
     }
 
+    // Keep one logical lot per barcode inside the product module.
+    QSqlQuery lotCheck(db);
+    lotCheck.prepare("SELECT COUNT(*) FROM BAC_INTEL WHERE num_serie = :num_serie");
+    lotCheck.bindValue(":num_serie", m_reference);
+    if (!lotCheck.exec() || !lotCheck.next()) {
+        if (useTx) db.rollback();
+        m_lastError = lotCheck.lastError().text();
+        return false;
+    }
+    if (lotCheck.value(0).toInt() > 0) {
+        if (useTx) db.rollback();
+        m_lastError = "Cette reference existe deja. Utilisez la modification pour ajuster la quantite.";
+        return false;
+    }
+
+    QSqlQuery query(db);
     query.prepare(
         "INSERT INTO BAC_INTEL "
-        "(id_bac, num_serie, modele, remplissage, localisation_stock, id_commande, prix, stock, capacite_batterie, image_path, caracteristiques) "
-        "VALUES (:id_bac, :num_serie, :modele, :remplissage, :localisation_stock, NULL, :prix, :stock, :capacite_batterie, :image_path, :caracteristiques)"
+        "(id_bac, num_serie, num_unite, statut_bac, modele, remplissage, localisation_stock, id_commande, prix, stock, capacite_batterie, image_path, caracteristiques) "
+        "VALUES (:id_bac, :num_serie, :num_unite, :statut_bac, :modele, :remplissage, :localisation_stock, NULL, :prix, :stock, :capacite_batterie, :image_path, :caracteristiques)"
     );
 
-    query.bindValue(":id_bac", idToUse);
-    query.bindValue(":num_serie", m_reference);
-    query.bindValue(":modele", m_nom);
-    query.bindValue(":remplissage", m_capacite);
-    query.bindValue(":localisation_stock", locToUse);
-    query.bindValue(":prix", m_prix);
-    query.bindValue(":stock", m_quantite);
-    query.bindValue(":capacite_batterie", m_capaciteBatterie);
-    query.bindValue(":image_path", m_imagePath);
-    query.bindValue(":caracteristiques", m_caracteristiques);
-
-    const bool ok = query.exec();
-    if (ok) {
-        m_idMp = idToUse;
-        m_lastError.clear();
-    } else {
-        m_lastError = query.lastError().text();
+    const int firstId = idToUse;
+    for (int unit = 1; unit <= qtyToInsert; ++unit) {
+        query.bindValue(":id_bac", idToUse++);
+        query.bindValue(":num_serie", m_reference);
+        query.bindValue(":num_unite", unit);
+        query.bindValue(":statut_bac", "EN_STOCK");
+        query.bindValue(":modele", m_nom);
+        query.bindValue(":remplissage", m_capacite);
+        query.bindValue(":localisation_stock", locToUse);
+        query.bindValue(":prix", m_prix);
+        query.bindValue(":stock", 1);
+        query.bindValue(":capacite_batterie", m_capaciteBatterie);
+        query.bindValue(":image_path", m_imagePath);
+        query.bindValue(":caracteristiques", m_caracteristiques);
+        if (!query.exec()) {
+            if (useTx) db.rollback();
+            m_lastError = query.lastError().text();
+            return false;
+        }
     }
-    return ok;
+
+    if (useTx && !db.commit()) {
+        m_lastError = "Impossible de valider la transaction.";
+        return false;
+    }
+
+    m_idMp = firstId;
+    m_lastError.clear();
+    return true;
 }
 
 bool Produit::modifier()
 {
-    QSqlQuery query;
-    query.prepare(
+    if (m_idMp <= 0) {
+        m_lastError = "ID produit invalide.";
+        return false;
+    }
+    if (m_quantite <= 0) {
+        m_lastError = "La quantite doit etre superieure a 0.";
+        return false;
+    }
+
+    QSqlDatabase db = QSqlDatabase::database();
+    const bool useTx = db.isValid() && db.isOpen();
+    if (useTx && !db.transaction()) {
+        m_lastError = "Impossible de demarrer la transaction.";
+        return false;
+    }
+
+    QString currentReference;
+    if (!fetchLotReferenceById(db, m_idMp, currentReference, m_lastError)) {
+        if (useTx) db.rollback();
+        return false;
+    }
+
+    const QString targetReference = m_reference.trimmed().isEmpty() ? currentReference : m_reference.trimmed();
+    if (targetReference != currentReference) {
+        QString existsError;
+        const bool existsElsewhere = lotReferenceExistsElsewhere(db, targetReference, currentReference, existsError);
+        if (!existsError.isEmpty()) {
+            if (useTx) db.rollback();
+            m_lastError = existsError;
+            return false;
+        }
+        if (existsElsewhere) {
+            if (useTx) db.rollback();
+            m_lastError = "La nouvelle reference existe deja pour un autre lot.";
+            return false;
+        }
+    }
+
+    QString idsError;
+    QList<int> lotIds = fetchLotIds(db, currentReference, idsError);
+    if (!idsError.isEmpty()) {
+        if (useTx) db.rollback();
+        m_lastError = idsError;
+        return false;
+    }
+    if (lotIds.isEmpty()) {
+        if (useTx) db.rollback();
+        m_lastError = "Aucun bac trouve pour cette reference.";
+        return false;
+    }
+
+    const int currentQty = lotIds.size();
+    const int targetQty = m_quantite;
+
+    // Shrink: remove trailing rows only if they are not referenced elsewhere.
+    if (targetQty < currentQty) {
+        QVector<int> removableIds;
+        removableIds.reserve(currentQty - targetQty);
+        for (int i = lotIds.size() - 1; i >= 0 && removableIds.size() < (currentQty - targetQty); --i) {
+            const int candidateId = lotIds.at(i);
+            QString depErr;
+            const bool inCommande = hasLinkedRows(db, "COMMANDE_BAC", candidateId, depErr);
+            if (!depErr.isEmpty()) {
+                if (useTx) db.rollback();
+                m_lastError = depErr;
+                return false;
+            }
+            const bool inIntervention = hasLinkedRows(db, "INTERVENTION", candidateId, depErr);
+            if (!depErr.isEmpty()) {
+                if (useTx) db.rollback();
+                m_lastError = depErr;
+                return false;
+            }
+            if (!inCommande && !inIntervention) {
+                removableIds.push_back(candidateId);
+            }
+        }
+
+        if (removableIds.size() < (currentQty - targetQty)) {
+            if (useTx) db.rollback();
+            m_lastError = "Impossible de reduire la quantite: certains bacs sont deja utilises dans des commandes/interventions.";
+            return false;
+        }
+
+        for (int idBac : removableIds) {
+            if (!deleteFabricationRow(db, idBac, m_lastError) || !deleteBacRow(db, idBac, m_lastError)) {
+                if (useTx) db.rollback();
+                return false;
+            }
+        }
+    }
+
+    // Expand: append new physical rows.
+    if (targetQty > currentQty) {
+        QString idError;
+        int nextId = resolveNextBacId(idError);
+        if (nextId <= 0) {
+            if (useTx) db.rollback();
+            m_lastError = idError;
+            return false;
+        }
+
+        QString locToUse = m_localisation;
+        if (locToUse.isEmpty()) {
+            locToUse = QString("Stock principal (%1 L)").arg(m_capacite);
+        }
+
+        QSqlQuery ins(db);
+        ins.prepare(
+            "INSERT INTO BAC_INTEL "
+            "(id_bac, num_serie, num_unite, statut_bac, modele, remplissage, localisation_stock, id_commande, prix, stock, capacite_batterie, image_path, caracteristiques) "
+            "VALUES (:id_bac, :num_serie, :num_unite, :statut_bac, :modele, :remplissage, :localisation_stock, NULL, :prix, :stock, :capacite_batterie, :image_path, :caracteristiques)"
+        );
+
+        for (int unit = currentQty + 1; unit <= targetQty; ++unit) {
+            ins.bindValue(":id_bac", nextId++);
+            ins.bindValue(":num_serie", currentReference);
+            ins.bindValue(":num_unite", unit);
+            ins.bindValue(":statut_bac", "EN_STOCK");
+            ins.bindValue(":modele", m_nom);
+            ins.bindValue(":remplissage", m_capacite);
+            ins.bindValue(":localisation_stock", locToUse);
+            ins.bindValue(":prix", m_prix);
+            ins.bindValue(":stock", 1);
+            ins.bindValue(":capacite_batterie", m_capaciteBatterie);
+            ins.bindValue(":image_path", m_imagePath);
+            ins.bindValue(":caracteristiques", m_caracteristiques);
+            if (!ins.exec()) {
+                if (useTx) db.rollback();
+                m_lastError = ins.lastError().text();
+                return false;
+            }
+        }
+    }
+
+    QString refreshIdsError;
+    lotIds = fetchLotIds(db, currentReference, refreshIdsError);
+    if (!refreshIdsError.isEmpty()) {
+        if (useTx) db.rollback();
+        m_lastError = refreshIdsError;
+        return false;
+    }
+
+    QString locToUse = m_localisation;
+    if (locToUse.isEmpty()) {
+        locToUse = QString("Stock principal (%1 L)").arg(m_capacite);
+    }
+
+    QSqlQuery upd(db);
+    upd.prepare(
         "UPDATE BAC_INTEL SET "
         "num_serie = :num_serie, "
+        "num_unite = :num_unite, "
         "modele = :modele, "
         "remplissage = :remplissage, "
         "localisation_stock = :localisation_stock, "
@@ -116,25 +409,37 @@ bool Produit::modifier()
         "WHERE id_bac = :id_bac"
     );
 
-    QString locToUse = m_localisation;
-    if (locToUse.isEmpty()) {
-        locToUse = QString("Stock principal (%1 L)").arg(m_capacite);
+    for (int i = 0; i < lotIds.size(); ++i) {
+        const int idBac = lotIds.at(i);
+        upd.bindValue(":id_bac", idBac);
+        upd.bindValue(":num_serie", targetReference);
+        upd.bindValue(":num_unite", i + 1);
+        upd.bindValue(":modele", m_nom);
+        upd.bindValue(":remplissage", m_capacite);
+        upd.bindValue(":localisation_stock", locToUse);
+        upd.bindValue(":prix", m_prix);
+        upd.bindValue(":stock", 1);
+        upd.bindValue(":capacite_batterie", m_capaciteBatterie);
+        upd.bindValue(":image_path", m_imagePath);
+        upd.bindValue(":caracteristiques", m_caracteristiques);
+        if (!upd.exec()) {
+            if (useTx) db.rollback();
+            m_lastError = upd.lastError().text();
+            return false;
+        }
     }
 
-    query.bindValue(":id_bac", m_idMp);
-    query.bindValue(":num_serie", m_reference);
-    query.bindValue(":modele", m_nom);
-    query.bindValue(":remplissage", m_capacite);
-    query.bindValue(":localisation_stock", locToUse);
-    query.bindValue(":prix", m_prix);
-    query.bindValue(":stock", m_quantite);
-    query.bindValue(":capacite_batterie", m_capaciteBatterie);
-    query.bindValue(":image_path", m_imagePath);
-    query.bindValue(":caracteristiques", m_caracteristiques);
+    if (useTx && !db.commit()) {
+        m_lastError = "Impossible de valider la transaction.";
+        return false;
+    }
 
-    const bool ok = query.exec();
-    m_lastError = ok ? QString() : query.lastError().text();
-    return ok;
+    if (!lotIds.isEmpty()) {
+        m_idMp = lotIds.first();
+    }
+    m_reference = targetReference;
+    m_lastError.clear();
+    return true;
 }
 
 bool Produit::supprimer(int id_mp)
@@ -151,23 +456,51 @@ bool Produit::supprimer(int id_mp)
         return false;
     }
 
-    // Delete dependent fabrication rows first (prevents ORA-02292 on BAC_INTEL)
-    QSqlQuery delFab(db);
-    delFab.prepare("DELETE FROM FABRICATION WHERE ID_BAC = :id_bac");
-    delFab.bindValue(":id_bac", id_mp);
-    if (!delFab.exec()) {
+    QString lotReference;
+    if (!fetchLotReferenceById(db, id_mp, lotReference, m_lastError)) {
         if (useTx) db.rollback();
-        m_lastError = delFab.lastError().text();
         return false;
     }
 
-    QSqlQuery delBac(db);
-    delBac.prepare("DELETE FROM BAC_INTEL WHERE ID_BAC = :id_bac");
-    delBac.bindValue(":id_bac", id_mp);
-    if (!delBac.exec()) {
+    QString idsError;
+    const QList<int> lotIds = fetchLotIds(db, lotReference, idsError);
+    if (!idsError.isEmpty()) {
         if (useTx) db.rollback();
-        m_lastError = delBac.lastError().text();
+        m_lastError = idsError;
         return false;
+    }
+    if (lotIds.isEmpty()) {
+        if (useTx) db.rollback();
+        m_lastError = "Aucun bac trouve pour cette reference.";
+        return false;
+    }
+
+    for (int idBac : lotIds) {
+        QString depErr;
+        const bool inCommande = hasLinkedRows(db, "COMMANDE_BAC", idBac, depErr);
+        if (!depErr.isEmpty()) {
+            if (useTx) db.rollback();
+            m_lastError = depErr;
+            return false;
+        }
+        const bool inIntervention = hasLinkedRows(db, "INTERVENTION", idBac, depErr);
+        if (!depErr.isEmpty()) {
+            if (useTx) db.rollback();
+            m_lastError = depErr;
+            return false;
+        }
+        if (inCommande || inIntervention) {
+            if (useTx) db.rollback();
+            m_lastError = "Suppression impossible: au moins un bac du lot est deja utilise dans une commande/intervention.";
+            return false;
+        }
+    }
+
+    for (int idBac : lotIds) {
+        if (!deleteFabricationRow(db, idBac, m_lastError) || !deleteBacRow(db, idBac, m_lastError)) {
+            if (useTx) db.rollback();
+            return false;
+        }
     }
 
     if (useTx && !db.commit()) {
@@ -183,44 +516,62 @@ QSqlQueryModel *Produit::afficher(const QString &searchModel, const QString &sor
 {
     QSqlQueryModel *model = new QSqlQueryModel();
     QSqlQuery query;
-    
-    // Validate sort criteria against whitelist to prevent SQL injection
-    QStringList allowedSortColumns = {
-        "id_bac", "id_bac ASC", "id_bac DESC",
-        "modele", "modele ASC", "modele DESC",
-        "num_serie", "num_serie ASC", "num_serie DESC",
-        "stock", "stock ASC", "stock DESC",
-        "prix", "prix ASC", "prix DESC",
-        "remplissage", "remplissage ASC", "remplissage DESC",
-        "capacite_batterie", "capacite_batterie ASC", "capacite_batterie DESC",
-        "localisation_stock", "localisation_stock ASC", "localisation_stock DESC"
+
+    // Validate sort criteria against whitelist to prevent SQL injection.
+    const QMap<QString, QString> sortMap = {
+        {"id_bac", "id_mp ASC"},
+        {"id_bac ASC", "id_mp ASC"},
+        {"id_bac DESC", "id_mp DESC"},
+        {"modele", "nom ASC"},
+        {"modele ASC", "nom ASC"},
+        {"modele DESC", "nom DESC"},
+        {"num_serie", "reference ASC"},
+        {"num_serie ASC", "reference ASC"},
+        {"num_serie DESC", "reference DESC"},
+        {"stock", "quantite ASC"},
+        {"stock ASC", "quantite ASC"},
+        {"stock DESC", "quantite DESC"},
+        {"prix", "prix ASC"},
+        {"prix ASC", "prix ASC"},
+        {"prix DESC", "prix DESC"},
+        {"remplissage", "seuil_critique ASC"},
+        {"remplissage ASC", "seuil_critique ASC"},
+        {"remplissage DESC", "seuil_critique DESC"},
+        {"capacite_batterie", "capacite_batterie ASC"},
+        {"capacite_batterie ASC", "capacite_batterie ASC"},
+        {"capacite_batterie DESC", "capacite_batterie DESC"},
+        {"localisation_stock", "localisation_stock ASC"},
+        {"localisation_stock ASC", "localisation_stock ASC"},
+        {"localisation_stock DESC", "localisation_stock DESC"}
     };
-    
-    QString safeSortCriteria = "id_bac ASC"; // Default safe sort
-    if (!sortCriteria.isEmpty() && allowedSortColumns.contains(sortCriteria.trimmed())) {
-        safeSortCriteria = sortCriteria.trimmed();
+
+    QString safeSortCriteria = "id_mp ASC";
+    const QString sortKey = sortCriteria.trimmed();
+    if (!sortKey.isEmpty() && sortMap.contains(sortKey)) {
+        safeSortCriteria = sortMap.value(sortKey);
     }
-    
-    QString queryString = 
+
+    QString queryString =
         "SELECT "
-        "id_bac AS id_mp, "
+        "MIN(id_bac) AS id_mp, "
         "num_serie AS reference, "
-        "modele AS nom, "
-        "NVL(stock, NVL(ROUND(remplissage), 0)) AS quantite, "
-        "NVL(ROUND(remplissage), 100) AS seuil_critique, "
-        "NVL(prix, 0) AS prix, "
-        "NVL(ROUND(capacite_batterie), 10000) AS capacite_batterie, "
-        "image_path, "
-        "caracteristiques, "
-        "localisation_stock "
+        "MIN(modele) AS nom, "
+        "COUNT(*) AS quantite, "
+        "NVL(ROUND(AVG(NVL(remplissage, 0))), 0) AS seuil_critique, "
+        "NVL(AVG(NVL(prix, 0)), 0) AS prix, "
+        "NVL(ROUND(AVG(NVL(capacite_batterie, 10000))), 10000) AS capacite_batterie, "
+        "MAX(image_path) AS image_path, "
+        "MAX(caracteristiques) AS caracteristiques, "
+        "MAX(localisation_stock) AS localisation_stock "
         "FROM BAC_INTEL ";
-        
+
     if (!searchModel.isEmpty()) {
         queryString +=
             "WHERE UPPER(modele) LIKE '%' || UPPER(:search) || '%' "
             "   OR UPPER(num_serie) LIKE '%' || UPPER(:search) || '%' ";
     }
-    
+
+    queryString += "GROUP BY num_serie ";
     queryString += "ORDER BY " + safeSortCriteria;
 
     query.prepare(queryString);
@@ -239,7 +590,7 @@ bool Produit::findIdByReference(const QString &reference, int &id_mp)
 {
     id_mp = -1;
     QSqlQuery query;
-    query.prepare("SELECT id_bac FROM BAC_INTEL WHERE num_serie = :reference");
+    query.prepare("SELECT MIN(id_bac) FROM BAC_INTEL WHERE num_serie = :reference");
     query.bindValue(":reference", reference);
 
     if (!query.exec()) {
@@ -247,7 +598,7 @@ bool Produit::findIdByReference(const QString &reference, int &id_mp)
         return false;
     }
 
-    if (query.next()) {
+    if (query.next() && !query.value(0).isNull()) {
         id_mp = query.value(0).toInt();
         m_lastError.clear();
         return true;
