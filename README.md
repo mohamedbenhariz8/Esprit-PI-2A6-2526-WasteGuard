@@ -1,4 +1,8 @@
-# WasteGuard
+<p align="center">
+  <img src="src/wasteguard_logo.png" alt="Logo WasteGuard" width="220"/>
+</p>
+
+<h1 align="center">WasteGuard</h1>
 
 > **Système intelligent de gestion des déchets** — application desktop Qt/C++ couplée à une base Oracle, à des capteurs IoT (Arduino + ESP32-CAM), à de l'IA locale (chatbot, vision, voix) et à un serveur de tracking GPS.
 
