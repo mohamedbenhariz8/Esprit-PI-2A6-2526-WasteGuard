@@ -672,16 +672,12 @@ Oracle, ports série, clés API…). Les identifiants de base de données sont l
 les variables d'environnement `WASTEGUARD_DB_NAME` / `WASTEGUARD_DB_USER` /
 `WASTEGUARD_DB_PASSWORD` — **aucun mot de passe n'est stocké dans le code**.
 
-**Création de la base de données**
+**Base de données**
 
-Sur une instance Oracle, exécutez le schéma puis les données de démonstration :
+Le projet s'appuie sur une instance **Oracle** (schéma `WASTEGUARD`). Renseignez les
+identifiants via les variables d'environnement ci-dessus.
 
-```bash
-sqlplus user/password@base @docs/wasteguard.sql   # tables, séquences, triggers
-sqlplus user/password@base @docs/seed.sql          # données de démonstration
-```
-
-Au démarrage, l'application applique en plus des **migrations de schéma à chaud**
+Au démarrage, l'application applique des **migrations de schéma à chaud**
 (ajout de colonnes manquantes via `ALTER TABLE`) — aucune action manuelle requise.
 
 **Matériel IoT** : la liste complète des composants et le brochage ESP32 sont dans
