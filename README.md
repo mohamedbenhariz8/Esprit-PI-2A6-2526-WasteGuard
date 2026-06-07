@@ -583,12 +583,21 @@ Le `BacDetector` capture **2 photos** (avant + après réparation) et classifie 
 ## Structure du dépôt
 
 ```
-Finale/
-├── WasteGuard.pro                    # Projet qmake
-├── main.cpp                          # Login + bootstrap mascotte
-├── mainwindow.{cpp,h,ui}             # Orchestrateur principal (~26k lignes)
-├── mainwindow_setupStatistics.cpp    # Charts dashboard
-├── mainwindow_accessibility_impl.cpp # Hooks WCAG
+Esprit-PI-2A6-2526-WasteGuard/
+├── README.md
+├── .gitignore
+├── requirements.txt                  # Dépendances Python (versions fixées)
+├── .env.example                      # Modèle de configuration
+├── docs/                             # Documentation (schémas, guides, SQL)
+├── demo/                             # Démonstration (vidéo + captures)
+├── firmware/
+│   └── updated_arduino_code.ino      # Firmware Arduino Uno / ESP32
+└── src/                              # Code Qt / C++ + workers Python
+    ├── WasteGuard.pro                # Projet qmake
+    ├── main.cpp                      # Login + bootstrap mascotte
+    ├── mainwindow.{cpp,h,ui}         # Orchestrateur principal (~26k lignes)
+    ├── mainwindow_setupStatistics.cpp    # Charts dashboard
+    ├── mainwindow_accessibility_impl.cpp # Hooks WCAG
 │
 │ ── Modules métier ──
 ├── client.{cpp,h}
@@ -614,8 +623,7 @@ Finale/
 ├── bacdetector.{cpp,h}
 ├── bacstatusdialog.{cpp,h}
 ├── repairdialog.{cpp,h}
-├── updated_arduino_code/
-│   └── updated_arduino_code.ino      # Firmware Uno
+│   (firmware Arduino/ESP32 -> ../firmware/updated_arduino_code.ino)
 │
 │ ── 3D & vidéo ──
 ├── triposr3ddialog.{cpp,h}
@@ -664,9 +672,21 @@ Oracle, ports série, clés API…). Les identifiants de base de données sont l
 les variables d'environnement `WASTEGUARD_DB_NAME` / `WASTEGUARD_DB_USER` /
 `WASTEGUARD_DB_PASSWORD` — **aucun mot de passe n'est stocké dans le code**.
 
+**Création de la base de données**
+
+Sur une instance Oracle, exécutez le schéma puis les données de démonstration :
+
+```bash
+sqlplus user/password@base @docs/wasteguard.sql   # tables, séquences, triggers
+sqlplus user/password@base @docs/seed.sql          # données de démonstration
+```
+
+Au démarrage, l'application applique en plus des **migrations de schéma à chaud**
+(ajout de colonnes manquantes via `ALTER TABLE`) — aucune action manuelle requise.
+
 **Matériel IoT** : la liste complète des composants et le brochage ESP32 sont dans
 [docs/liste-materiel.md](docs/liste-materiel.md). Le firmware est dans
-[updated_arduino_code/](updated_arduino_code/) (téléverser via l'IDE Arduino / `arduino-cli`).
+[firmware/](firmware/) (téléverser via l'IDE Arduino / `arduino-cli`).
 
 **Modèle IA (vision déchets)** : le modèle YOLO entraîné n'est **pas** versionné
 (règle GitHub 100 Mo). Renseignez `WASTE_MODEL_URL` dans `.env` ou téléchargez-le
@@ -690,11 +710,12 @@ depuis : [Hugging Face Repository](https://huggingface.co/kendrickfff/waste-clas
 **Compilation**
 
 ```bash
+cd src
 qmake WasteGuard.pro
 make            # Linux / mingw32-make sur Windows
 ```
 
-ou ouvrir `WasteGuard.pro` dans **Qt Creator** et builder en **Release**.
+ou ouvrir `src/WasteGuard.pro` dans **Qt Creator** et builder en **Release**.
 
 **Lancement**
 

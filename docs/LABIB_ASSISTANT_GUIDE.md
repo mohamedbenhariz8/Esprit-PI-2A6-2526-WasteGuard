@@ -254,7 +254,7 @@ void MainWindow::openLabibAssistant() {
 - [ ] Email delivery status tracking
 
 ### Labib Assistant
-- [ ] Integration with ChatGPT/Claude API for smarter responses
+- [ ] Integration with an external LLM API for smarter responses
 - [ ] Voice input/output using existing `VoiceAssistant`
 - [ ] Real-time data analytics and reporting
 - [ ] Export reports to PDF
