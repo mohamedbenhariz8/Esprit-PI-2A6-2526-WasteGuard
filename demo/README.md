@@ -5,7 +5,7 @@
 
 ## Vidéo en ligne
 
-🎬 **[Démonstration YouTube](https://www.youtube.com/watch?v=nihmCxFql80&t=1s)** — vidéo complète du système WasteGuard en fonctionnement.
+🎬 **[Démonstration YouTube](https://youtu.be/IlRb5DY20Wg)** — vidéo complète du système WasteGuard en fonctionnement.
 
 ## Vidéos locales
 
