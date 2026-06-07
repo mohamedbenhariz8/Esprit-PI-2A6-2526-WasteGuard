@@ -92,7 +92,7 @@ private:
     QTimer   *m_camPollTimer  = nullptr;
     QNetworkAccessManager *m_camNet = nullptr;
     QPointer<QNetworkReply> m_camReply;
-    QString   m_camUrl        = QStringLiteral("http://10.161.104.88/capture.raw");
+    QString   m_camUrl        = QStringLiteral("http://10.43.149.88/capture.raw");
     int       m_camWidth      = 160;
     int       m_camHeight     = 120;
     bool      m_camOnline     = false;

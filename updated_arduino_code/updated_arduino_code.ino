@@ -1,50 +1,77 @@
-#include <Servo.h>
+#include <ESP32Servo.h>
 #include <SPI.h>
 #include <MFRC522.h>
 #include <Wire.h>
 #include <Adafruit_GFX.h>
 #include <Adafruit_SSD1306.h>
 
-#define SS_PIN 10
-#define RST_PIN A1
+// =========================================================================
+// WasteGuard - ESP32 single-board build (2026-06-07)
+//
+// Migrated from the Arduino UNO + slave-Arduino setup to ONE ESP32 board.
+// The PC still talks to this board over USB serial at 9600 baud using the
+// exact same line protocol as before, so the Qt app (mainwindow.cpp /
+// bacstatusdialog.cpp) needs no changes.
+//
+//   Stepper STEP/DIR        GPIO 14 / 27   (carousel, 50 steps = 90 deg)
+//   Lid servos (x4)         GPIO 15, 13, 12, 25  (reinforced door, in sync)
+//   RFID MFRC522 SS/RST     GPIO 5 / 4     (SPI: SCK18 MISO19 MOSI23)
+//   Cycle button            GPIO 32        (INPUT_PULLUP, low = pressed)
+//   IR obstacle (presence)  GPIO 33        (low = obstacle -> MOTION:1)
+//   Ultrasonic TRIG         GPIO 2         (shared)
+//   Ultrasonic ECHO x4      GPIO 34,35,36,39  (one per bin, input-only)
+//   OLED 128x32 I2C         SDA21 / SCL22  (Labib animated face)
+//
+// Flow:
+//   IR obstacle (33) detects presence -> wakes OLED, MOTION:1 + MACHINE:ON,
+//                            plays the Labib welcome animation.
+//   Button (32)           -> "BTN5:PRESSED" on Serial. The Qt app grabs an
+//                            ESP32-CAM frame, classifies it, replies
+//                            "AI:<MATERIAL>". The AI handler rotates the
+//                            carousel (0/90/180/270 deg) and opens all 4
+//                            lid servos to 90 deg.
+//   Tech-armed + button   -> runs the local repair animation + opens the lid
+//                            (no slave board anymore). Tech-armed is set by
+//                            Qt via R:TECHNICIEN:<n>.
+//   After each drop the 4 ultrasonic sensors report BAC_FILL:<bin>:<pct>
+//   for all four compartments.
+// =========================================================================
+
+// ----- Stepper -----
+const int stepPin = 14;
+const int dirPin  = 27;
+
+// ----- Lid servos (4 motors reinforcing the door, driven in sync) -----
+const int lidPins[4] = {15, 13, 12, 25};
+Servo lid[4];
+
+// ----- Inputs -----
+const int buttonPin = 32;   // cycle button (INPUT_PULLUP, low = pressed)
+const int irPin     = 33;   // IR obstacle: presence trigger
+// Most IR obstacle modules pull the output LOW when something is detected.
+// If yours is inverted (HIGH on detect), change this to HIGH.
+#define IR_DETECT_LEVEL LOW
+
+// ----- Ultrasonic (1 shared trig, 4 echoes - one per bin) -----
+const int trigPin     = 2;
+const int echoPins[4] = {34, 35, 36, 39};
+
+// ----- RFID -----
+#define SS_PIN  5
+#define RST_PIN 4
 MFRC522 rfid(SS_PIN, RST_PIN);
 
+// ----- OLED -----
+// 0.91" SSD1306 panel: 128x32 (GND/VCC/SCL/SDA module).
 #define OLED_W   128
 #define OLED_H   32
 #define OLED_ADDR 0x3C
 Adafruit_SSD1306 oled(OLED_W, OLED_H, &Wire, -1);
 bool oledReady = false;
 
-// =========================================================================
-// Final wiring (2026-05-06) - SINGLE Arduino (servos + sensors merged)
-// Everything runs on one Uno now; servo_arduino.ino is no longer used.
-//
-//   D2  MG90S #2 (lid)     D9  Active buzzer
-//   D3  HC-SR04 TRIG       D10..D13, A1  RFID MFRC522
-//   D4  HC-SR04 ECHO       A0  PIR
-//   D5  SG90  (auxiliary)  A4/A5  OLED I2C (SDA/SCL)
-//   D6  MG90S #1 (lid)
-//   D7  Stepper STEP
-//   D8  Stepper DIR
-//
-// PIR (A0) is the user-facing trigger: motion turns the OLED welcome on
-// and (when re-enabled in MainWindow) starts the classify -> rotate ->
-// open -> wait 1s -> close -> measure cycle. The full cycle now runs
-// locally on this Arduino - no LID:OPEN / MEASURE serial events.
-// =========================================================================
-
-const int pirPin    = A0;   // PIR motion sensor
-const int stepPin   = 7;    // stepper STEP
-const int dirPin    = 8;    // stepper DIR
-const int buzzerPin = 9;    // active buzzer; tone() works for passive too
-
-const int sgPin   = 5;      // SG90  (auxiliary, parked at neutral)
-const int mg1Pin  = 6;      // MG90S #1 - bin lid
-const int mg2Pin  = 2;      // MG90S #2 - bin lid (driven in sync with #1)
-const int trigPin = 3;      // HC-SR04 TRIG
-const int echoPin = 4;      // HC-SR04 ECHO
-
-Servo sg, mg1, mg2;
+// The Labib face is designed natively for the 32px-tall screen, so no
+// vertical offset is needed (YO stays 0).
+const int YO = 0;
 
 bool appBtn[4] = {false, false, false, false};
 String serialBuffer = "";
@@ -53,15 +80,14 @@ int currentBin = 0;
 unsigned long lastBinMoveTime = 0;
 bool isAwayFromHome = false;
 
-// Visual "machine on" state. Latched true on the first PIR motion edge
-// after boot; the OLED then shows the welcome screen.
+// Visual "machine on" state. Latched true on the first presence edge after
+// boot; the OLED then shows the welcome screen.
 bool machineOn = false;
 
-// Lid travel and bin geometry. Tune mechanically once you've found the
-// right angles with lid_servo_test.ino. Both MG90S (D6 and D2) get the
-// same angle - no mirroring.
-const int LID_OPEN_DEG  = 90;   // tune via the test sketch
-const int LID_CLOSE_DEG = 0;    // both servos park here at rest
+// Lid travel and bin geometry. All 4 servos open to 90 deg and close to
+// 0 deg together (matches the ESP32 servo wiring).
+const int LID_OPEN_DEG  = 90;
+const int LID_CLOSE_DEG = 0;
 const int BIN_DEPTH_CM  = 25;
 
 enum LabibState {
@@ -79,12 +105,12 @@ unsigned long repairArmedAt = 0;
 const unsigned long REPAIR_ARM_TIMEOUT = 15000;
 String repairTechName = "";
 
-
 const unsigned long DEBOUNCE_MS = 250;
 
 
 void drawEye(int cx, int cy, int openness, int pupilDx = 0) {
   if (!oledReady) return;
+  cy += YO;
   if (openness <= 0) {
     oled.drawLine(cx - 7, cy, cx + 7, cy, SSD1306_WHITE);
     return;
@@ -100,6 +126,7 @@ void drawEye(int cx, int cy, int openness, int pupilDx = 0) {
 
 void drawHeartEye(int cx, int cy) {
   if (!oledReady) return;
+  cy += YO;
   oled.fillCircle(cx - 3, cy - 1, 3, SSD1306_WHITE);
   oled.fillCircle(cx + 3, cy - 1, 3, SSD1306_WHITE);
   oled.fillTriangle(cx - 5, cy + 1, cx + 5, cy + 1, cx, cy + 6, SSD1306_WHITE);
@@ -107,19 +134,20 @@ void drawHeartEye(int cx, int cy) {
 
 void drawMouth(int cx, int cy, int style) {
   if (!oledReady) return;
+  cy += YO;
   switch (style) {
-    case 0: 
+    case 0:
       oled.drawLine(cx - 5, cy, cx + 5, cy, SSD1306_WHITE);
       break;
-    case 1: 
+    case 1:
       oled.drawLine(cx - 6, cy - 1, cx - 3, cy + 2, SSD1306_WHITE);
       oled.drawLine(cx - 3, cy + 2, cx + 3, cy + 2, SSD1306_WHITE);
       oled.drawLine(cx + 3, cy + 2, cx + 6, cy - 1, SSD1306_WHITE);
       break;
-    case 2: 
+    case 2:
       oled.drawCircle(cx, cy + 1, 2, SSD1306_WHITE);
       break;
-    case 3: 
+    case 3:
       oled.drawLine(cx - 4, cy, cx + 4, cy, SSD1306_WHITE);
       oled.drawLine(cx - 4, cy, cx - 2, cy + 2, SSD1306_WHITE);
       oled.drawLine(cx + 4, cy, cx + 2, cy + 2, SSD1306_WHITE);
@@ -129,6 +157,7 @@ void drawMouth(int cx, int cy, int style) {
 
 void drawHand(int x, int y) {
   if (!oledReady) return;
+  y += YO;
   oled.drawCircle(x, y, 3, SSD1306_WHITE);
   oled.drawLine(x - 2, y - 3, x - 1, y - 5, SSD1306_WHITE);
   oled.drawLine(x,     y - 3, x,     y - 5, SSD1306_WHITE);
@@ -137,6 +166,7 @@ void drawHand(int x, int y) {
 
 void drawZzz(int x, int y, int phase) {
   if (!oledReady) return;
+  y += YO;
   oled.setTextSize(1);
   oled.setTextColor(SSD1306_WHITE);
   int off = (phase % 3) * 2;
@@ -147,31 +177,21 @@ void drawZzz(int x, int y, int phase) {
 
 void drawWrench(int cx, int cy) {
   if (!oledReady) return;
+  cy += YO;
   oled.drawLine(cx - 2, cy - 5, cx + 2, cy + 5, SSD1306_WHITE);
   oled.drawCircle(cx - 3, cy - 6, 2, SSD1306_WHITE);
   oled.drawRect(cx + 1, cy + 4, 4, 3, SSD1306_WHITE);
 }
 
 
-// ----- Buzzer helper ----------------------------------------------------
-// Short audible cue; works for both passive (PWM-driven) and active
-// (just a HIGH/LOW toggle) buzzers via tone().
-void beep(unsigned int hz, unsigned long ms) {
-  tone(buzzerPin, hz, ms);
-}
-
 // ----- Lid + HC-SR04 helpers --------------------------------------------
-// Both MG90S now get the same angle (no mirror on D6). The previous
-// 180-deg mirror rotated D6 the wrong way; un-mirroring sends it the
-// other clockwise direction.
-//   setLid(0)  -> mg1=0,  mg2=0   (closed)
-//   setLid(90) -> mg1=90, mg2=90  (open)
+// All 4 servos move together: 0 deg closed, 90 deg open. If a pair is
+// physically mounted mirrored, flip those entries to (LID_OPEN_DEG - deg).
 void setLid(int deg) {
-  mg1.write(deg);   // D6
-  mg2.write(deg);   // D2
+  for (int i = 0; i < 4; i++) lid[i].write(deg);
 }
 
-long readSingleEchoUs() {
+long readSingleEchoUs(int echoPin) {
   digitalWrite(trigPin, LOW);
   delayMicroseconds(4);
   digitalWrite(trigPin, HIGH);
@@ -180,14 +200,13 @@ long readSingleEchoUs() {
   return (long)pulseIn(echoPin, HIGH, 40000UL); // 40 ms cap (~6.8 m)
 }
 
-long readDistanceCm() {
+long readDistanceCm(int echoPin) {
   long samples[3];
   int valid = 0;
   for (int i = 0; i < 3; i++) {
-    long us = readSingleEchoUs();
-    Serial.print("US_RAW:"); Serial.println(us);
+    long us = readSingleEchoUs(echoPin);
     if (us > 0) samples[valid++] = us;
-    delay(60); // datasheet >=60 ms between pings
+    delay(40);
   }
   if (valid == 0) return -1;
   for (int i = 1; i < valid; i++) {
@@ -204,6 +223,18 @@ int computeFillPercent(long distCm) {
   if (distCm >= BIN_DEPTH_CM) return 0;
   if (distCm <= 0) return 100;
   return (int)(((BIN_DEPTH_CM - distCm) * 100L) / BIN_DEPTH_CM);
+}
+
+// Read every bin's ultrasonic and report BAC_FILL:<bin>:<pct> for all four.
+void reportAllBinFills() {
+  for (int b = 0; b < 4; b++) {
+    long distCm  = readDistanceCm(echoPins[b]);
+    int  fillPct = computeFillPercent(distCm);
+    Serial.print("BAC_FILL:");
+    Serial.print(b);
+    Serial.print(":");
+    Serial.println(fillPct);
+  }
 }
 
 // ----- OLED helpers -----------------------------------------------------
@@ -250,7 +281,7 @@ void labibTick() {
       if (e > 300 && e < 1400) {
         oled.setTextSize(1);
         oled.setTextColor(SSD1306_WHITE);
-        oled.setCursor(2, 2);
+        oled.setCursor(2, 2 + YO);
         oled.print("BONJOUR!");
       }
       if (e >= 1700) labibStart(L_BLINK);
@@ -307,8 +338,9 @@ void labibTick() {
       oled.fillRect(0, 0, n, OLED_H, SSD1306_BLACK);
       if (e >= 400) {
         lState = L_OFF;
-        oled.clearDisplay();
-        oled.display();
+        // Don't leave the screen blank - show a persistent idle banner so
+        // the user always sees the bin is alive and waiting.
+        oledTwoLines("WasteGuard PRET", "Approchez un dechet");
         return;
       }
       break;
@@ -319,25 +351,25 @@ void labibTick() {
       int op = (prog * 8) / 100; if (op < 1) op = 1;
       drawEye(LX, EY, op);
       drawEye(RX, EY, op);
-      drawMouth(64, 24, 2); 
+      drawMouth(64, 24, 2);
       if (e >= 500) labibStart(L_REPAIR_FACE);
       break;
     }
     case L_REPAIR_FACE: {
       drawEye(LX, EY, 8);
-      drawEye(RX, EY, 8, (((e / 300) % 3) - 1) * 2); 
-      drawMouth(64, 24, 3); 
+      drawEye(RX, EY, 8, (((e / 300) % 3) - 1) * 2);
+      drawMouth(64, 24, 3);
 
       int wobble = ((e / 200) % 2) ? -2 : 2;
       drawWrench(10 + wobble, 16);
 
       oled.setTextSize(1);
       oled.setTextColor(SSD1306_WHITE);
-      oled.setCursor(2, 0);
+      oled.setCursor(2, 0 + YO);
       oled.print("REPARATION");
 
       if (repairTechName.length() > 0) {
-        oled.setCursor(30, 25);
+        oled.setCursor(30, 25 + YO);
         String displayName = repairTechName;
         if (displayName.length() > 12) displayName = displayName.substring(0, 12);
         oled.print(displayName);
@@ -373,7 +405,7 @@ void labibTick() {
 
       oled.setTextSize(1);
       oled.setTextColor(SSD1306_WHITE);
-      oled.setCursor(20, 25);
+      oled.setCursor(20, 25 + YO);
       String dn = repairTechName;
       if (dn.length() > 14) dn = dn.substring(0, 14);
       oled.print(dn);
@@ -388,14 +420,11 @@ void labibTick() {
 
 
 void repairOpenAnimation() {
-  beep(2000, 120); delay(150);
-  beep(2400, 120); delay(150);
   setLid(LID_OPEN_DEG);
   delay(900);
 }
 
 void repairCloseAnimation() {
-  beep(1800, 200);
   setLid(LID_CLOSE_DEG);
   delay(900);
 }
@@ -407,11 +436,6 @@ void activateRepairMode() {
   Serial.println("REPAIR_MODE:ACTIVE");
 
   labibStart(L_REPAIR_WAKE);
-
-  // Three short beeps as the repair-mode entry cue.
-  for (int i = 0; i < 3; i++) {
-    beep(2200, 80); delay(160);
-  }
 
   repairOpenAnimation();
 }
@@ -434,12 +458,12 @@ void deactivateRepairMode() {
 
 
 void setup() {
-  Serial.begin(9600);
+  Serial.begin(9600);   // matches the Qt app (arduino.cpp opens at 9600)
 
   SPI.begin();
   rfid.PCD_Init();
 
-  Wire.begin();
+  Wire.begin(21, 22);   // explicit ESP32 I2C pins: SDA=21, SCL=22
   if (oled.begin(SSD1306_SWITCHCAPVCC, OLED_ADDR)) {
     oledReady = true;
     oled.clearDisplay();
@@ -450,23 +474,28 @@ void setup() {
     Serial.println("OLED:NOT_FOUND");
   }
 
-  pinMode(buzzerPin, OUTPUT);
-  pinMode(pirPin, INPUT);
+  pinMode(irPin, INPUT);
+  pinMode(buttonPin, INPUT_PULLUP);
 
   pinMode(stepPin, OUTPUT);
   pinMode(dirPin, OUTPUT);
 
   pinMode(trigPin, OUTPUT);
-  pinMode(echoPin, INPUT);
+  for (int i = 0; i < 4; i++) pinMode(echoPins[i], INPUT);
   digitalWrite(trigPin, LOW);
 
-  mg1.attach(mg1Pin);
-  mg2.attach(mg2Pin);
-  sg.attach(sgPin);
-  sg.write(90); // park SG90 at neutral (auxiliary, unused for now)
+  // Allocate PWM timers and attach the 4 lid servos.
+  ESP32PWM::allocateTimer(0);
+  ESP32PWM::allocateTimer(1);
+  ESP32PWM::allocateTimer(2);
+  ESP32PWM::allocateTimer(3);
+  for (int i = 0; i < 4; i++) {
+    lid[i].setPeriodHertz(50);
+    lid[i].attach(lidPins[i], 500, 2400);
+  }
 
-  // Boot self-test: park lid closed, sweep open, snap closed. If you
-  // don't see this motion at boot, the SG90/MG90S wiring is wrong.
+  // Boot self-test: park closed, sweep open, snap closed. If you don't see
+  // this motion at boot, the servo wiring is wrong.
   setLid(LID_CLOSE_DEG);
   delay(600);
   setLid(LID_OPEN_DEG);
@@ -474,29 +503,45 @@ void setup() {
   setLid(LID_CLOSE_DEG);
   delay(600);
 
-  // Boot ack chirp - confirms the buzzer is wired correctly.
-  beep(1800, 100);
-
   Serial.println("IDENT:MAIN");
   Serial.println("MACHINE:OFF");
   Serial.println("MOTION:0");
   Serial.println("=== SYSTEM ONLINE ===");
+
+  // Boot welcome + Labib animation. This runs regardless of the IR sensor,
+  // so if the OLED is wired correctly you WILL see the face at power-on.
+  // If nothing shows here, the problem is the OLED/I2C wiring, not the IR.
+  oledTwoLines("WasteGuard PRET", "Approchez un dechet");
+  delay(800);
+  labibStart(L_WAKE);
 }
 
 
 void loop() {
 
   if (rfid.PICC_IsNewCardPresent() && rfid.PICC_ReadCardSerial()) {
-    Serial.print("RFID_TAG:");
+    // Build the UID once (lowercase hex, same format the Qt app expects).
+    String uid = "";
     for (byte i = 0; i < rfid.uid.size; i++) {
-      Serial.print(rfid.uid.uidByte[i] < 0x10 ? "0" : "");
-      Serial.print(rfid.uid.uidByte[i], HEX);
+      if (rfid.uid.uidByte[i] < 0x10) uid += "0";
+      uid += String(rfid.uid.uidByte[i], HEX);
     }
-    Serial.println();
+    Serial.print("RFID_TAG:");
+    Serial.println(uid);
 
-    // Audible ack on RFID scan.
-    beep(2400, 80); delay(80);
-    beep(2400, 80);
+    // Show the scanned badge on the OLED, like the older build did.
+    if (oledReady) {
+      oled.clearDisplay();
+      oled.setTextSize(1);
+      oled.setTextColor(SSD1306_WHITE);
+      oled.setCursor(0, 0);
+      oled.print("Badge detecte:");
+      oled.setTextSize(2);
+      oled.setCursor(0, 14);
+      oled.print(uid);
+      oled.display();
+    }
+    lState = L_OFF;   // keep the badge on screen (don't let Labib overwrite it)
 
     rfid.PICC_HaltA();
     rfid.PCD_StopCrypto1();
@@ -526,17 +571,14 @@ void loop() {
           oled.setTextColor(SSD1306_WHITE);
           oled.setCursor(0, 0);
           oled.print("Technicien:");
-          oled.setCursor(0, 19);
+          oled.setCursor(0, 11);
           String dn = repairTechName;
           if (dn.length() > 21) dn = dn.substring(0, 21);
           oled.print(dn);
-          oled.setCursor(0, 25);
+          oled.setCursor(0, 22);
           oled.print("-> Mode reparation");
           oled.display();
         }
-
-        beep(2200, 120); delay(150);
-        beep(2200, 120);
       }
 
       else if (serialBuffer == "R:CLOSE") {
@@ -551,20 +593,40 @@ void loop() {
           }
         }
       }
-      
-      // Parse distance data from second Arduino
-      else if (serialBuffer.startsWith("D:")) {
-        int distance = serialBuffer.substring(2).toInt();
-        // Forward distance data to the Qt application
-        Serial.print("DISTANCE:");
-        Serial.println(distance);
+
+      // Manual hardware self-test. Close the Qt app, open the Arduino Serial
+      // Monitor at 9600, and send "TEST". This exercises all 4 lid servos and
+      // the stepper directly, with NO camera/AI involved - so you can confirm
+      // the motor hardware works on its own.
+      else if (serialBuffer == "TEST") {
+        Serial.println("TEST:START");
+        oledTwoLines("TEST MOTEURS", "Servos + stepper");
+
+        Serial.println("TEST:servos open");
+        setLid(LID_OPEN_DEG);  delay(1200);
+        Serial.println("TEST:servos close");
+        setLid(LID_CLOSE_DEG); delay(1200);
+
+        Serial.println("TEST:stepper CW");
+        digitalWrite(dirPin, HIGH);
+        for (int i = 0; i < 200; i++) {
+          digitalWrite(stepPin, HIGH); delayMicroseconds(2000);
+          digitalWrite(stepPin, LOW);  delayMicroseconds(2000);
+        }
+        delay(400);
+        Serial.println("TEST:stepper CCW");
+        digitalWrite(dirPin, LOW);
+        for (int i = 0; i < 200; i++) {
+          digitalWrite(stepPin, HIGH); delayMicroseconds(2000);
+          digitalWrite(stepPin, LOW);  delayMicroseconds(2000);
+        }
+        Serial.println("TEST:DONE");
       }
 
       // Parse AI material classification.
       // Bin layout (90 deg apart): 0=PLASTIC, 1=METAL, 2=GLASS, 3=GENERAL_WASTE.
-      // Full cycle: display -> rotate -> LID:OPEN -> wait 1s -> LID:CLOSE
-      // -> MEASURE. The Qt app forwards the LID:* / MEASURE events to the
-      // servo Arduino, which physically drives the servos and HC-SR04.
+      // Full cycle: display -> rotate -> open lid -> wait 1s -> close ->
+      // measure all 4 bins.
       else if (serialBuffer.startsWith("AI:")) {
         String material = serialBuffer.substring(3);
         material.trim();
@@ -575,7 +637,6 @@ void loop() {
         else if (material == "GENERAL_WASTE")  targetBin = 3;
 
         oledTwoLines("Detecte:", material);
-        beep(2400, 60); // brief "got it" cue
 
         // Rotate the carousel to the matching bin (shortest path, 90 deg/step).
         if (targetBin != currentBin) {
@@ -596,23 +657,18 @@ void loop() {
           }
         }
 
-        // Open the lid (both MG90S in sync), hold 1 s, close it, then
-        // ping the HC-SR04 for the new fill level. All local now - no
-        // more LID:OPEN / MEASURE serial round-trips.
-        beep(2800, 100);     // audible "drop it now" cue
+        // Open all 4 lid servos in sync, hold 1 s, close, then measure
+        // every bin's fill level.
         setLid(LID_OPEN_DEG);
         delay(1000);
         setLid(LID_CLOSE_DEG);
         delay(500);          // let the lid settle before measuring
 
-        long distCm  = readDistanceCm();
-        int  fillPct = computeFillPercent(distCm);
-        Serial.print("BAC_FILL:");
-        Serial.print(currentBin);
-        Serial.print(":");
-        Serial.println(fillPct);
+        reportAllBinFills();
 
         if (oledReady) {
+          long distCm  = readDistanceCm(echoPins[currentBin]);
+          int  fillPct = computeFillPercent(distCm);
           oled.clearDisplay();
           oled.setTextSize(1);
           oled.setTextColor(SSD1306_WHITE);
@@ -642,8 +698,7 @@ void loop() {
     }
   }
 
-  // Repair arming timeout (the physical confirmation button is gone with
-  // the new wiring; the app can still trigger / close repair via serial).
+  // Repair arming timeout.
   if (repairArmed && !repairActive
       && millis() - repairArmedAt > REPAIR_ARM_TIMEOUT) {
     repairArmed = false;
@@ -662,12 +717,18 @@ void loop() {
     }
   }
 
-  // ----- PIR is the single trigger now -------------------------------
-  // On the rising edge of motion: turn the OLED welcome on (latched
-  // forever for now), beep once, and emit MOTION:1 so the Qt app can
-  // start a classification cycle. Falling edge just emits MOTION:0.
+  // ----- Presence (IR obstacle on GPIO33) ----------------------------
+  // Replaces the old PIR. Low = obstacle/presence detected. On the rising
+  // edge of presence: turn the OLED welcome on (latched), and emit MOTION:1
+  // so the Qt app flips the bac to EN_SERVICE. Falling edge emits MOTION:0.
   static bool lastMotion = false;
-  bool motion = (digitalRead(pirPin) == HIGH);
+  static unsigned long lastIrDbg = 0;
+  int irRaw = digitalRead(irPin);
+  if (millis() - lastIrDbg > 1000) {        // 1 Hz raw IR readout for diagnosis
+    lastIrDbg = millis();
+    Serial.print("IR_RAW:"); Serial.println(irRaw);
+  }
+  bool motion = (irRaw == IR_DETECT_LEVEL);
   if (motion != lastMotion) {
     lastMotion = motion;
     Serial.println(motion ? "MOTION:1" : "MOTION:0");
@@ -676,18 +737,39 @@ void loop() {
         machineOn = true;
         Serial.println("MACHINE:ON");
         oledTwoLines("WasteGuard PRET", "Approchez un dechet");
-        beep(2000, 120);
       }
       if (lState == L_OFF) labibStart(L_WAKE);
     }
   }
 
-  // Auto-home after 10 seconds of inactivity
+  // ----- Cycle button (GPIO32) ---------------------------------------
+  // Rising edge of "pressed" (INPUT_PULLUP -> LOW = pressed). Two roles:
+  //   - Tech-armed (R:TECHNICIEN:<name> received): run the local repair
+  //     animation and open the lid.
+  //   - Otherwise: emit "BTN5:PRESSED" so the Qt app fetches a frame from
+  //     the ESP32-CAM, classifies it, and replies AI:<MAT>. The AI:<MAT>
+  //     branch then rotates the stepper and opens the lid.
+  static bool lastBtn = HIGH;
+  static unsigned long lastBtnEdgeMs = 0;
+  bool btn = (digitalRead(buttonPin) == LOW);
+  unsigned long nowMs = millis();
+  if (btn && !lastBtn && (nowMs - lastBtnEdgeMs) > DEBOUNCE_MS) {
+    lastBtnEdgeMs = nowMs;
+
+    if (repairArmed && !repairActive) {
+      activateRepairMode();
+    } else if (!repairActive) {
+      Serial.println("BTN5:PRESSED");
+    }
+  }
+  lastBtn = btn;
+
+  // Auto-home after 10 seconds of inactivity.
   if (isAwayFromHome && (millis() - lastBinMoveTime >= 10000)) {
     int diff = 0 - currentBin; // target is 0
     if (diff > 2) diff -= 4;
     else if (diff < -2) diff += 4;
-    
+
     if (diff != 0) {
       digitalWrite(dirPin, diff > 0 ? HIGH : LOW);
       int steps = abs(diff) * 50;

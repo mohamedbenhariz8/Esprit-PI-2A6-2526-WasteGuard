@@ -28,7 +28,7 @@ from PIL import Image
 from transformers import pipeline
 
 
-URL = os.environ.get("ESP32_CAM_URL", "http://10.161.104.88/capture.raw")
+URL = os.environ.get("ESP32_CAM_URL", "http://10.43.149.88/capture.raw")
 WIDTH = 160
 HEIGHT = 120
 

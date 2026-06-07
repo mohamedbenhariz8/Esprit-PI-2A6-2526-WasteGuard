@@ -104,6 +104,7 @@ class QStackedWidget;
 class QTableWidget;
 class QWidget;
 class QPushButton;
+class QLabel;
 class QLineEdit;
 class QDockWidget;
 class QResizeEvent;
@@ -527,6 +528,12 @@ private:
 
     // Floating AI Button
     QPushButton *m_floatingAIButton = nullptr;
+    QLabel *m_labibPeekLabel = nullptr;
+    // Drag de la mascotte flottante (style bulle Messenger deplacable)
+    QPoint m_floatingDragStartLocal;
+    QPoint m_floatingDragStartGlobal;
+    bool   m_floatingIsDragging   = false;
+    bool   m_floatingHasCustomPos = false;
     void createFloatingAIButton();
     void onFloatingAIButtonPositionUpdate();
 

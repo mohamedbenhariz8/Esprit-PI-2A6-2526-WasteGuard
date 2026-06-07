@@ -8,6 +8,8 @@
 #include "voiceassistant.h"
 #include "thememanager.h"
 #include "employeehistorystore.h"
+#include "labibchat.h"
+#include "labibmediacircle.h"
 
 #include "ui_mainwindow.h"
 #include <QCalendarWidget>
@@ -76,6 +78,13 @@
 
 #include <QFrame>
 #include <QGraphicsDropShadowEffect>
+#include <QGraphicsOpacityEffect>
+#include <QPropertyAnimation>
+#include <QSequentialAnimationGroup>
+#include <QParallelAnimationGroup>
+#include <QEasingCurve>
+#include <QAbstractAnimation>
+#include <QPointer>
 #include <QGraphicsSimpleTextItem>
 #include <QPalette>
 #include <QStackedWidget>
@@ -130,6 +139,9 @@
 #include <QMediaDevices>
 #include <QVideoSink>
 #include <QVideoFrame>
+#include <QMediaPlayer>
+#include <QAudioOutput>
+#include <QVideoWidget>
 #include <QScreen>
 #include <QDockWidget>
 #include <QResizeEvent>
@@ -354,6 +366,336 @@ QString resolveVoiceEngineScriptPath()
     }
 
     return QString();
+}
+
+QString resolveLabibIntroVideoPath()
+{
+    QStringList candidates;
+    auto addCandidate = [&candidates](const QString &path) {
+        if (!path.trimmed().isEmpty()) {
+            candidates << QDir::fromNativeSeparators(path.trimmed());
+        }
+    };
+
+    const QString appDir = QCoreApplication::applicationDirPath();
+    const QString cwd = QDir::currentPath();
+    const QString sourceDir = QFileInfo(QString::fromUtf8(__FILE__)).absolutePath();
+
+    addCandidate(appDir + "/download2.mp4");
+    addCandidate(appDir + "/../download2.mp4");
+    addCandidate(appDir + "/../../download2.mp4");
+    addCandidate(cwd + "/download2.mp4");
+    addCandidate(cwd + "/../download2.mp4");
+    addCandidate(cwd + "/../../download2.mp4");
+    addCandidate(sourceDir + "/download2.mp4");
+    addCandidate(sourceDir + "/../download2.mp4");
+    addCandidate(appDir + "/assets/download2.mp4");
+    addCandidate(cwd + "/assets/download2.mp4");
+    addCandidate(":/download2.mp4");
+
+    auto addNearbyVideoCandidates = [&addCandidate](const QString &basePath) {
+        QDir dir(basePath);
+        if (!dir.exists()) return;
+
+        QDir cursor = dir;
+        for (int i = 0; i < 10; ++i) {
+            addCandidate(cursor.filePath("download2.mp4"));
+            if (!cursor.cdUp()) break;
+        }
+    };
+
+    addNearbyVideoCandidates(appDir);
+    addNearbyVideoCandidates(cwd);
+
+    candidates.removeDuplicates();
+    for (const QString &candidate : candidates) {
+        if (candidate.startsWith(":/")) {
+            // Resource path: accept immediately if referenced.
+            return candidate;
+        }
+        if (QFile::exists(candidate)) {
+            return candidate;
+        }
+    }
+    return QString();
+}
+
+class LabibChromaVideoWidget : public QWidget
+{
+public:
+    explicit LabibChromaVideoWidget(QWidget *parent = nullptr)
+        : QWidget(parent)
+    {
+        setAttribute(Qt::WA_TranslucentBackground);
+        setAutoFillBackground(false);
+    }
+
+    void setFrame(const QImage &frame)
+    {
+        m_frame = frame;
+        update();
+    }
+
+protected:
+    void paintEvent(QPaintEvent *) override
+    {
+        if (m_frame.isNull()) return;
+
+        QPainter p(this);
+        p.setRenderHints(QPainter::Antialiasing | QPainter::SmoothPixmapTransform);
+
+        const QSizeF src = m_frame.size();
+        const QSizeF dst = size();
+        if (src.isEmpty() || dst.isEmpty()) return;
+
+        const qreal scale = qMin(dst.width() / src.width(), dst.height() / src.height());
+        const QSizeF draw(src.width() * scale, src.height() * scale);
+        const QPointF topLeft((dst.width() - draw.width()) / 2.0,
+                              (dst.height() - draw.height()) / 2.0);
+        p.drawImage(QRectF(topLeft, draw), m_frame);
+    }
+
+private:
+    QImage m_frame;
+};
+
+QImage keyOutWhiteBackground(const QImage &input)
+{
+    if (input.isNull()) return QImage();
+
+    QImage img = input.convertToFormat(QImage::Format_ARGB32);
+    for (int y = 0; y < img.height(); ++y) {
+        QRgb *line = reinterpret_cast<QRgb *>(img.scanLine(y));
+        for (int x = 0; x < img.width(); ++x) {
+            const QRgb px = line[x];
+            const int r = qRed(px);
+            const int g = qGreen(px);
+            const int b = qBlue(px);
+            const int a = qAlpha(px);
+
+            const int minc = qMin(r, qMin(g, b));
+            const int maxc = qMax(r, qMax(g, b));
+            const int span = maxc - minc;
+
+            // Blanc quasi pur => totalement transparent.
+            if (minc >= 245 && span <= 18) {
+                line[x] = qRgba(r, g, b, 0);
+                continue;
+            }
+
+            // Blanc cassé / gris clair => alpha progressif pour adoucir les contours.
+            if (minc >= 220 && span <= 26) {
+                const int falloff = qBound(0, (245 - minc) * 10, 255);
+                const int outA = qMin(a, falloff);
+                line[x] = qRgba(r, g, b, outA);
+            }
+        }
+    }
+    return img;
+}
+
+void playLabibIntroVideoCentered(QWidget *owner)
+{
+    const QString videoPath = resolveLabibIntroVideoPath();
+    if (videoPath.isEmpty()) {
+        qWarning() << "Labib intro video not found: download2.mp4";
+        return;
+    }
+
+    QDialog *overlay = new QDialog(owner ? owner->window() : nullptr);
+    overlay->setAttribute(Qt::WA_DeleteOnClose);
+    overlay->setAttribute(Qt::WA_TranslucentBackground);
+    overlay->setWindowFlags(Qt::Dialog | Qt::FramelessWindowHint | Qt::WindowStaysOnTopHint);
+    overlay->setModal(true);
+    overlay->setWindowModality(Qt::ApplicationModal);
+    overlay->setStyleSheet("QDialog{background: transparent;}");
+
+    auto *layout = new QVBoxLayout(overlay);
+    layout->setContentsMargins(0, 0, 0, 0);
+    layout->setSpacing(0);
+
+    auto *videoWidget = new LabibChromaVideoWidget(overlay);
+    layout->addWidget(videoWidget);
+
+    auto *player = new QMediaPlayer(overlay);
+    auto *audio = new QAudioOutput(overlay);
+    auto *sink  = new QVideoSink(overlay);
+    audio->setMuted(true);
+    player->setAudioOutput(audio);
+    player->setVideoSink(sink);
+    player->setLoops(1);
+
+    QObject::connect(sink, &QVideoSink::videoFrameChanged, overlay,
+                     [videoWidget](const QVideoFrame &frame) {
+        QVideoFrame copy(frame);
+        if (!copy.isValid()) return;
+        const QImage raw = copy.toImage();
+        if (raw.isNull()) return;
+        videoWidget->setFrame(keyOutWhiteBackground(raw));
+    });
+
+    QObject::connect(player, &QMediaPlayer::mediaStatusChanged, overlay,
+                     [overlay](QMediaPlayer::MediaStatus status) {
+        if (status == QMediaPlayer::EndOfMedia) {
+            overlay->accept();
+        }
+    });
+    QObject::connect(player, &QMediaPlayer::errorOccurred, overlay,
+                     [overlay](QMediaPlayer::Error, const QString &) {
+        overlay->reject();
+    });
+
+    if (videoPath.startsWith(":/")) {
+        player->setSource(QUrl(QStringLiteral("qrc") + videoPath));
+    } else {
+        player->setSource(QUrl::fromLocalFile(videoPath));
+    }
+
+    QScreen *screen = nullptr;
+    if (owner && owner->windowHandle()) {
+        screen = owner->windowHandle()->screen();
+    }
+    if (!screen) {
+        screen = QGuiApplication::primaryScreen();
+    }
+    const QRect avail = screen ? screen->availableGeometry() : QRect(0, 0, 1280, 720);
+    const QSize preferred(820, 520); // centré et non plein écran
+    const int w = qMin(preferred.width(),  qMax(420, static_cast<int>(avail.width()  * 0.80)));
+    const int h = qMin(preferred.height(), qMax(260, static_cast<int>(avail.height() * 0.80)));
+    overlay->resize(w, h);
+    overlay->move(avail.center() - overlay->rect().center());
+
+    overlay->show();
+    player->play();
+    overlay->exec();
+}
+
+QString resolveTrackingScriptPath()
+{
+    QStringList candidates;
+    auto addCandidate = [&candidates](const QString &path) {
+        if (!path.trimmed().isEmpty()) {
+            candidates << QDir::fromNativeSeparators(path.trimmed());
+        }
+    };
+
+    const QString appDir = QCoreApplication::applicationDirPath();
+    const QString cwd = QDir::currentPath();
+    const QString sourceDir = QFileInfo(QString::fromUtf8(__FILE__)).absolutePath();
+
+    addCandidate(appDir + "/tracking_server.py");
+    addCandidate(appDir + "/../tracking_server.py");
+    addCandidate(appDir + "/../../tracking_server.py");
+    addCandidate(cwd + "/tracking_server.py");
+    addCandidate(cwd + "/../tracking_server.py");
+    addCandidate(cwd + "/../../tracking_server.py");
+    addCandidate(sourceDir + "/tracking_server.py");
+    addCandidate(sourceDir + "/../tracking_server.py");
+
+    auto addNearbyScriptCandidates = [&addCandidate](const QString &basePath) {
+        QDir dir(basePath);
+        if (!dir.exists()) {
+            return;
+        }
+
+        QDir cursor = dir;
+        for (int i = 0; i < 6; ++i) {
+            addCandidate(cursor.filePath("tracking_server.py"));
+            if (!cursor.cdUp()) {
+                break;
+            }
+        }
+    };
+
+    addNearbyScriptCandidates(appDir);
+    addNearbyScriptCandidates(cwd);
+
+    candidates.removeDuplicates();
+    for (const QString &candidate : candidates) {
+        if (QFile::exists(candidate)) {
+            return candidate;
+        }
+    }
+
+    return QString();
+}
+
+QString resolveTrackingDataFilePath()
+{
+    const QString scriptPath = resolveTrackingScriptPath();
+    if (!scriptPath.isEmpty()) {
+        return QDir(QFileInfo(scriptPath).absolutePath()).filePath("delivery_tracking.json");
+    }
+    return QDir(QCoreApplication::applicationDirPath()).filePath("delivery_tracking.json");
+}
+
+void attachLiveTrackingToMapPage(QWidget *page, QVBoxLayout *layout, QQuickWidget *mapWidget, const QString &statutText)
+{
+    if (!page || !layout || !mapWidget) return;
+
+    const QString stat = statutText.toLower();
+    if (!stat.contains("cours")) return;
+
+    QLabel *lblUrl = new QLabel(QString::fromUtf8("Démarrage du tracking en cours..."), page);
+    lblUrl->setStyleSheet("color: #27ae60; font-weight: bold; font-size: 14px; margin-bottom: 10px;");
+    lblUrl->setAlignment(Qt::AlignCenter);
+    layout->insertWidget(1, lblUrl);
+
+    const QString scriptPath = resolveTrackingScriptPath();
+    if (scriptPath.isEmpty()) {
+        lblUrl->setStyleSheet("color: #c0392b; font-weight: bold; font-size: 13px; margin-bottom: 10px;");
+        lblUrl->setText("Tracking indisponible: tracking_server.py introuvable.");
+        return;
+    }
+
+    const QString trackingDir = QFileInfo(scriptPath).absolutePath();
+    const QString ngrokFilePath = QDir(trackingDir).filePath("ngrok_url.txt");
+    const QString trackingJsonPath = QDir(trackingDir).filePath("delivery_tracking.json");
+    const QString trackingHtmlPath = QDir(trackingDir).filePath("tracking.html");
+
+    QProcess *pyProc = new QProcess(page);
+    pyProc->setWorkingDirectory(trackingDir);
+    QProcessEnvironment env = QProcessEnvironment::systemEnvironment();
+    env.insert("TRACKING_BASE_DIR", trackingDir);
+    env.insert("TRACKING_DATA_FILE", trackingJsonPath);
+    env.insert("TRACKING_URL_FILE", ngrokFilePath);
+    env.insert("TRACKING_HTML_FILE", trackingHtmlPath);
+    pyProc->setProcessEnvironment(env);
+    pyProc->start("python", QStringList() << scriptPath);
+
+    QTimer *urlTimer = new QTimer(page);
+    urlTimer->start(2000);
+    QObject::connect(urlTimer, &QTimer::timeout, page, [lblUrl, urlTimer, ngrokFilePath]() {
+        QFile f(ngrokFilePath);
+        if (!f.open(QIODevice::ReadOnly)) return;
+        const QString url = QString::fromUtf8(f.readAll()).trimmed();
+        f.close();
+        if (url.isEmpty()) return;
+
+        lblUrl->setText(QString::fromUtf8("Ouvrez ce lien sur votre téléphone : <a href='%1'>%1</a>").arg(url));
+        lblUrl->setOpenExternalLinks(true);
+        urlTimer->stop();
+    });
+
+    QTimer *posTimer = new QTimer(page);
+    posTimer->start(3000);
+    QObject::connect(posTimer, &QTimer::timeout, page, [mapWidget, trackingJsonPath]() {
+        QFile f(trackingJsonPath);
+        if (!f.open(QIODevice::ReadOnly)) return;
+        const QJsonDocument doc = QJsonDocument::fromJson(f.readAll());
+        f.close();
+
+        const QJsonObject obj = doc.object();
+        if (!obj.contains("current") || obj["current"].isNull()) return;
+        const QJsonObject cur = obj["current"].toObject();
+        const double lat = cur.value("lat").toDouble();
+        const double lng = cur.value("lng").toDouble();
+
+        if (mapWidget && mapWidget->rootObject()) {
+            QMetaObject::invokeMethod(mapWidget->rootObject(), "updatePhoneLocation",
+                                      Q_ARG(QVariant, lat), Q_ARG(QVariant, lng));
+        }
+    });
 }
 
 const QRegularExpression &emailRegex()
@@ -7013,22 +7355,26 @@ void ensureEmployeFaceColumnsExist()
         return;
     }
 
-    QSqlQuery probe;
-    if (probe.exec("SELECT face_template, face_template_updated_at, face_enabled FROM EMPLOYE WHERE 1=0")) {
-        checked = true;
-        return;
-    }
-
-    if (!isMissingPhotoColumnError(probe.lastError().text())) {
-        checked = true;
-        return;
-    }
+    // Verifie l'existence des colonnes principales (CLOB + binaire + meta).
+    auto columnMissing = [](const QString &col) {
+        QSqlQuery probe;
+        probe.exec(QString("SELECT %1 FROM EMPLOYE WHERE 1=0").arg(col));
+        return probe.lastError().isValid();
+    };
 
     QSqlQuery q;
-    q.exec("ALTER TABLE EMPLOYE ADD (face_template CLOB)");
-    q.exec("ALTER TABLE EMPLOYE ADD (face_template_updated_at DATE)");
-    q.exec("ALTER TABLE EMPLOYE ADD (face_enabled NUMBER(1) DEFAULT 1)");
-    q.exec("UPDATE EMPLOYE SET face_enabled = 1 WHERE face_enabled IS NULL");
+    if (columnMissing("face_template"))
+        q.exec("ALTER TABLE EMPLOYE ADD (face_template CLOB)");
+    // FACE_TEMPLATE_BIN : copie binaire (BLOB) du descripteur, beaucoup plus
+    // robuste que le CLOB sur QODBC/Oracle. Stockee en parallele du CLOB.
+    if (columnMissing("face_template_bin"))
+        q.exec("ALTER TABLE EMPLOYE ADD (face_template_bin BLOB)");
+    if (columnMissing("face_template_updated_at"))
+        q.exec("ALTER TABLE EMPLOYE ADD (face_template_updated_at DATE)");
+    if (columnMissing("face_enabled")) {
+        q.exec("ALTER TABLE EMPLOYE ADD (face_enabled NUMBER(1) DEFAULT 1)");
+        q.exec("UPDATE EMPLOYE SET face_enabled = 1 WHERE face_enabled IS NULL");
+    }
     checked = true;
 }
 
@@ -7158,13 +7504,16 @@ bool verifyEmployeeFaceForTaskCompletion(const QString &email, QWidget *parent, 
     QString storedTemplate;
     bool faceEnabled = true;
 
+    // Lecture robuste : on essaie d'abord la colonne BLOB binaire (qui ne
+    // souffre pas des bugs CLOB/QODBC), sinon fallback sur le CLOB texte.
     QSqlQuery q;
-    q.prepare("SELECT face_template, face_enabled FROM EMPLOYE "
+    q.prepare("SELECT face_template_bin, face_template, face_enabled FROM EMPLOYE "
               "WHERE LOWER(TRIM(email)) = LOWER(TRIM(:email))");
     q.bindValue(":email", cleanEmail);
     if (!q.exec()) {
+        // La colonne BLOB n'existe peut-etre pas encore : fallback CLOB seul.
         QSqlQuery fallback;
-        fallback.prepare("SELECT face_template FROM EMPLOYE "
+        fallback.prepare("SELECT face_template, face_enabled FROM EMPLOYE "
                          "WHERE LOWER(TRIM(email)) = LOWER(TRIM(:email))");
         fallback.bindValue(":email", cleanEmail);
         if (!fallback.exec()) {
@@ -7178,14 +7527,25 @@ bool verifyEmployeeFaceForTaskCompletion(const QString &email, QWidget *parent, 
             return false;
         }
         storedTemplate = fallback.value(0).toString().trimmed();
+        if (!fallback.value(1).isNull()) {
+            faceEnabled = (fallback.value(1).toInt() != 0);
+        }
     } else {
         if (!q.next()) {
             errorText = "Employe introuvable pour verification faciale.";
             return false;
         }
-        storedTemplate = q.value(0).toString().trimmed();
-        if (!q.value(1).isNull()) {
-            faceEnabled = (q.value(1).toInt() != 0);
+        // 1) BLOB binaire : conversion direct en QString UTF-8.
+        const QByteArray bin = q.value(0).toByteArray();
+        if (!bin.isEmpty()) {
+            storedTemplate = QString::fromUtf8(bin).trimmed();
+        }
+        // 2) Fallback CLOB texte si le BLOB est vide (anciens enregistrements).
+        if (storedTemplate.isEmpty()) {
+            storedTemplate = q.value(1).toString().trimmed();
+        }
+        if (!q.value(2).isNull()) {
+            faceEnabled = (q.value(2).toInt() != 0);
         }
     }
 
@@ -11630,12 +11990,29 @@ MainWindow::MainWindow(QWidget *parent)
     }
     if (ui->txtSearch && !ui->txtSearch->property("empSearchConnected").toBool()) {
         ui->txtSearch->setClearButtonEnabled(true);
+        ui->txtSearch->setPlaceholderText(
+            QString::fromUtf8("Rechercher un employe par nom ou matricule\xE2\x80\xA6"));
         connect(ui->txtSearch, &QLineEdit::textChanged, this, [this](const QString &) {
             applyEmployeSortAndFilter();
         });
         ui->txtSearch->setProperty("empSearchConnected", true);
     }
     if (ui->cbSort && !ui->cbSort->property("empSortConnected").toBool()) {
+        // On repeuple le combobox via C++ pour garantir un ordre coherent
+        // avec la logique de tri (peu importe l'etat du .ui compile).
+        // Ordre = exactement celui consomme par applyEmployeSortAndFilter().
+        ui->cbSort->blockSignals(true);
+        ui->cbSort->clear();
+        ui->cbSort->addItems({
+            QString::fromUtf8("Trier par: Nom (A-Z)"),                  // 0
+            QString::fromUtf8("Trier par: Matricule (A-Z)"),            // 1
+            QString::fromUtf8("Trier par: Specialite"),                 // 2
+            QString::fromUtf8("Trier par: Salaire (d\xC3\xA9croissant)"),// 3
+            QString::fromUtf8("Trier par: Note (d\xC3\xA9croissant)")   // 4
+        });
+        ui->cbSort->setCurrentIndex(0);
+        ui->cbSort->blockSignals(false);
+
         connect(ui->cbSort, QOverload<int>::of(&QComboBox::currentIndexChanged), this, [this](int) {
             applyEmployeSortAndFilter();
         });
@@ -12177,6 +12554,15 @@ void MainWindow::installPageAccessGuard()
 
 bool MainWindow::eventFilter(QObject *obj, QEvent *event)
 {
+    // Fenetre Labib pop-out : synchronise la mascotte flottante avec sa
+    // visibilite (cachee quand Labib est ouvert, reapparait quand ferme).
+    if (m_labibAssistant && obj == m_labibAssistant && event) {
+        const QEvent::Type t = event->type();
+        if (t == QEvent::Show || t == QEvent::Hide || t == QEvent::Close) {
+            QTimer::singleShot(0, this, [this]() { onFloatingAIButtonPositionUpdate(); });
+        }
+    }
+
     if (auto *lbl = qobject_cast<QLabel*>(obj)) {
         const QString objName = lbl->objectName();
         const bool isMaintPhotoLabel =
@@ -12331,6 +12717,78 @@ bool MainWindow::eventFilter(QObject *obj, QEvent *event)
             }
         }
     }
+    // Animation hover sur le bouton flottant Labib :
+    // on fait un petit "pop" sur le cercle média (vidéo/GIF/logo).
+    if (m_floatingAIButton && obj == m_floatingAIButton && event) {
+        if (auto *media = m_floatingAIButton->findChild<LabibMediaCircle*>("labibMediaCircle")) {
+            if (event->type() == QEvent::Enter) {
+                const int delta = 6;
+                const QRect target(-delta / 2, -delta / 2,
+                                   m_floatingAIButton->width()  + delta,
+                                   m_floatingAIButton->height() + delta);
+                auto *anim = new QPropertyAnimation(media, "geometry", media);
+                anim->setStartValue(media->geometry());
+                anim->setEndValue(target);
+                anim->setDuration(180);
+                anim->setEasingCurve(QEasingCurve::OutBack);
+                anim->start(QAbstractAnimation::DeleteWhenStopped);
+            } else if (event->type() == QEvent::Leave) {
+                const QRect target(0, 0,
+                                   m_floatingAIButton->width(),
+                                   m_floatingAIButton->height());
+                auto *anim = new QPropertyAnimation(media, "geometry", media);
+                anim->setStartValue(media->geometry());
+                anim->setEndValue(target);
+                anim->setDuration(180);
+                anim->setEasingCurve(QEasingCurve::OutCubic);
+                anim->start(QAbstractAnimation::DeleteWhenStopped);
+            }
+        }
+
+        // ── Drag : la mascotte est deplacable sur toute la fenetre ──
+        const QEvent::Type t = event->type();
+        if (t == QEvent::MouseButtonPress) {
+            auto *me = static_cast<QMouseEvent*>(event);
+            if (me->button() == Qt::LeftButton) {
+                m_floatingDragStartLocal  = me->pos();
+                m_floatingDragStartGlobal = me->globalPosition().toPoint();
+                m_floatingIsDragging      = false;
+                m_floatingAIButton->setCursor(Qt::ClosedHandCursor);
+            }
+        } else if (t == QEvent::MouseMove) {
+            auto *me = static_cast<QMouseEvent*>(event);
+            if (me->buttons() & Qt::LeftButton) {
+                const QPoint deltaG = me->globalPosition().toPoint() - m_floatingDragStartGlobal;
+                if (m_floatingIsDragging || deltaG.manhattanLength() > 5) {
+                    m_floatingIsDragging = true;
+                    m_floatingHasCustomPos = true;
+                    if (m_labibPeekLabel) m_labibPeekLabel->hide();
+
+                    const QPoint globalCursor = me->globalPosition().toPoint();
+                    QPoint targetTopLeft = mapFromGlobal(globalCursor) - m_floatingDragStartLocal;
+                    const int margin = 4;
+                    targetTopLeft.setX(qBound(margin,
+                                              targetTopLeft.x(),
+                                              width()  - m_floatingAIButton->width()  - margin));
+                    targetTopLeft.setY(qBound(margin,
+                                              targetTopLeft.y(),
+                                              height() - m_floatingAIButton->height() - margin));
+                    m_floatingAIButton->move(targetTopLeft);
+                    return true;
+                }
+            }
+        } else if (t == QEvent::MouseButtonRelease) {
+            auto *me = static_cast<QMouseEvent*>(event);
+            if (me->button() == Qt::LeftButton) {
+                m_floatingAIButton->setCursor(Qt::OpenHandCursor);
+                if (m_floatingIsDragging) {
+                    m_floatingIsDragging = false;
+                    return true; // empeche le clic d'ouvrir Labib apres un drag
+                }
+            }
+        }
+    }
+
     return QMainWindow::eventFilter(obj, event);
 }
 
@@ -12553,36 +13011,32 @@ void MainWindow::openEmployeeLeaveDialog()
 
 void MainWindow::openLabibAssistant()
 {
-    const auto applyLabibDockGeometry = [this]() {
-        if (!m_labibDock) return;
+    // Style "fenetre Messenger pop-out" : LabibAssistant est une fenetre
+    // top-level mobile, ouvrable n'importe ou sur l'ecran via le title bar.
+    if (!m_labibAssistant) {
+        m_labibAssistant = new LabibAssistant(nullptr);
+        m_labibAssistant->setWindowFlags(
+            Qt::Window |
+            Qt::CustomizeWindowHint |
+            Qt::WindowTitleHint |
+            Qt::WindowCloseButtonHint |
+            Qt::WindowMinimizeButtonHint);
+        m_labibAssistant->setWindowTitle(QString::fromUtf8("Labib"));
+        m_labibAssistant->setWindowIcon(QIcon(":/login_logo.png"));
+        m_labibAssistant->resize(420, 640);
+        m_labibAssistant->setMinimumSize(360, 480);
 
-        const int windowW = qMax(900, this->width());
-        const int minDockW = 400;
-        const int maxDockW = qMax(minDockW, windowW - 180);
-        const int preferredDockW = qBound(minDockW, static_cast<int>(windowW * 0.32), maxDockW);
-
-        m_labibDock->setMinimumWidth(minDockW);
-        m_labibDock->setMaximumWidth(maxDockW);
-        if (m_labibAssistant) {
-            m_labibAssistant->setMinimumWidth(380);
-            m_labibAssistant->updateGeometry();
+        // Position initiale : bas-droite de l'ecran (comme une bulle Messenger
+        // qu'on viendrait d'ouvrir en pop-out).
+        QScreen *scr = this->screen() ? this->screen() : QGuiApplication::primaryScreen();
+        if (scr) {
+            const QRect avail = scr->availableGeometry();
+            const int margin = 24;
+            const int x = avail.right()  - m_labibAssistant->width()  - margin;
+            const int y = avail.bottom() - m_labibAssistant->height() - margin;
+            m_labibAssistant->move(qMax(avail.left()+margin, x),
+                                   qMax(avail.top()+margin,  y));
         }
-        resizeDocks({m_labibDock}, {preferredDockW}, Qt::Horizontal);
-    };
-
-    if (!m_labibDock) {
-        m_labibDock = new QDockWidget("Labib AI Assistant", this);
-        m_labibDock->setObjectName("LabibAssistantDock");
-        m_labibDock->setAllowedAreas(Qt::RightDockWidgetArea);
-        m_labibDock->setFeatures(QDockWidget::DockWidgetClosable);
-
-        if (!m_labibAssistant) {
-            m_labibAssistant = new LabibAssistant(m_labibDock);
-        }
-
-        m_labibDock->setWidget(m_labibAssistant);
-        addDockWidget(Qt::RightDockWidgetArea, m_labibDock);
-        applyLabibDockGeometry();
 
         connect(m_labibAssistant, &LabibAssistant::requestAddClient, this, [this]() {
             if (ui && ui->btnClient) {
@@ -12601,68 +13055,248 @@ void MainWindow::openLabibAssistant()
             }
         });
 
-        connect(m_labibDock, &QDockWidget::visibilityChanged, this, [this](bool) {
-            onFloatingAIButtonPositionUpdate();
-        });
+        // Synchronise la mascotte flottante avec l'etat de la fenetre Labib :
+        // quand on ferme/cache la fenetre, la mascotte reapparait.
+        m_labibAssistant->installEventFilter(this);
     }
 
-    const bool shouldShow = m_labibDock->isHidden();
-    m_labibDock->setVisible(shouldShow);
-    m_labibDock->setFloating(false);
-    if (shouldShow) {
-        applyLabibDockGeometry();
-        QTimer::singleShot(0, this, [this, applyLabibDockGeometry]() {
-            if (m_labibDock && m_labibDock->isVisible()) {
-                applyLabibDockGeometry();
-            }
-        });
-        m_labibDock->raise();
-        m_labibDock->activateWindow();
+    // Toggle show/hide a chaque clic sur le bouton flottant.
+    if (m_labibAssistant->isVisible()) {
+        m_labibAssistant->hide();
+    } else {
+        m_labibAssistant->show();
+        m_labibAssistant->raise();
+        m_labibAssistant->activateWindow();
     }
+    onFloatingAIButtonPositionUpdate();
 }
 
 void MainWindow::createFloatingAIButton()
 {
     if (m_floatingAIButton) return; // Already created
-    
-    // Create floating button
+
+    // Bouble flottante "mascotte WasteGuard" : cercle parfait, deplacable.
     m_floatingAIButton = new QPushButton(this);
-    m_floatingAIButton->setFixedSize(60, 60);
+    m_floatingAIButton->setFixedSize(78, 78);
     m_floatingAIButton->setText("");
     m_floatingAIButton->setObjectName("floatingLabibButton");
+    m_floatingAIButton->setCursor(Qt::OpenHandCursor);
+    m_floatingAIButton->setToolTip(QString::fromUtf8(
+        "\xF0\x9F\xA6\x8A Labib \xE2\x80\x94 votre coll\xC3\xA8gue WasteGuard\n"
+        "Glisse pour deplacer \xE2\x80\xA2 Clic pour ouvrir"));
+    m_floatingAIButton->setAttribute(Qt::WA_Hover, true);
+
+    // Anneau gradient autour de la mascotte. La forme parfaitement
+    // circulaire est garantie par le QRegion::Ellipse pose en mask
+    // (clipping dur du rendu ET du hit-testing).
     m_floatingAIButton->setStyleSheet(
-        "QPushButton {"
-        "    background: qradialgradient(cx:0.35, cy:0.3, radius:1.1, fx:0.35, fy:0.3, stop:0 #1a8cff, stop:1 #0c3469);"
-        "    border: 2px solid #47b4ff;"
-        "    border-radius: 30px;"
-        "    padding: 0px;"
+        "QPushButton#floatingLabibButton{"
+        "  background: qlineargradient(x1:0, y1:0, x2:1, y2:1,"
+        "    stop:0 #16a34a, stop:0.5 #1e4d8c, stop:1 #0b2545);"
+        "  border: 3px solid rgba(255,255,255,0.92);"
+        "  border-radius: 39px;"
+        "  padding: 0px;"
         "}"
-        "QPushButton:hover {"
-        "    background: qradialgradient(cx:0.35, cy:0.3, radius:1.1, fx:0.35, fy:0.3, stop:0 #41b0ff, stop:1 #11407a);"
-        "    border: 2px solid #8ed5ff;"
-        "}"
-        "QPushButton:pressed {"
-        "    background: #0b2b57;"
+        "QPushButton#floatingLabibButton:hover{"
+        "  border: 3px solid #ffffff;"
+        "  background: qlineargradient(x1:0, y1:0, x2:1, y2:1,"
+        "    stop:0 #22c55e, stop:0.5 #2563b9, stop:1 #143360);"
         "}"
     );
-    m_floatingAIButton->setCursor(Qt::PointingHandCursor);
-    m_floatingAIButton->setToolTip("Labib Assistant");
+    m_floatingAIButton->setFlat(true);
+
+    // Mask elliptique : cercle parfait + clics seulement dans le cercle.
+    // Le mask est reapplique ici car setFixedSize est definitif.
+    m_floatingAIButton->setMask(
+        QRegion(0, 0, m_floatingAIButton->width(), m_floatingAIButton->height(),
+                QRegion::Ellipse));
+
+    // ─── Cercle multimédia (vidéo / GIF / logo) ───
+    // On laisse un anneau de 5 px autour du média pour révéler le gradient
+    // du bouton (qui sert de bordure animée).
+    auto *media = new LabibMediaCircle(m_floatingAIButton);
+    media->setObjectName("labibMediaCircle");
+    const int ringInset = 5;
+    media->setGeometry(ringInset, ringInset,
+                       m_floatingAIButton->width() - 2 * ringInset,
+                       m_floatingAIButton->height() - 2 * ringInset);
+    media->setAttribute(Qt::WA_TransparentForMouseEvents, true); // les clics
+                                                                 // tombent sur le bouton
 
     const QPixmap logoPixmap(":/login_logo.png");
     if (!logoPixmap.isNull()) {
-        m_floatingAIButton->setIcon(QIcon(logoPixmap));
-        m_floatingAIButton->setIconSize(QSize(42, 42));
-    } else {
-        m_floatingAIButton->setText("L");
-        m_floatingAIButton->setStyleSheet(
-            m_floatingAIButton->styleSheet() +
-            "QPushButton{color:white;font-weight:900;font-size:22px;}");
+        media->setFallbackPixmap(logoPixmap);
     }
-    
-    // Connect button to open Labib Assistant
-    connect(m_floatingAIButton, &QPushButton::clicked, this, &MainWindow::openLabibAssistant);
-    
-    // Position the button
+
+    // Cherche un fichier média à côté de l'exécutable et dans les emplacements
+    // usuels. download.mp4 est prioritaire (mascotte Labib fournie avec le projet).
+    const QString appDir = QCoreApplication::applicationDirPath();
+    const QString cwd    = QDir::currentPath();
+    const QString srcDir = QFileInfo(QString::fromUtf8(__FILE__)).absolutePath();
+
+    // Construit des chemins "download.mp4" en remontant plusieurs niveaux,
+    // utile si l'exécutable est lancé depuis un dossier build externe.
+    QStringList upwardDownloadCandidates;
+    {
+        QDir d(appDir);
+        for (int i = 0; i < 8; ++i) {
+            upwardDownloadCandidates << d.filePath("download.mp4");
+            if (!d.cdUp()) break;
+        }
+    }
+    {
+        QDir d(cwd);
+        for (int i = 0; i < 8; ++i) {
+            upwardDownloadCandidates << d.filePath("download.mp4");
+            if (!d.cdUp()) break;
+        }
+    }
+
+    QStringList candidates = {
+        // Mascotte officielle du projet
+        srcDir  + "/download.mp4",
+        srcDir  + "/../download.mp4",
+        appDir + "/download.mp4",
+        cwd    + "/download.mp4",
+        appDir + "/../download.mp4",
+        appDir + "/../../download.mp4",
+        // Variantes alternatives si l'utilisateur veut remplacer la mascotte
+        appDir + "/labib.gif",
+        appDir + "/labib.webp",
+        appDir + "/labib.mp4",
+        appDir + "/labib.webm",
+        appDir + "/assets/labib.gif",
+        appDir + "/assets/labib.mp4",
+        cwd    + "/labib.gif",
+        cwd    + "/labib.mp4",
+        ":/download.mp4",
+        ":/labib.gif",
+        ":/labib.mp4"
+    };
+    candidates += upwardDownloadCandidates;
+
+    QStringList dedup;
+    dedup.reserve(candidates.size());
+    for (const QString &c : candidates) {
+        if (!dedup.contains(c)) dedup << c;
+    }
+    media->tryLoadAny(dedup);
+
+    // ─── Glow vert qui « respire » (drop shadow animée) ───
+    // L'effet est posé sur le cercle média (qui est ce qu'on voit), pas sur
+    // le bouton transparent.
+    auto *glow = new QGraphicsDropShadowEffect(media);
+    glow->setColor(QColor(39, 174, 96, 220));   // vert WasteGuard
+    glow->setOffset(0, 0);
+    glow->setBlurRadius(18);
+    media->setGraphicsEffect(glow);
+
+    auto *pulseUp = new QPropertyAnimation(glow, "blurRadius", this);
+    pulseUp->setStartValue(14.0);
+    pulseUp->setEndValue(38.0);
+    pulseUp->setDuration(1100);
+    pulseUp->setEasingCurve(QEasingCurve::InOutSine);
+
+    auto *pulseDown = new QPropertyAnimation(glow, "blurRadius", this);
+    pulseDown->setStartValue(38.0);
+    pulseDown->setEndValue(14.0);
+    pulseDown->setDuration(1100);
+    pulseDown->setEasingCurve(QEasingCurve::InOutSine);
+
+    auto *pulseLoop = new QSequentialAnimationGroup(this);
+    pulseLoop->addAnimation(pulseUp);
+    pulseLoop->addAnimation(pulseDown);
+    pulseLoop->setLoopCount(-1);
+    pulseLoop->start();
+
+    // ─── Pastille "EN LIGNE" en bas à droite ───
+    {
+        QLabel *dot = new QLabel(m_floatingAIButton);
+        dot->setObjectName("floatingLabibDot");
+        dot->setFixedSize(18, 18);
+        dot->setStyleSheet(
+            "QLabel#floatingLabibDot{"
+            "  background: qlineargradient(x1:0, y1:0, x2:1, y2:1,"
+            "    stop:0 #4ade80, stop:1 #16a34a);"
+            "  border:3px solid #ffffff;"
+            "  border-radius:9px;"
+            "}"
+        );
+        dot->move(m_floatingAIButton->width() - dot->width() - 4,
+                  m_floatingAIButton->height() - dot->height() - 4);
+        dot->raise();
+        dot->show();
+
+        // Pulsation douce de la pastille
+        auto *dotEff = new QGraphicsOpacityEffect(dot);
+        dotEff->setOpacity(1.0);
+        dot->setGraphicsEffect(dotEff);
+        auto *pa = new QPropertyAnimation(dotEff, "opacity", this);
+        pa->setStartValue(1.0); pa->setEndValue(0.55);
+        pa->setDuration(1000); pa->setEasingCurve(QEasingCurve::InOutSine);
+        auto *pb = new QPropertyAnimation(dotEff, "opacity", this);
+        pb->setStartValue(0.55); pb->setEndValue(1.0);
+        pb->setDuration(1000); pb->setEasingCurve(QEasingCurve::InOutSine);
+        auto *pSeq = new QSequentialAnimationGroup(this);
+        pSeq->addAnimation(pa); pSeq->addAnimation(pb);
+        pSeq->setLoopCount(-1); pSeq->start();
+    }
+
+    // ─── Bulle "Salut !" qui apparaît brièvement à l'ouverture ───
+    {
+        QLabel *peek = new QLabel(QString::fromUtf8(
+            "\xF0\x9F\x91\x8B  Salut, c'est Labib !  \xE2\x80\x94  Cliquez pour discuter"), this);
+        peek->setObjectName("floatingLabibPeek");
+        peek->setStyleSheet(
+            "QLabel#floatingLabibPeek{"
+            "  background: qlineargradient(x1:0, y1:0, x2:0, y2:1,"
+            "    stop:0 #ffffff, stop:1 #f1f5fb);"
+            "  color:#0b2545;"
+            "  border:1px solid #cfdef0;"
+            "  border-left: 4px solid #16a34a;"
+            "  border-radius:14px;"
+            "  padding:9px 14px;"
+            "  font-size:12px;"
+            "  font-weight:700;"
+            "}"
+        );
+        auto *peekShadow = new QGraphicsDropShadowEffect(peek);
+        peekShadow->setColor(QColor(11, 37, 69, 90));
+        peekShadow->setOffset(0, 6);
+        peekShadow->setBlurRadius(22);
+        peek->setGraphicsEffect(peekShadow);
+        peek->adjustSize();
+        peek->raise();
+        peek->show();
+        m_labibPeekLabel = peek;
+
+        // Auto-disparition après 4.5 s avec fondu
+        QPointer<QLabel> peekGuard(peek);
+        QTimer::singleShot(4500, this, [this, peekGuard]() {
+            if (!peekGuard) return;
+            QLabel *p = peekGuard.data();
+            auto *fadeEff = new QGraphicsOpacityEffect(p);
+            p->setGraphicsEffect(fadeEff);
+            auto *fade = new QPropertyAnimation(fadeEff, "opacity", p);
+            fade->setStartValue(1.0);
+            fade->setEndValue(0.0);
+            fade->setDuration(600);
+            QObject::connect(fade, &QPropertyAnimation::finished, this, [this, peekGuard]() {
+                if (peekGuard) peekGuard->deleteLater();
+                if (m_labibPeekLabel == peekGuard.data() || !peekGuard) {
+                    m_labibPeekLabel = nullptr;
+                }
+            });
+            fade->start(QAbstractAnimation::DeleteWhenStopped);
+        });
+    }
+
+    // ─── Animation hover (taille de l'icône qui grossit) ───
+    m_floatingAIButton->installEventFilter(this);
+
+    connect(m_floatingAIButton, &QPushButton::clicked,
+            this, &MainWindow::openLabibAssistant);
+
     onFloatingAIButtonPositionUpdate();
 }
 
@@ -12670,18 +13304,40 @@ void MainWindow::onFloatingAIButtonPositionUpdate()
 {
     if (!m_floatingAIButton) return;
 
-    if (m_labibDock && m_labibDock->isVisible()) {
+    if (m_labibAssistant && m_labibAssistant->isVisible()) {
         m_floatingAIButton->hide();
+        if (m_labibPeekLabel) m_labibPeekLabel->hide();
         return;
     }
 
     const int margin = 18;
-    const int x = qMax(margin, width() - m_floatingAIButton->width() - margin);
-    const int y = qMax(margin, height() - m_floatingAIButton->height() - margin);
+    int x, y;
+    if (m_floatingHasCustomPos) {
+        // Conserve la position choisie par l'utilisateur, on la contraint
+        // juste a l'interieur de la fenetre pour ne pas la perdre apres resize.
+        x = qBound(margin,
+                   m_floatingAIButton->x(),
+                   width()  - m_floatingAIButton->width()  - margin);
+        y = qBound(margin,
+                   m_floatingAIButton->y(),
+                   height() - m_floatingAIButton->height() - margin);
+    } else {
+        x = qMax(margin, width()  - m_floatingAIButton->width()  - margin);
+        y = qMax(margin, height() - m_floatingAIButton->height() - margin);
+    }
 
     m_floatingAIButton->move(x, y);
     m_floatingAIButton->show();
     m_floatingAIButton->raise();
+
+    // Bulle "Salut !" placée juste à gauche du bouton, alignée verticalement.
+    if (m_labibPeekLabel) {
+        m_labibPeekLabel->adjustSize();
+        const int px = qMax(8, x - m_labibPeekLabel->width() - 12);
+        const int py = y + (m_floatingAIButton->height() - m_labibPeekLabel->height()) / 2;
+        m_labibPeekLabel->move(px, py);
+        m_labibPeekLabel->raise();
+    }
 }
 
 
@@ -12895,27 +13551,39 @@ void MainWindow::applyEmployeSortAndFilter()
         rows.append(rowData);
     }
 
+    // Ordre du combobox cbSort (cf. mainwindow.ui) :
+    //   0 : Nom (A-Z)        <- defaut
+    //   1 : Matricule (A-Z)
+    //   2 : Specialite (A-Z)
+    //   3 : Salaire (decroissant)
+    //   4 : Note (decroissant)
     const int sortIndex = ui->cbSort ? ui->cbSort->currentIndex() : 0;
     std::stable_sort(rows.begin(), rows.end(), [sortIndex](const EmpRowData &a, const EmpRowData &b) {
         switch (sortIndex) {
-        case 1:
-            if (a.perf != b.perf) return a.perf > b.perf;
-            break;
-        case 2:
-            if (a.salaire != b.salaire) return a.salaire > b.salaire;
-            break;
-        case 3: {
-            const int cmp = QString::compare(a.nom, b.nom, Qt::CaseInsensitive);
+        case 1: {
+            const int cmp = QString::compare(a.matricule, b.matricule, Qt::CaseInsensitive);
             if (cmp != 0) return cmp < 0;
             break;
         }
-        case 0:
-        default: {
+        case 2: {
             const int cmp = QString::compare(a.specialite, b.specialite, Qt::CaseInsensitive);
             if (cmp != 0) return cmp < 0;
             break;
         }
+        case 3:
+            if (a.salaire != b.salaire) return a.salaire > b.salaire;
+            break;
+        case 4:
+            if (a.perf != b.perf) return a.perf > b.perf;
+            break;
+        case 0:
+        default: {
+            const int cmp = QString::compare(a.nom, b.nom, Qt::CaseInsensitive);
+            if (cmp != 0) return cmp < 0;
+            break;
         }
+        }
+        // Tie-breaker stable : matricule alphabetique.
         return QString::compare(a.matricule, b.matricule, Qt::CaseInsensitive) < 0;
     });
 
@@ -12947,25 +13615,26 @@ void MainWindow::applyEmployeSortAndFilter()
         installEmployeActionButtonsForRow(row);
     }
 
-    const QString keyword = ui->txtSearch ? ui->txtSearch->text().trimmed() : QString();
+    // Recherche : restreinte au NOM ou au MATRICULE, insensible a la casse
+    // ET aux accents (Mohámed = Mohamed, ali = ALI, etc.).
+    auto normalizeSearch = [](QString s) {
+        s = s.normalized(QString::NormalizationForm_D);
+        s.remove(QRegularExpression("[\\x{0300}-\\x{036f}]"));
+        return s.trimmed().toLower();
+    };
+    const QString rawKeyword = ui->txtSearch ? ui->txtSearch->text().trimmed() : QString();
+    const QString keyword = normalizeSearch(rawKeyword);
+
     for (int row = 0; row < ui->tableEmployes->rowCount(); ++row) {
-        const QString matricule = ui->tableEmployes->item(row, EMP_COL_MATRICULE) ? ui->tableEmployes->item(row, EMP_COL_MATRICULE)->text() : QString();
-        const QString nom = ui->tableEmployes->item(row, EMP_COL_NOM) ? ui->tableEmployes->item(row, EMP_COL_NOM)->text() : QString();
-        const QString specialite = ui->tableEmployes->item(row, EMP_COL_SPECIALITE) ? ui->tableEmployes->item(row, EMP_COL_SPECIALITE)->text() : QString();
-        const QString salaire = ui->tableEmployes->item(row, EMP_COL_SALAIRE) ? ui->tableEmployes->item(row, EMP_COL_SALAIRE)->text() : QString();
-        const QString email = ui->tableEmployes->item(row, EMP_COL_EMAIL) ? ui->tableEmployes->item(row, EMP_COL_EMAIL)->text() : QString();
-        const QString cin = ui->tableEmployes->item(row, EMP_COL_CIN) ? ui->tableEmployes->item(row, EMP_COL_CIN)->text() : QString();
-        const QString disponibilite = ui->tableEmployes->item(row, EMP_COL_DISPONIBILITE) ? ui->tableEmployes->item(row, EMP_COL_DISPONIBILITE)->text() : QString();
+        const QString matricule = ui->tableEmployes->item(row, EMP_COL_MATRICULE)
+            ? ui->tableEmployes->item(row, EMP_COL_MATRICULE)->text() : QString();
+        const QString nom = ui->tableEmployes->item(row, EMP_COL_NOM)
+            ? ui->tableEmployes->item(row, EMP_COL_NOM)->text() : QString();
 
         const bool match =
             keyword.isEmpty() ||
-            matricule.contains(keyword, Qt::CaseInsensitive) ||
-            nom.contains(keyword, Qt::CaseInsensitive) ||
-            specialite.contains(keyword, Qt::CaseInsensitive) ||
-            salaire.contains(keyword, Qt::CaseInsensitive) ||
-            email.contains(keyword, Qt::CaseInsensitive) ||
-            cin.contains(keyword, Qt::CaseInsensitive) ||
-            disponibilite.contains(keyword, Qt::CaseInsensitive);
+            normalizeSearch(matricule).contains(keyword) ||
+            normalizeSearch(nom).contains(keyword);
 
         ui->tableEmployes->setRowHidden(row, !match);
     }
@@ -13313,12 +13982,17 @@ void MainWindow::on_btnAjouter_clicked()
     }
 
     if (!m_employeeFaceTemplateAjout.trimmed().isEmpty()) {
+        ensureEmployeFaceColumnsExist();
+        // Double ecriture : BLOB binaire (robuste) + CLOB (compat).
+        const QByteArray faceBin = m_employeeFaceTemplateAjout.toUtf8();
         QSqlQuery faceQuery;
         faceQuery.prepare(
             "UPDATE EMPLOYE "
-            "SET face_template=:tpl, face_template_updated_at=SYSDATE, face_enabled=1 "
+            "SET face_template=:tpl, face_template_bin=:bin, "
+            "    face_template_updated_at=SYSDATE, face_enabled=1 "
             "WHERE LOWER(TRIM(email)) = LOWER(TRIM(:email))");
         faceQuery.bindValue(":tpl", m_employeeFaceTemplateAjout);
+        faceQuery.bindValue(":bin", faceBin);
         faceQuery.bindValue(":email", email);
         if (!faceQuery.exec()) {
             qWarning() << "Face template save failed:" << faceQuery.lastError().text();
@@ -13907,12 +14581,16 @@ void MainWindow::on_btnSave_clicked()
 
     if (!m_employeeFaceTemplateModif.trimmed().isEmpty()) {
         ensureEmployeFaceColumnsExist();
+        // Double ecriture : BLOB binaire (robuste) + CLOB (compat).
+        const QByteArray faceBin = m_employeeFaceTemplateModif.toUtf8();
         QSqlQuery faceQuery;
         faceQuery.prepare(
             "UPDATE EMPLOYE "
-            "SET face_template=:tpl, face_template_updated_at=SYSDATE, face_enabled=1 "
+            "SET face_template=:tpl, face_template_bin=:bin, "
+            "    face_template_updated_at=SYSDATE, face_enabled=1 "
             "WHERE id_emp=:id");
         faceQuery.bindValue(":tpl", m_employeeFaceTemplateModif);
+        faceQuery.bindValue(":bin", faceBin);
         faceQuery.bindValue(":id", idEmp);
         if (!faceQuery.exec()) {
             qWarning() << "Face template update failed:" << faceQuery.lastError().text();
@@ -15025,15 +15703,18 @@ void MainWindow::applyBacMotionDbState(bool active, int idBac)
 {
     if (idBac <= 0) return;
     // Flip BAC_INTEL.STATUT_BAC for ONE bac only, between EN_ATTENTE and
-    // EN_SERVICE. Rows in EN_PANNE / A_VIDER are guarded by the WHERE so
-    // a motion event never overwrites them.
+    // EN_SERVICE. Some older rows were initialized as EN_STOCK, so we
+    // treat EN_STOCK like EN_ATTENTE for motion transitions.
+    // Rows in EN_PANNE / A_VIDER are never overwritten by motion.
     QSqlQuery q;
     if (active) {
         q.prepare("UPDATE BAC_INTEL SET STATUT_BAC = 'EN_SERVICE' "
-                  "WHERE ID_BAC = :id AND STATUT_BAC = 'EN_ATTENTE'");
+                  "WHERE ID_BAC = :id "
+                  "AND UPPER(COALESCE(STATUT_BAC, 'EN_ATTENTE')) IN ('EN_ATTENTE', 'EN_STOCK')");
     } else {
         q.prepare("UPDATE BAC_INTEL SET STATUT_BAC = 'EN_ATTENTE' "
-                  "WHERE ID_BAC = :id AND STATUT_BAC = 'EN_SERVICE'");
+                  "WHERE ID_BAC = :id "
+                  "AND UPPER(COALESCE(STATUT_BAC, '')) = 'EN_SERVICE'");
     }
     q.bindValue(":id", idBac);
     if (!q.exec()) {
@@ -15678,14 +16359,54 @@ void MainWindow::on_btnFichePaie_clicked()
     if (salaire <= 0) salaire = 1200;
     if (perf < 0) perf = 0;
 
+    // Resolution robuste : si le cache UI n'a pas un ID_EMP valide, on
+    // l'extrait directement d'Oracle via le matricule. Sinon computeMonthHours
+    // lit la mauvaise ligne (ou aucune) et retourne 0.
+    if (idEmp <= 0 || !matricule.trimmed().isEmpty()) {
+        QSqlQuery q;
+        q.prepare("SELECT ID_EMP, NVL(SALAIRE,1200), NVL(CIN,''), NVL(EMAIL,'') "
+                  "FROM EMPLOYE WHERE UPPER(MATRICULE) = UPPER(:mat)");
+        q.bindValue(":mat", matricule.trimmed());
+        if (q.exec() && q.next()) {
+            const int dbId = q.value(0).toInt();
+            if (dbId > 0) idEmp = dbId;
+            // Hydrate aussi les autres champs si le cache UI etait incomplet.
+            if (salaire <= 0 || salaire == 1200) {
+                const int dbSal = q.value(1).toInt();
+                if (dbSal > 0) salaire = dbSal;
+            }
+            if (cin.isEmpty())   cin   = q.value(2).toString().trimmed();
+            if (email.isEmpty()) email = q.value(3).toString().trimmed();
+        }
+    }
+
     const QDate today = QDate::currentDate();
     const QDate periodStart(today.year(), today.month(), 1);
     const QDate periodEnd = periodStart.addMonths(1).addDays(-1);
     const QDate paymentDate = periodEnd.addDays(3);
 
-    const double base = static_cast<double>(salaire);
-    const double primePerf = base * (static_cast<double>(perf) / 100.0) * 0.10;
-    const double primeDispo = disponibilite.contains("dispon", Qt::CaseInsensitive) ? base * 0.05 : 0.0;
+    // === POINTAGE / PRORATA DES HEURES ===
+    // Politique RH : 8 h de travail attendues par jour ouvre (Lun-Ven).
+    // Le salaire de base est paye au prorata des heures effectivement
+    // pointees ce mois-ci (TOTAL_HOURS_MONTH dans EMPLOYE).
+    // Exemple : 1200 dt contractuel, 4 h/jour effectif sur un mois standard
+    // -> ratio = 0.5 -> base ajustee = 600 dt.
+    int businessDays = 0;
+    for (QDate d = periodStart; d <= periodEnd; d = d.addDays(1)) {
+        const int dow = d.dayOfWeek();
+        if (dow >= 1 && dow <= 5) ++businessDays;
+    }
+    const double expectedHoursMonth = 8.0 * static_cast<double>(qMax(1, businessDays));
+    const double hoursWorkedMonth   = qMax(0.0, Etmp.computeMonthHours(idEmp));
+    // Ratio borne 0..1 (les heures sup ne sont pas payees ici).
+    const double hoursRatio = qBound(0.0, hoursWorkedMonth / expectedHoursMonth, 1.0);
+
+    const double baseContrat = static_cast<double>(salaire);
+    const double base        = baseContrat * hoursRatio; // salaire de base prorate
+    // Les primes restent calculees sur le salaire contractuel (perf et dispo
+    // sont des criteres independants des heures pointees).
+    const double primePerf = baseContrat * (static_cast<double>(perf) / 100.0) * 0.10;
+    const double primeDispo = disponibilite.contains("dispon", Qt::CaseInsensitive) ? baseContrat * 0.05 : 0.0;
     QString bonusError;
     const double primeMissionMois = computeEmployeeMonthlyTaskBonus(idEmp, periodStart, periodEnd, bonusError);
     if (!bonusError.trimmed().isEmpty()) {
@@ -15840,10 +16561,20 @@ void MainWindow::on_btnFichePaie_clicked()
         bool important = false;
     };
 
+    auto fmtHours = [](double h) {
+        return QString::number(h, 'f', 1) + " h";
+    };
+    const QString ratioPct = QString::number(hoursRatio * 100.0, 'f', 1) + "%";
+
     QVector<PayslipLine> lines = {
-        {"Salaire de base", money(base), "-", money(base), false},
-        {"Prime performance", money(base), QString::number(perf, 'f', 0) + "% x 10%", money(primePerf), false},
-        {"Prime disponibilite", money(base), disponibilite.contains("dispon", Qt::CaseInsensitive) ? "5.00%" : "0.00%", money(primeDispo), false},
+        {"Salaire contractuel", money(baseContrat), "-", money(baseContrat), false},
+        {"Heures travaillees / attendues",
+            fmtHours(hoursWorkedMonth) + " / " + fmtHours(expectedHoursMonth),
+            ratioPct,
+            "-", false},
+        {"Salaire de base (prorata heures)", money(baseContrat), ratioPct, money(base), true},
+        {"Prime performance", money(baseContrat), QString::number(perf, 'f', 0) + "% x 10%", money(primePerf), false},
+        {"Prime disponibilite", money(baseContrat), disponibilite.contains("dispon", Qt::CaseInsensitive) ? "5.00%" : "0.00%", money(primeDispo), false},
         {"Prime mission (mois en cours)", "", "", money(primeMissionMois), false},
         {"Salaire brut", "", "", money(brut), true},
         {"Cotisation CNSS", money(brut), QString::number(cnssRate, 'f', 2) + "%", money(cotCnss), false},
@@ -15894,38 +16625,61 @@ void MainWindow::on_btnFichePaie_clicked()
 
 
 
-void MainWindow::on_btnCommsSend_clicked()
-
+static QListWidgetItem *labibAddBubble(QListWidget *list, const QString &htmlContent,
+                                       bool fromUser)
 {
+    QListWidgetItem *item = new QListWidgetItem();
+    QLabel *label = new QLabel(htmlContent);
+    label->setTextFormat(Qt::RichText);
+    label->setWordWrap(true);
+    label->setTextInteractionFlags(Qt::TextSelectableByMouse);
+    label->setAlignment(fromUser ? Qt::AlignRight : Qt::AlignLeft);
+    label->setStyleSheet(
+        fromUser
+            ? "QLabel{background:#27ae60;color:#ffffff;padding:9px 13px;"
+              "border-radius:12px 12px 2px 12px;font-size:13px;}"
+            : "QLabel{background:#eaf6ee;color:#1a3a2e;padding:10px 14px;"
+              "border-radius:12px 12px 12px 2px;font-size:13px;"
+              "border-left:3px solid #27ae60;}"
+    );
+    label->setMaximumWidth(320);
+    label->adjustSize();
+    item->setSizeHint(QSize(label->sizeHint().width() + 16,
+                            label->sizeHint().height() + 12));
+    if (fromUser) item->setTextAlignment(Qt::AlignRight);
+    list->addItem(item);
+    list->setItemWidget(item, label);
+    return item;
+}
 
+void MainWindow::on_btnCommsSend_clicked()
+{
     QLineEdit *input = findChild<QLineEdit*>("txtCommsInput");
-
     QListWidget *list = findChild<QListWidget*>("listComms");
-
-
-
-    if (!input || !list)
-
-        return;
-
-
+    if (!input || !list) return;
 
     const QString message = input->text().trimmed();
+    if (message.isEmpty()) return;
 
-    if (message.isEmpty())
+    // Panneau communication employes : on poste juste le message au nom de
+    // l'utilisateur courant. Pas d'appel a Labib (qui a son propre dock).
+    QString operatorName = m_sessionEmail;
+    if (!operatorName.isEmpty()) {
+        const int at = operatorName.indexOf('@');
+        if (at > 0) operatorName = operatorName.left(at);
+    }
+    if (operatorName.trimmed().isEmpty()) {
+        operatorName = QStringLiteral("Vous");
+    }
 
-        return;
-
-
-
-    QListWidgetItem *item = new QListWidgetItem("Vous : " + message);
-
-    item->setForeground(QColor("#27ae60"));
-
-    list->addItem(item);
+    const QString tStamp = QTime::currentTime().toString("HH:mm");
+    const QString userHtml = QString(
+        "<b>%1</b> &middot; <span style='font-size:10px;opacity:0.85;'>%2</span><br>%3")
+        .arg(operatorName.toHtmlEscaped(), tStamp, message.toHtmlEscaped());
+    labibAddBubble(list, userHtml, true);
 
     input->clear();
-
+    list->scrollToBottom();
 }
 
 
@@ -16356,8 +17110,9 @@ void MainWindow::setupAccueilDashboard()
         // Header with badge
         {
             auto *alertHeader = new QHBoxLayout();
-            auto *commsTitle = new QLabel(QString::fromUtf8("Alertes & Communication"));
+            auto *commsTitle = new QLabel(QString::fromUtf8("\xF0\x9F\x92\xAC Alertes & Communication"));
             commsTitle->setObjectName("lblCommsTitle");
+            commsTitle->setToolTip(QString::fromUtf8("Espace de communication interne entre employ\xC3\xA9s."));
             auto *alertBadge = new QLabel("EN DIRECT");
             alertBadge->setStyleSheet(
                 "background:#e74c3c;color:white;font-size:10px;font-weight:800;"
@@ -16379,7 +17134,7 @@ void MainWindow::setupAccueilDashboard()
         auto *inputRow = new QHBoxLayout();
         auto *input = new QLineEdit();
         input->setObjectName("txtCommsInput");
-        input->setPlaceholderText(QString::fromUtf8("\xC3\x89" "crire un message..."));
+        input->setPlaceholderText(QString::fromUtf8("\xC3\x89crire un message \xC3\xA0 l'\xC3\xA9quipe..."));
         input->setMinimumHeight(40);
         auto *btnSend2 = new QPushButton(QString::fromUtf8("Envoyer"));
         btnSend2->setObjectName("btnCommsSend");
@@ -16571,6 +17326,8 @@ void MainWindow::setupAccueilDashboard()
             }
         }
 
+        // Pas de bulle Labib ici : ce panneau est reserve a la communication
+        // entre employes. L'assistant Labib a son propre dock dedie.
     }
 
     // â"€â"€â"€ Refresh KPI cards live from DB â"€â"€â"€
@@ -18423,11 +19180,11 @@ void MainWindow::setupProduitModule()
     }
 
     if (auto *b = root->findChild<QPushButton*>("prod_btnPdf")) {
-        b->setText("Exporter PDF");
+        b->setText("Catalogue");
     }
 
     if (auto *b = root->findChild<QPushButton*>("prod_btnVideo3D")) {
-        b->setText("Generer Video AI");
+        b->setText("Assemblage");
     }
 
     if (auto *b = root->findChild<QPushButton*>("prod_btn3DModel")) {
@@ -18435,7 +19192,7 @@ void MainWindow::setupProduitModule()
     }
 
     if (auto *b = root->findChild<QPushButton*>("prod_btnMap3D")) {
-        b->setText("Carte 3D");
+        b->setText("Stock Map");
     }
 
     if (auto *b = root->findChild<QPushButton*>("prod_btnSave_Add")) {
@@ -19912,7 +20669,10 @@ void MainWindow::populateMaintenanceTechCombo()
         QString sql =
             "SELECT ID_EMP, NOM, MATRICULE, NVL(SPECIALITE, ''), NVL(DISPONIBILITE, '') "
             "FROM EMPLOYE "
-            "WHERE LOWER(NVL(SPECIALITE, '')) LIKE '%technicien%' ";
+            "WHERE (LOWER(NVL(SPECIALITE, '')) LIKE '%technicien%' "
+            "   OR LOWER(NVL(SPECIALITE, '')) LIKE '%responsable maintenance%' "
+            "   OR LOWER(NVL(SPECIALITE, '')) LIKE '%responsable maintenances%' "
+            "   OR LOWER(NVL(SPECIALITE, '')) LIKE '%responsable maitenance%') ";
         if (onlyAvailable) {
             sql += "AND UPPER(NVL(DISPONIBILITE, '')) LIKE 'DISPONIBLE%' ";
         }
@@ -27477,8 +28237,12 @@ void MainWindow::installCmdActions(int row)
 
     // Yellow track button — compact pill style
     QString stat = ui->tableDashboard->item(row, 3)->text().toLower();
-    bool isDelivered = stat.contains("livr");
-    QPushButton *btnTrack = new QPushButton(isDelivered ? "Trajet effectué" : "Suivre la livraison", cell);
+    bool isDelivered = stat.contains("livr") && !stat.contains("cours");
+    bool isTracking = stat.contains("cours");
+    QString btnText = "Trajet effectué";
+    if (isDelivered) btnText = "Chemin de livraison";
+    else if (isTracking) btnText = "Suivre la livraison";
+    QPushButton *btnTrack = new QPushButton(btnText, cell);
     btnTrack->setObjectName("btnTrack");
     btnTrack->setSizePolicy(QSizePolicy::Minimum, QSizePolicy::Fixed);
     btnTrack->setStyleSheet(
@@ -27587,12 +28351,15 @@ void MainWindow::installCmdActions(int row)
                 mapWidget->rootObject()->setProperty("isReadOnly", true);
                 mapWidget->rootObject()->setProperty("showLocButton", false);
                 mapWidget->rootObject()->setProperty("showHistory", true);
-                mapWidget->rootObject()->setProperty("showOptimalRoute", !stat.contains("livr"));
+                bool isDel = stat.contains("livr") && !stat.contains("cours");
+                mapWidget->rootObject()->setProperty("showOptimalRoute", !isDel);
                 QMetaObject::invokeMethod(mapWidget->rootObject(), "setInitialLocation",
                     Q_ARG(QVariant, sLat), Q_ARG(QVariant, sLon), Q_ARG(QVariant, adr == "---" ? "" : adr));
                 QMetaObject::invokeMethod(mapWidget->rootObject(), "setPathHistory",
                     Q_ARG(QVariant, pathHist));
             }
+
+            attachLiveTrackingToMapPage(page, l, mapWidget, stat);
             
             mainStacked()->addWidget(page);
             mainStacked()->setCurrentWidget(page);
@@ -27631,8 +28398,12 @@ void MainWindow::installCmdActions2(int row)
 
     // Yellow track button — compact pill style
     QString stat = ui->tableProduits_2->item(row, 3)->text().toLower();
-    bool isDone = stat.contains("livr") || stat.contains("termin");
-    QPushButton *btnTrack = new QPushButton(isDone ? "Trajet effectué" : "Suivre la livraison", cell);
+    bool isDelivered = stat.contains("livr") && !stat.contains("cours");
+    bool isTracking = stat.contains("cours");
+    QString btnText = "Trajet effectué";
+    if (isDelivered) btnText = "Chemin de livraison";
+    else if (isTracking) btnText = "Suivre la livraison";
+    QPushButton *btnTrack = new QPushButton(btnText, cell);
     btnTrack->setSizePolicy(QSizePolicy::Minimum, QSizePolicy::Fixed);
     btnTrack->setStyleSheet(
         "QPushButton { background-color: #f0c343; color: #2d2100; border-radius: 6px;"
@@ -27688,6 +28459,7 @@ void MainWindow::installCmdActions2(int row)
             QString startAddr = ui->tableProduits_2->item(currentRow, 0)->data(Qt::UserRole + 2).toString();
             QString pathHist  = ui->tableProduits_2->item(currentRow, 0)->data(Qt::UserRole + 3).toString();
             QString adr       = ui->tableProduits_2->item(currentRow, 4)->text();
+            QString stat      = ui->tableProduits_2->item(currentRow, 3)->text().toLower();
             
             QWidget* page = new QWidget();
             QVBoxLayout* l = new QVBoxLayout(page);
@@ -27718,7 +28490,7 @@ void MainWindow::installCmdActions2(int row)
                 mapWidget->rootObject()->setProperty("isReadOnly", true);
                 mapWidget->rootObject()->setProperty("showLocButton", false);
                 mapWidget->rootObject()->setProperty("showHistory", true);
-                if (ui->tableProduits_2->item(currentRow, 3)->text().toLower().contains("livr")) {
+                if (stat.contains("livr") && !stat.contains("cours")) {
                     mapWidget->rootObject()->setProperty("showOptimalRoute", false);
                 } else {
                     mapWidget->rootObject()->setProperty("showOptimalRoute", true);
@@ -27728,6 +28500,8 @@ void MainWindow::installCmdActions2(int row)
                 QMetaObject::invokeMethod(mapWidget->rootObject(), "setPathHistory",
                     Q_ARG(QVariant, pathHist));
             }
+
+            attachLiveTrackingToMapPage(page, l, mapWidget, stat);
             
             mainStacked()->addWidget(page);
             mainStacked()->setCurrentWidget(page);
@@ -29980,6 +30754,35 @@ void MainWindow::on_btnSave_CmdMod_clicked()
         if (sLat != 0 || sLon != 0) {
             QString startAddr = QString("%1, %2").arg(sLat, 0, 'f', 5).arg(sLon, 0, 'f', 5);
             Ctmp.setStartAdresse(startAddr);
+        }
+    }
+
+    // If the delivery is marked as complete, persist captured GPS history.
+    if (statut.toUpper().contains("LIVR") && !statut.toUpper().contains("COURS")) {
+        const QString trackingJsonPath = resolveTrackingDataFilePath();
+        QFile f(trackingJsonPath);
+        if (f.open(QIODevice::ReadOnly)) {
+            const QJsonDocument doc = QJsonDocument::fromJson(f.readAll());
+            f.close();
+
+            const QJsonObject obj = doc.object();
+            if (obj.contains("history") && obj.value("history").isArray()) {
+                const QJsonArray historyArray = obj.value("history").toArray();
+                QStringList pathList;
+                pathList.reserve(historyArray.size());
+                for (const QJsonValue &v : historyArray) {
+                    const QJsonObject pt = v.toObject();
+                    pathList.append(
+                        QString("%1,%2")
+                            .arg(pt.value("lat").toDouble(), 0, 'f', 6)
+                            .arg(pt.value("lng").toDouble(), 0, 'f', 6)
+                    );
+                }
+                if (!pathList.isEmpty()) {
+                    Ctmp.setPathHistory(pathList.join(";"));
+                    QFile::remove(trackingJsonPath);
+                }
+            }
         }
     }
 
@@ -33509,15 +34312,8 @@ void MainWindow::resizeEvent(QResizeEvent *event)
     QMainWindow::resizeEvent(event);
     onFloatingAIButtonPositionUpdate();
 
-    if (m_labibDock && m_labibDock->isVisible()) {
-        const int windowW = qMax(900, this->width());
-        const int minDockW = 400;
-        const int maxDockW = qMax(minDockW, windowW - 180);
-        const int preferredDockW = qBound(minDockW, static_cast<int>(windowW * 0.32), maxDockW);
-        m_labibDock->setMinimumWidth(minDockW);
-        m_labibDock->setMaximumWidth(maxDockW);
-        resizeDocks({m_labibDock}, {preferredDockW}, Qt::Horizontal);
-    }
+    // La fenetre Labib est top-level (pop-out Messenger) : pas de resize lie
+    // a la fenetre principale.
 }
 
 void MainWindow::moveEvent(QMoveEvent *event)

@@ -84,22 +84,23 @@ void ensureFaceColumnsExist()
     static bool checked = false;
     if (checked) return;
 
-    QSqlQuery probe;
-    if (probe.exec("SELECT face_template, face_template_updated_at, face_enabled FROM EMPLOYE WHERE 1=0")) {
-        checked = true;
-        return;
-    }
-
-    if (!hasMissingColumnError(probe.lastError().text())) {
-        checked = true;
-        return;
-    }
+    auto columnMissing = [](const QString &col) {
+        QSqlQuery probe;
+        probe.exec(QString("SELECT %1 FROM EMPLOYE WHERE 1=0").arg(col));
+        return probe.lastError().isValid();
+    };
 
     QSqlQuery q;
-    q.exec("ALTER TABLE EMPLOYE ADD (face_template CLOB)");
-    q.exec("ALTER TABLE EMPLOYE ADD (face_template_updated_at DATE)");
-    q.exec("ALTER TABLE EMPLOYE ADD (face_enabled NUMBER(1) DEFAULT 1)");
-    q.exec("UPDATE EMPLOYE SET face_enabled = 1 WHERE face_enabled IS NULL");
+    if (columnMissing("face_template"))
+        q.exec("ALTER TABLE EMPLOYE ADD (face_template CLOB)");
+    if (columnMissing("face_template_bin"))
+        q.exec("ALTER TABLE EMPLOYE ADD (face_template_bin BLOB)");
+    if (columnMissing("face_template_updated_at"))
+        q.exec("ALTER TABLE EMPLOYE ADD (face_template_updated_at DATE)");
+    if (columnMissing("face_enabled")) {
+        q.exec("ALTER TABLE EMPLOYE ADD (face_enabled NUMBER(1) DEFAULT 1)");
+        q.exec("UPDATE EMPLOYE SET face_enabled = 1 WHERE face_enabled IS NULL");
+    }
     checked = true;
 }
 
@@ -1351,9 +1352,11 @@ private:
         hasTemplate = false;
         errorText.clear();
 
+        // Lecture robuste : BLOB binaire d'abord, fallback CLOB texte.
         QSqlQuery q;
         q.prepare(
-            "SELECT id_emp, nom, face_template, COALESCE(face_enabled,1), photo "
+            "SELECT id_emp, nom, face_template_bin, face_template, "
+            "       COALESCE(face_enabled,1), photo "
             "FROM EMPLOYE "
             "WHERE LOWER(TRIM(email)) = LOWER(TRIM(:email))");
         q.bindValue(":email", email);
@@ -1400,9 +1403,16 @@ private:
 
         accountId = q.value(0).toInt();
         accountName = q.value(1).toString().trimmed();
-        const QString templateRaw = q.value(2).toString();
-        const bool enabled = q.value(3).toInt() != 0;
-        accountPhoto = q.value(4).toByteArray();
+        // 1) BLOB binaire
+        QString templateRaw;
+        const QByteArray bin = q.value(2).toByteArray();
+        if (!bin.isEmpty()) templateRaw = QString::fromUtf8(bin);
+        // 2) Fallback CLOB texte (anciens enregistrements)
+        if (templateRaw.trimmed().isEmpty()) {
+            templateRaw = q.value(3).toString();
+        }
+        const bool enabled = q.value(4).toInt() != 0;
+        accountPhoto = q.value(5).toByteArray();
         if (!enabled) {
             errorText = "Face ID desactive pour ce compte.";
             return false;
@@ -1435,10 +1445,18 @@ private:
         bestScore = -1.0;
         if (secondBestScore) *secondBestScore = -1.0;
 
+        // Lecture robuste : BLOB binaire d'abord, fallback CLOB texte.
         QSqlQuery query;
-        if (!query.exec("SELECT id_emp, email, nom, face_template, COALESCE(face_enabled,1) FROM EMPLOYE")) {
-            errorText = "Erreur SQL Face ID: " + query.lastError().text();
-            return false;
+        bool useBlob = true;
+        if (!query.exec("SELECT id_emp, email, nom, face_template_bin, face_template, "
+                        "COALESCE(face_enabled,1) FROM EMPLOYE")) {
+            // Colonne BLOB absente : on retombe sur l'ancienne SELECT.
+            useBlob = false;
+            if (!query.exec("SELECT id_emp, email, nom, face_template, COALESCE(face_enabled,1) "
+                           "FROM EMPLOYE")) {
+                errorText = "Erreur SQL Face ID: " + query.lastError().text();
+                return false;
+            }
         }
 
         bool anyTemplate = false;
@@ -1450,8 +1468,18 @@ private:
             const QString nom = query.value(2).toString().trimmed();
             if (email.isEmpty()) continue;
 
-            const QString templateRaw = query.value(3).toString();
-            const bool enabled = query.value(4).toInt() != 0;
+            QString templateRaw;
+            bool enabled = true;
+            if (useBlob) {
+                const QByteArray bin = query.value(3).toByteArray();
+                if (!bin.isEmpty()) templateRaw = QString::fromUtf8(bin);
+                if (templateRaw.trimmed().isEmpty())
+                    templateRaw = query.value(4).toString();
+                enabled = query.value(5).toInt() != 0;
+            } else {
+                templateRaw = query.value(3).toString();
+                enabled = query.value(4).toInt() != 0;
+            }
             if (!enabled) continue;
 
             const QVector<float> dbDesc = resolveEmployeeDescriptor(templateRaw);
@@ -1544,12 +1572,17 @@ private:
             return false;
         }
 
+        // Double ecriture : BLOB binaire (robuste sur QODBC/Oracle) + CLOB (compat).
+        const QString tplStr = descriptorToString(liveDesc);
+        const QByteArray tplBin = tplStr.toUtf8();
         QSqlQuery up;
         up.prepare(
             "UPDATE EMPLOYE "
-            "SET face_template=:tpl, face_template_updated_at=SYSDATE, face_enabled=1 "
+            "SET face_template=:tpl, face_template_bin=:bin, "
+            "    face_template_updated_at=SYSDATE, face_enabled=1 "
             "WHERE id_emp=:id");
-        up.bindValue(":tpl", descriptorToString(liveDesc));
+        up.bindValue(":tpl", tplStr);
+        up.bindValue(":bin", tplBin);
         up.bindValue(":id", targetId);
         if (!up.exec()) {
             errorText = "Impossible d'enregistrer le visage: " + up.lastError().text();

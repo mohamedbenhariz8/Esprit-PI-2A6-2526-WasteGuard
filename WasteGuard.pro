@@ -29,6 +29,8 @@ SOURCES += \
     accessibilityhelper.cpp \
     voiceassistant.cpp \
     labibassistant.cpp \
+    labibchat.cpp \
+    labibmediacircle.cpp \
     emailnotificationmanager.cpp \
     thememanager.cpp \
     bacdetector.cpp \
@@ -56,6 +58,8 @@ HEADERS += \
     accessibilityhelper.h \
     voiceassistant.h \
     labibassistant.h \
+    labibchat.h \
+    labibmediacircle.h \
     emailnotificationmanager.h \
     thememanager.h \
     bacdetector.h \
@@ -74,10 +78,22 @@ RESOURCES += \
 unix {
     QMAKE_POST_LINK += cp -f \"$$PWD/voice_engine.py\" \"$$OUT_PWD/voice_engine.py\" || true$$escape_expand(\\n\\t)
     QMAKE_POST_LINK += cp -rf \"$$PWD/models\" \"$$OUT_PWD/models\" || true$$escape_expand(\\n\\t)
-    QMAKE_POST_LINK += cp -f \"$$PWD/ai_worker.py\" \"$$OUT_PWD/ai_worker.py\" || true
+    QMAKE_POST_LINK += cp -f \"$$PWD/ai_worker.py\" \"$$OUT_PWD/ai_worker.py\" || true$$escape_expand(\\n\\t)
+    QMAKE_POST_LINK += cp -f \"$$PWD/download.mp4\" \"$$OUT_PWD/download.mp4\" || true$$escape_expand(\\n\\t)
+    QMAKE_POST_LINK += cp -f \"$$PWD/download.mp4\" \"$$OUT_PWD/release/download.mp4\" || true$$escape_expand(\\n\\t)
+    QMAKE_POST_LINK += cp -f \"$$PWD/download.mp4\" \"$$OUT_PWD/debug/download.mp4\" || true$$escape_expand(\\n\\t)
+    QMAKE_POST_LINK += cp -f \"$$PWD/download2.mp4\" \"$$OUT_PWD/download2.mp4\" || true$$escape_expand(\\n\\t)
+    QMAKE_POST_LINK += cp -f \"$$PWD/download2.mp4\" \"$$OUT_PWD/release/download2.mp4\" || true$$escape_expand(\\n\\t)
+    QMAKE_POST_LINK += cp -f \"$$PWD/download2.mp4\" \"$$OUT_PWD/debug/download2.mp4\" || true
 }
 win32 {
     QMAKE_POST_LINK += $$quote(cmd /c "(copy /Y \"$$PWD\\voice_engine.py\" \"$$OUT_PWD\\voice_engine.py\" >nul || ver >nul)")$$escape_expand(\\n\\t)
     QMAKE_POST_LINK += $$quote(cmd /c "(xcopy /Y /I /E \"$$PWD\\models\" \"$$OUT_PWD\\models\" >nul || ver >nul)")$$escape_expand(\\n\\t)
-    QMAKE_POST_LINK += $$quote(cmd /c "(copy /Y \"$$PWD\\ai_worker.py\" \"$$OUT_PWD\\ai_worker.py\" >nul || ver >nul)")
+    QMAKE_POST_LINK += $$quote(cmd /c "(copy /Y \"$$PWD\\ai_worker.py\" \"$$OUT_PWD\\ai_worker.py\" >nul || ver >nul)")$$escape_expand(\\n\\t)
+    QMAKE_POST_LINK += $$quote(cmd /c "(copy /Y \"$$PWD\\download.mp4\" \"$$OUT_PWD\\download.mp4\" >nul || ver >nul)")$$escape_expand(\\n\\t)
+    QMAKE_POST_LINK += $$quote(cmd /c "(copy /Y \"$$PWD\\download.mp4\" \"$$OUT_PWD\\release\\download.mp4\" >nul || ver >nul)")$$escape_expand(\\n\\t)
+    QMAKE_POST_LINK += $$quote(cmd /c "(copy /Y \"$$PWD\\download.mp4\" \"$$OUT_PWD\\debug\\download.mp4\" >nul || ver >nul)")$$escape_expand(\\n\\t)
+    QMAKE_POST_LINK += $$quote(cmd /c "(copy /Y \"$$PWD\\download2.mp4\" \"$$OUT_PWD\\download2.mp4\" >nul || ver >nul)")$$escape_expand(\\n\\t)
+    QMAKE_POST_LINK += $$quote(cmd /c "(copy /Y \"$$PWD\\download2.mp4\" \"$$OUT_PWD\\release\\download2.mp4\" >nul || ver >nul)")$$escape_expand(\\n\\t)
+    QMAKE_POST_LINK += $$quote(cmd /c "(copy /Y \"$$PWD\\download2.mp4\" \"$$OUT_PWD\\debug\\download2.mp4\" >nul || ver >nul)")
 }

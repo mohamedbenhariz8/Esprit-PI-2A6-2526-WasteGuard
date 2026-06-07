@@ -217,7 +217,7 @@ bool Produit::ajouter()
         query.bindValue(":id_bac", idToUse++);
         query.bindValue(":num_serie", m_reference);
         query.bindValue(":num_unite", unit);
-        query.bindValue(":statut_bac", "EN_STOCK");
+        query.bindValue(":statut_bac", "EN_ATTENTE");
         query.bindValue(":modele", m_nom);
         query.bindValue(":remplissage", m_capacite);
         query.bindValue(":localisation_stock", locToUse);
@@ -363,7 +363,7 @@ bool Produit::modifier()
             ins.bindValue(":id_bac", nextId++);
             ins.bindValue(":num_serie", currentReference);
             ins.bindValue(":num_unite", unit);
-            ins.bindValue(":statut_bac", "EN_STOCK");
+            ins.bindValue(":statut_bac", "EN_ATTENTE");
             ins.bindValue(":modele", m_nom);
             ins.bindValue(":remplissage", m_capacite);
             ins.bindValue(":localisation_stock", locToUse);

@@ -8,7 +8,7 @@ from transformers import pipeline
 # URL is taken from the ESP32_CAM_URL env var (set by MainWindow to match
 # whatever IP the bin-status dialog is polling). The hardcoded value is
 # only a fallback when the script is run by hand.
-URL = os.environ.get("ESP32_CAM_URL", "http://10.161.104.88/capture.raw")
+URL = os.environ.get("ESP32_CAM_URL", "http://10.43.149.88/capture.raw")
 WIDTH = 160
 HEIGHT = 120
 

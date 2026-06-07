@@ -8,8 +8,8 @@
       "args": [],
       "stopAtEntry": false,
       "externalConsole": true,
-      "cwd": "c:/Users/gigabyte/Pictures/projettcpp/projettcpp",
-      "program": "c:/Users/gigabyte/Pictures/projettcpp/projettcpp/build/Debug/outDebug",
+      "cwd": "c:/Users/gigabyte/Downloads/Finale/Finale",
+      "program": "c:/Users/gigabyte/Downloads/Finale/Finale/build/Debug/outDebug",
       "MIMode": "gdb",
       "miDebuggerPath": "gdb",
       "setupCommands": [

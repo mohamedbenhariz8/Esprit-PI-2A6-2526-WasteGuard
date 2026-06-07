@@ -532,7 +532,12 @@ QString BacStatusDialog::resolveBacStatus(int idBac) const
     q.prepare(QStringLiteral("SELECT STATUT_BAC FROM BAC_INTEL WHERE ID_BAC = :id"));
     q.bindValue(":id", idBac);
     if (q.exec() && q.next()) {
-        return q.value(0).toString().toUpper();
+        QString statut = q.value(0).toString().trimmed().toUpper();
+        // Backward compatibility: old product rows used EN_STOCK.
+        if (statut == QLatin1String("EN_STOCK")) {
+            statut = QStringLiteral("EN_ATTENTE");
+        }
+        return statut;
     }
     return QStringLiteral("EN_ATTENTE");
 }

@@ -13,6 +13,9 @@
 #include <QSqlQueryModel>
 #include <QTimer>
 
+class LabibMediaCircle;
+class QFrame;
+
 /**
  * Labib AI Assistant Dialog
  * Universal AI assistant for WasteGuard Smart Waste Collection System
@@ -83,6 +86,36 @@ private:
     QTimer *m_typingTimer = nullptr;
     int m_typingStep = 0;
     QString m_lastAssistantHtml;
+
+    // Clustering Messenger : -1 = aucun, 0 = Labib, 1 = utilisateur.
+    int m_lastBubbleFromUser = -1;
+
+    LabibMediaCircle *m_avatarCircle = nullptr;
+    QStringList m_idleVideoCandidates;        // legacy alias = waiting
+    QStringList m_typingVideoCandidates;      // legacy alias = speaking
+    QStringList m_waitingVideoCandidates;     // download.mp4  : Labib attend
+    QStringList m_listeningVideoCandidates;   // download2.mp4 : Labib ecoute
+    QStringList m_speakingVideoCandidates;    // download3.mp4 : Labib parle
+    void loadAvatarVideo(const QStringList &candidates);
+    QStringList buildVideoCandidates(const QString &fileName) const;
+
+    enum class AvatarState { Waiting, Listening, Speaking };
+    AvatarState m_avatarState = AvatarState::Waiting;
+    QLabel  *m_avatarStatusLabel = nullptr;
+    QTimer  *m_idleRevertTimer   = nullptr;
+    void setAvatarState(AvatarState s);
+
+    QFrame            *m_typingBubble = nullptr;
+    LabibMediaCircle  *m_typingAvatar = nullptr;
+    bool               m_typingAvatarLoaded = false;
+
+    // Synchronisation : on attend que download3.mp4 ait fini de jouer
+    // avant d'afficher la reponse (evite la coupure brutale du video).
+    QString  m_pendingResponse;
+    bool     m_responseReady = false;
+    bool     m_typingVideoFinished = true;
+    void     onTypingVideoFinished();
+    void     deliverPendingResponseIfReady();
 };
 
 #endif // LABIBASSISTANT_H

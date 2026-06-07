@@ -1,4 +1,7 @@
 #include "labibassistant.h"
+#include "labibchat.h"
+#include "labibmediacircle.h"
+#include <QMediaPlayer>
 #include <QVBoxLayout>
 #include <QHBoxLayout>
 #include <QLabel>
@@ -10,11 +13,17 @@
 #include <QFile>
 #include <QTextStream>
 #include <QDateTime>
+#include <QSqlDatabase>
 #include <QSqlQuery>
 #include <QSqlError>
+#include <QSqlRecord>
 #include <QVariant>
+#include <QMetaType>
 #include <QScrollArea>
 #include <QGraphicsDropShadowEffect>
+#include <QGraphicsOpacityEffect>
+#include <QPropertyAnimation>
+#include <QSequentialAnimationGroup>
 #include <QRegularExpression>
 #include <QProcess>
 #include <QStandardPaths>
@@ -25,6 +34,8 @@
 #include <QEventLoop>
 #include <QTimer>
 #include <QDir>
+#include <QFileInfo>
+#include <QCoreApplication>
 #include <QRandomGenerator>
 #include <QToolButton>
 #include <QStyle>
@@ -36,44 +47,47 @@
 #include <QScrollBar>
 #include <QFrame>
 #include <QColor>
+#include <QSet>
 
 namespace {
 
 QString normalizeIntentText(QString text)
 {
-    text.replace("Ã©", "e");
-    text.replace("Ã¨", "e");
-    text.replace("Ãª", "e");
-    text.replace("Ã«", "e");
-    text.replace("Ã ", "a");
-    text.replace("Ã¢", "a");
-    text.replace("Ã®", "i");
-    text.replace("Ã¯", "i");
-    text.replace("Ã´", "o");
-    text.replace("Ã¶", "o");
-    text.replace("Ã¹", "u");
-    text.replace("Ã»", "u");
-    text.replace("Ã¼", "u");
-    text.replace("Ã§", "c");
-    text.replace("ã©", "e");
-    text.replace("ã¨", "e");
-    text.replace("ãª", "e");
-    text.replace("ã«", "e");
-    text.replace("ã ", "a");
-    text.replace("ã¢", "a");
-    text.replace("ã®", "i");
-    text.replace("ã¯", "i");
-    text.replace("ã´", "o");
-    text.replace("ã¶", "o");
-    text.replace("ã¹", "u");
-    text.replace("ã»", "u");
-    text.replace("ã¼", "u");
-    text.replace("ã§", "c");
+    text.replace("ÃƒÂ©", "e");
+    text.replace("ÃƒÂ¨", "e");
+    text.replace("ÃƒÂª", "e");
+    text.replace("ÃƒÂ«", "e");
+    text.replace("ÃƒÂ ", "a");
+    text.replace("ÃƒÂ¢", "a");
+    text.replace("ÃƒÂ®", "i");
+    text.replace("ÃƒÂ¯", "i");
+    text.replace("ÃƒÂ´", "o");
+    text.replace("ÃƒÂ¶", "o");
+    text.replace("ÃƒÂ¹", "u");
+    text.replace("ÃƒÂ»", "u");
+    text.replace("ÃƒÂ¼", "u");
+    text.replace("ÃƒÂ§", "c");
+    text.replace("Ã£Â©", "e");
+    text.replace("Ã£Â¨", "e");
+    text.replace("Ã£Âª", "e");
+    text.replace("Ã£Â«", "e");
+    text.replace("Ã£Â ", "a");
+    text.replace("Ã£Â¢", "a");
+    text.replace("Ã£Â®", "i");
+    text.replace("Ã£Â¯", "i");
+    text.replace("Ã£Â´", "o");
+    text.replace("Ã£Â¶", "o");
+    text.replace("Ã£Â¹", "u");
+    text.replace("Ã£Â»", "u");
+    text.replace("Ã£Â¼", "u");
+    text.replace("Ã£Â§", "c");
     text = text.normalized(QString::NormalizationForm_D);
     text.remove(QRegularExpression("[\\x{0300}-\\x{036f}]"));
     text = text.toLower();
     text.replace(QRegularExpression("[^a-z0-9 ]"), " ");
     text.replace(QRegularExpression("\\s+"), " ");
+    text.replace(QRegularExpression("\\bamployes\\b"), "employes");
+    text.replace(QRegularExpression("\\bamploye\\b"), "employe");
     return text.trimmed();
 }
 
@@ -590,11 +604,16 @@ QString queryLocalQwenAssistant(const QString &userMessage, const QString &modul
 
     const QString moduleCtx = module.trimmed().isEmpty() ? "non precise" : module.trimmed();
     const QString systemPrompt =
-        "Tu es Labib, assistant personnel interne de l'application WasteGuard. "
-        "Tu dois aider uniquement sur l'application WasteGuard (modules, workflows, donnees, import, erreurs, utilisation). "
-        "Refuse poliment les demandes hors sujet (culture generale, actualites, etc.) et recentre vers l'app. "
-        "Reponds en francais, concret, et avec etapes numerotees quand il faut. "
-        "N'invente pas de fonctionnalites non presentes. "
+        "Tu es Labib, le collegue numerique de l'equipe WasteGuard (gestion intelligente des dechets). "
+        "Tu es passionne par la boite, ambitieux, chaleureux, et tu tutoies l'utilisateur comme un collegue. "
+        "Tu reponds UNIQUEMENT sur WasteGuard (modules Clients, Employes, Produits, Maintenance, Commandes, Stock, "
+        "bacs IoT, interventions, donnees, imports). Refuse poliment hors sujet et recentre vers l'app. "
+        "Reponds en francais, concret, court, avec etapes numerotees si necessaire. "
+        "N'invente JAMAIS de fonctionnalite ou de chiffre absent de la base. "
+        "FORMATAGE OBLIGATOIRE : reponse en HTML simple uniquement. "
+        "Pas de Markdown : interdis '**', '__', '###', les listes Markdown '- ' ou '* '. "
+        "Utilise <b>...</b> pour le gras, <i>...</i> pour l'italique, <br> pour les sauts de ligne, "
+        "et le caractere puce '\xE2\x80\xA2 ' (bullet) pour les listes. "
         "Module courant: " + moduleCtx + ".";
 
     QJsonArray messages;
@@ -627,6 +646,504 @@ QString queryLocalQwenAssistant(const QString &userMessage, const QString &modul
     };
     out = postAssistantRequest(QUrl(nativeBase + "/api/chat"), ollamaPayload, QString(), 16000);
     return out;
+}
+
+QString wasteGuardSqlSchemaPrompt()
+{
+    return
+        "SCHEMA WASTEGUARD (Oracle):\n"
+        "- CLIENT(ID_CLIENT, NOM, MATRICULE, EMAIL, TYPE_CONTRAT, STATUT_PAIEMENT, DATE_EXPIRATION_CONTRAT, TAUX_TRI)\n"
+        "- EMPLOYE(ID_EMP, MATRICULE, CIN, NOM, EMAIL, SPECIALITE, DISPONIBILITE, SALAIRE, CURRENT_LEAVE_STATUS, CURRENT_MISSION_STATUS, TOTAL_REWARD)\n"
+        "- MATIERE_PREMIERE(ID_MP, REFERENCE, NOM, QUANTITE, SEUIL_CRITIQUE, PRIX, DATE_FABRICATION, DATE_ACHAT, NOM_FOUR, EMAIL_FOUR)\n"
+        "- BAC_INTEL(ID_BAC, NUM_SERIE, MODELE, REMPLISSAGE, LOCALISATION_STOCK, ID_CLIENT, ID_COMMANDE, PRIX, STOCK, CAPACITE_BATTERIE)\n"
+        "- COMMANDE(ID_COMMANDE, ID_CLIENT, QTE, PRIORITE, STATUT, DATE_COMMANDE, DATE_LIVRAISON, PRIX_TOTAL, ADRESSE)\n"
+        "- COMMANDE_BAC(ID_COMMANDE, ID_BAC, QTE, PRIX_UNITAIRE)\n"
+        "- INTERVENTION(ID_INTER, ID_BAC, DATE_INTER, REFERENCE, DUREE, COUT, MAIN_OEUVRE, STATUT, TYPE, PRIORITE)\n"
+        "- EFFECTUATION(ID_INTER, ID_EMP)\n"
+        "- FABRICATION(ID_MP, ID_BAC, QTE_UTILISE)\n"
+        "- INTERVENTION_MATIERE(ID_INTER, ID_MP, QTE_UTILISEE)\n"
+        "RELATIONS CLEFS:\n"
+        "- COMMANDE.ID_CLIENT -> CLIENT.ID_CLIENT\n"
+        "- BAC_INTEL.ID_CLIENT -> CLIENT.ID_CLIENT\n"
+        "- COMMANDE_BAC.ID_COMMANDE -> COMMANDE.ID_COMMANDE\n"
+        "- COMMANDE_BAC.ID_BAC -> BAC_INTEL.ID_BAC\n"
+        "- INTERVENTION.ID_BAC -> BAC_INTEL.ID_BAC\n"
+        "- EFFECTUATION.ID_INTER -> INTERVENTION.ID_INTER\n"
+        "- EFFECTUATION.ID_EMP -> EMPLOYE.ID_EMP\n";
+}
+
+QString wasteGuardRuntimeSchemaPrompt()
+{
+    const QSqlDatabase db = QSqlDatabase::database();
+    if (!db.isValid() || !db.isOpen()) {
+        return wasteGuardSqlSchemaPrompt();
+    }
+
+    const QStringList tables = {
+        "CLIENT", "EMPLOYE", "MATIERE_PREMIERE", "BAC_INTEL", "COMMANDE",
+        "COMMANDE_BAC", "INTERVENTION", "EFFECTUATION", "FABRICATION", "INTERVENTION_MATIERE"
+    };
+
+    QStringList lines;
+    lines.reserve(tables.size());
+    for (const QString &table : tables) {
+        QSqlRecord rec = db.record(table);
+        if (rec.count() <= 0) {
+            QSqlQuery probe;
+            if (probe.exec(QString("SELECT * FROM %1 WHERE 1=0").arg(table))) {
+                rec = probe.record();
+            }
+        }
+        if (rec.count() <= 0) continue;
+
+        QStringList cols;
+        cols.reserve(rec.count());
+        for (int i = 0; i < rec.count(); ++i) {
+            const QString c = rec.fieldName(i).trimmed();
+            if (!c.isEmpty()) cols << c;
+        }
+        if (!cols.isEmpty()) {
+            lines << QString("- %1(%2)").arg(table, cols.join(", "));
+        }
+    }
+
+    if (lines.isEmpty()) {
+        return wasteGuardSqlSchemaPrompt();
+    }
+
+    QString schema = "SCHEMA WASTEGUARD REEL (Oracle, colonnes detectees en direct):\n";
+    schema += lines.join("\n");
+    schema += "\nRELATIONS CLEFS:\n"
+              "- COMMANDE.ID_CLIENT -> CLIENT.ID_CLIENT\n"
+              "- BAC_INTEL.ID_CLIENT -> CLIENT.ID_CLIENT\n"
+              "- COMMANDE_BAC.ID_COMMANDE -> COMMANDE.ID_COMMANDE\n"
+              "- COMMANDE_BAC.ID_BAC -> BAC_INTEL.ID_BAC\n"
+              "- INTERVENTION.ID_BAC -> BAC_INTEL.ID_BAC\n"
+              "- EFFECTUATION.ID_INTER -> INTERVENTION.ID_INTER\n"
+              "- EFFECTUATION.ID_EMP -> EMPLOYE.ID_EMP\n";
+    return schema;
+}
+
+bool isLikelyDatabaseQuestion(const QString &normalizedQuestion)
+{
+    const bool asksData = containsAny(normalizedQuestion, {
+        "combien", "nombre", "total", "moyen", "moyenne", "max", "min",
+        "top", "liste", "statut", "prix", "cout", "salaire", "quantite",
+        "stock", "qui", "quel", "quelle", "quels", "quelles", "donnee",
+        "donnees", "table", "sql", "base", "database", "oracle", "reporting", "rapport"
+    });
+
+    const bool mentionsBusinessEntity = containsAny(normalizedQuestion, {
+        "client", "employe", "equipe", "matiere", "produit", "bac",
+        "commande", "intervention", "maintenance", "fournisseur"
+    });
+    const bool mentionsBusinessField = containsAny(normalizedQuestion, {
+        "email", "matricule", "cin", "salaire", "disponibilite",
+        "seuil", "remplissage", "livraison", "priorite", "contrat",
+        "expiration", "adresse", "reference", "capacite", "prix total"
+    });
+    const bool explicitSqlIntent = containsAny(normalizedQuestion, {
+        "sql", "select", "table", "base", "database", "oracle"
+    });
+
+    const bool proceduralQuestion = containsAny(normalizedQuestion, {
+        "comment", "etape", "procedure", "ajouter", "modifier", "supprimer",
+        "importer", "exporter", "ouvrir", "bouton", "interface"
+    });
+
+    if (proceduralQuestion && !containsAny(normalizedQuestion, {
+        "combien", "liste", "total", "moyenne", "max", "min", "sql", "table", "base"
+    })) {
+        return false;
+    }
+    if (explicitSqlIntent) {
+        return true;
+    }
+    if (mentionsBusinessEntity && mentionsBusinessField) {
+        return true;
+    }
+    return asksData && (mentionsBusinessEntity || mentionsBusinessField);
+}
+
+QString sanitizeSqlCandidate(QString raw)
+{
+    raw = raw.trimmed();
+    if (raw.isEmpty()) return QString();
+
+    // If model returns a fenced block, keep only the SQL payload.
+    static const QRegularExpression blockRe("```(?:sql)?\\s*([\\s\\S]*?)```",
+                                            QRegularExpression::CaseInsensitiveOption);
+    const QRegularExpressionMatch blockMatch = blockRe.match(raw);
+    if (blockMatch.hasMatch()) {
+        raw = blockMatch.captured(1).trimmed();
+    }
+
+    raw.remove(QRegularExpression("^sql\\s*:\\s*", QRegularExpression::CaseInsensitiveOption));
+    raw.remove(QRegularExpression("^requete\\s*:\\s*", QRegularExpression::CaseInsensitiveOption));
+    raw.replace('\r', ' ');
+    raw.replace('\n', ' ');
+    raw = raw.simplified();
+    while (raw.endsWith(';')) raw.chop(1);
+    return raw.trimmed();
+}
+
+bool isSafeReadOnlySql(const QString &sql, QString &reason)
+{
+    const QString trimmed = sql.trimmed();
+    if (trimmed.isEmpty()) {
+        reason = "Requete vide.";
+        return false;
+    }
+
+    const QString upper = trimmed.toUpper();
+
+    if (upper.contains(';')) {
+        reason = "Plusieurs instructions SQL detectees.";
+        return false;
+    }
+
+    if (!(upper.startsWith("SELECT ") || upper.startsWith("WITH "))) {
+        reason = "Seules les requetes SELECT/WITH sont autorisees.";
+        return false;
+    }
+
+    if (upper.contains("--") || upper.contains("/*") || upper.contains("*/")) {
+        reason = "Commentaires SQL non autorises.";
+        return false;
+    }
+
+    static const QStringList forbidden = {
+        "INSERT", "UPDATE", "DELETE", "MERGE", "UPSERT",
+        "DROP", "ALTER", "TRUNCATE", "CREATE", "RENAME",
+        "GRANT", "REVOKE", "COMMIT", "ROLLBACK", "SAVEPOINT",
+        "BEGIN", "DECLARE", "CALL", "EXECUTE", "LOCK TABLE", "FOR UPDATE"
+    };
+
+    for (const QString &kw : forbidden) {
+        QRegularExpression re(QString("\\b%1\\b").arg(QRegularExpression::escape(kw)),
+                              QRegularExpression::CaseInsensitiveOption);
+        if (re.match(trimmed).hasMatch()) {
+            reason = QString("Mot-cle interdit detecte: %1").arg(kw);
+            return false;
+        }
+    }
+
+    return true;
+}
+
+QString addRowLimitIfMissing(QString sql)
+{
+    auto wrapWithRownumLimit = [](const QString &baseSql, int n) {
+        return QString("SELECT * FROM (%1) WG_Q WHERE ROWNUM <= %2")
+            .arg(baseSql.trimmed())
+            .arg(n);
+    };
+
+    sql = sql.trimmed();
+    if (sql.isEmpty()) return sql;
+
+    // Oracle 11g compatibility: rewrite common non-11g limit syntaxes.
+    {
+        const QRegularExpression fetchRe(
+            "\\s+FETCH\\s+(?:FIRST|NEXT)\\s+(\\d+)\\s+ROWS\\s+ONLY\\s*$",
+            QRegularExpression::CaseInsensitiveOption);
+        const QRegularExpressionMatch m = fetchRe.match(sql);
+        if (m.hasMatch()) {
+            const int limit = qMax(1, m.captured(1).toInt());
+            const QString base = sql.left(m.capturedStart(0)).trimmed();
+            sql = wrapWithRownumLimit(base, limit);
+        }
+    }
+    {
+        const QRegularExpression offsetFetchRe(
+            "\\s+OFFSET\\s+\\d+\\s+ROWS\\s+FETCH\\s+NEXT\\s+(\\d+)\\s+ROWS\\s+ONLY\\s*$",
+            QRegularExpression::CaseInsensitiveOption);
+        const QRegularExpressionMatch m = offsetFetchRe.match(sql);
+        if (m.hasMatch()) {
+            const int limit = qMax(1, m.captured(1).toInt());
+            const QString base = sql.left(m.capturedStart(0)).trimmed();
+            sql = wrapWithRownumLimit(base, limit);
+        }
+    }
+    {
+        const QRegularExpression limitRe(
+            "\\s+LIMIT\\s+(\\d+)\\s*$",
+            QRegularExpression::CaseInsensitiveOption);
+        const QRegularExpressionMatch m = limitRe.match(sql);
+        if (m.hasMatch()) {
+            const int limit = qMax(1, m.captured(1).toInt());
+            const QString base = sql.left(m.capturedStart(0)).trimmed();
+            sql = wrapWithRownumLimit(base, limit);
+        }
+    }
+    {
+        const QRegularExpression topRe(
+            "^\\s*SELECT\\s+TOP\\s+(\\d+)\\s+",
+            QRegularExpression::CaseInsensitiveOption);
+        const QRegularExpressionMatch m = topRe.match(sql);
+        if (m.hasMatch()) {
+            const int limit = qMax(1, m.captured(1).toInt());
+            QString base = sql;
+            base.remove(topRe);
+            base.prepend("SELECT ");
+            sql = wrapWithRownumLimit(base, limit);
+        }
+    }
+
+    const QString upper = sql.toUpper();
+    if (upper.contains("ROWNUM")) {
+        return sql;
+    }
+
+    // For aggregation queries, keep the SQL as-is.
+    if (upper.contains("COUNT(") || upper.contains("SUM(") || upper.contains("AVG(")
+        || upper.contains("MIN(") || upper.contains("MAX(") || upper.contains("GROUP BY")) {
+        return sql;
+    }
+
+    return wrapWithRownumLimit(sql.trimmed(), 50);
+}
+
+QString formatSqlCell(const QVariant &v)
+{
+    if (v.isNull()) return "<i>NULL</i>";
+
+    const int t = v.typeId();
+    if (t == QMetaType::QDate) {
+        return v.toDate().toString("yyyy-MM-dd").toHtmlEscaped();
+    }
+    if (t == QMetaType::QDateTime) {
+        return v.toDateTime().toString("yyyy-MM-dd HH:mm:ss").toHtmlEscaped();
+    }
+    if (t == QMetaType::Double || t == QMetaType::Float) {
+        return QString::number(v.toDouble(), 'f', 3).toHtmlEscaped();
+    }
+    return v.toString().toHtmlEscaped();
+}
+
+bool executeReadOnlySqlToHtml(const QString &sql, QString &html, QString &errorText)
+{
+    html.clear();
+    errorText.clear();
+
+    QSqlQuery q;
+    if (!q.exec(sql)) {
+        errorText = q.lastError().text().trimmed();
+        return false;
+    }
+
+    const QSqlRecord rec = q.record();
+    const int colCount = rec.count();
+    if (colCount <= 0) {
+        html = "Requete executee, mais aucun jeu de colonnes n'a ete retourne.";
+        return true;
+    }
+
+    QStringList headers;
+    headers.reserve(colCount);
+    for (int i = 0; i < colCount; ++i) {
+        QString h = rec.fieldName(i).trimmed();
+        if (h.isEmpty()) h = QString("COL_%1").arg(i + 1);
+        headers << h;
+    }
+
+    QStringList rows;
+    rows.reserve(50);
+    int rowCount = 0;
+    bool truncated = false;
+    while (q.next()) {
+        if (rowCount >= 50) {
+            truncated = true;
+            break;
+        }
+        ++rowCount;
+
+        QStringList cells;
+        cells.reserve(colCount);
+        for (int i = 0; i < colCount; ++i) {
+            cells << QString("<b>%1</b>: %2")
+                         .arg(headers.at(i).toHtmlEscaped(), formatSqlCell(q.value(i)));
+        }
+        rows << QString("\xE2\x80\xA2 %1").arg(cells.join(" &middot; "));
+    }
+
+    if (rows.isEmpty()) {
+        html = "Aucune ligne trouvee pour cette question.";
+        return true;
+    }
+
+    html = QString("<b>Resultat SQL (Qwen + base WasteGuard)</b><br>"
+                   "<i>%1 ligne%2</i><br><br>%3")
+               .arg(rowCount)
+               .arg(rowCount > 1 ? "s" : "")
+               .arg(rows.join("<br>"));
+    if (truncated) {
+        html += "<br><br><i>Resultats limites a 50 lignes.</i>";
+    }
+    return true;
+}
+
+QString queryLocalQwenSql(const QString &userMessage,
+                          const QString &module,
+                          const QString &previousSql = QString(),
+                          const QString &previousError = QString())
+{
+    const LocalQwenConfig cfg = resolveLocalQwenConfig();
+    if (!cfg.valid) return QString();
+
+    const QString moduleCtx = module.trimmed().isEmpty() ? "non precise" : module.trimmed();
+    const QString fixHint = previousSql.trimmed().isEmpty()
+        ? QString()
+        : QString("SQL precedent invalide: %1\nErreur Oracle: %2\nCorrige la requete.")
+              .arg(previousSql, previousError);
+
+    const QString systemPrompt =
+        "Tu es un generateur SQL Oracle pour WasteGuard.\n"
+        "Objectif: repondre a la question utilisateur avec UNE requete SQL de lecture seule.\n"
+        "Contraintes STRICTES:\n"
+        "1) Utilise uniquement le schema fourni.\n"
+        "2) Autorise seulement SELECT ou WITH ... SELECT.\n"
+        "3) Interdits absolus: INSERT, UPDATE, DELETE, MERGE, DROP, ALTER, CREATE, TRUNCATE, BEGIN, EXECUTE, FOR UPDATE.\n"
+        "4) Si la question n'est pas repondable avec le schema, reponds EXACTEMENT: UNSUPPORTED\n"
+        "5) Sortie: SQL brut uniquement, sans markdown, sans commentaire, sans texte avant/apres.\n"
+        "6) Oracle SQL valide (SYSDATE, TRUNC, NVL autorises).\n"
+        "7) Oracle 11g: limite les listes avec ROWNUM (pas de FETCH FIRST/LIMIT).\n"
+        "8) N'utilise JAMAIS une colonne absente du schema fourni.\n"
+        "Contexte module: " + moduleCtx + "\n\n" + wasteGuardRuntimeSchemaPrompt();
+
+    QString userPrompt = "Question utilisateur: " + userMessage;
+    if (!fixHint.isEmpty()) {
+        userPrompt += "\n\n" + fixHint;
+    }
+
+    QJsonArray messages;
+    messages.append(QJsonObject{{"role", "system"}, {"content", systemPrompt}});
+    messages.append(QJsonObject{{"role", "user"}, {"content", userPrompt}});
+
+    QString base = trimTrailingSlash(cfg.endpointBase);
+    const bool hasV1 = base.endsWith("/v1");
+    const QString openAiUrl = hasV1 ? (base + "/chat/completions") : (base + "/v1/chat/completions");
+    const QJsonObject openAiPayload{
+        {"model", cfg.model},
+        {"messages", messages},
+        {"temperature", 0.0}
+    };
+
+    QString out = postAssistantRequest(QUrl(openAiUrl), openAiPayload, cfg.apiKey, 18000);
+    if (!out.trimmed().isEmpty()) {
+        return out.trimmed();
+    }
+
+    QString nativeBase = base;
+    if (nativeBase.endsWith("/v1")) {
+        nativeBase.chop(3);
+    }
+    nativeBase = trimTrailingSlash(nativeBase);
+    const QJsonObject ollamaPayload{
+        {"model", cfg.model},
+        {"messages", messages},
+        {"stream", false},
+        {"temperature", 0.0}
+    };
+    out = postAssistantRequest(QUrl(nativeBase + "/api/chat"), ollamaPayload, QString(), 18000);
+    return out.trimmed();
+}
+
+QString fallbackEmployeeListFromLiveSchema()
+{
+    QSqlRecord rec = QSqlDatabase::database().record("EMPLOYE");
+    if (rec.count() <= 0) {
+        QSqlQuery probe;
+        if (probe.exec("SELECT * FROM EMPLOYE WHERE 1=0")) {
+            rec = probe.record();
+        }
+    }
+    if (rec.count() <= 0) return QString();
+
+    QSet<QString> available;
+    for (int i = 0; i < rec.count(); ++i) {
+        const QString c = rec.fieldName(i).trimmed().toUpper();
+        if (!c.isEmpty()) available.insert(c);
+    }
+
+    const QStringList preferred = {"NOM", "MATRICULE", "EMAIL", "SPECIALITE", "DISPONIBILITE", "SALAIRE"};
+    QStringList selected;
+    for (const QString &c : preferred) {
+        if (available.contains(c)) selected << c;
+    }
+    if (selected.isEmpty()) {
+        return QString();
+    }
+
+    const QString orderedPart = available.contains("ID_EMP")
+        ? QString("SELECT %1 FROM EMPLOYE ORDER BY ID_EMP").arg(selected.join(", "))
+        : QString("SELECT %1 FROM EMPLOYE").arg(selected.join(", "));
+    const QString sql = QString(
+        "SELECT * FROM (%1) WHERE ROWNUM <= 20"
+    ).arg(orderedPart);
+
+    QString html;
+    QString err;
+    if (!executeReadOnlySqlToHtml(sql, html, err)) {
+        return QString();
+    }
+    return QString("<b>Liste employes (fallback schema reel)</b><br><br>%1").arg(html);
+}
+
+QString answerSqlQuestionWithQwen(const QString &userMessage, const QString &module)
+{
+    const QString normalized = normalizeIntentText(userMessage);
+    const bool moduleScopedDataAsk = !module.trimmed().isEmpty() && containsAny(normalized, {
+        "nom", "email", "matricule", "cin", "prix", "cout", "stock",
+        "quantite", "statut", "salaire", "moyenne", "max", "min",
+        "liste", "total", "combien", "date", "priorite", "urgence"
+    });
+    if (!isLikelyDatabaseQuestion(normalized) && !moduleScopedDataAsk) {
+        return QString();
+    }
+
+    QString sql = sanitizeSqlCandidate(queryLocalQwenSql(userMessage, module));
+    if (sql.isEmpty()) return QString();
+    if (sql.compare("UNSUPPORTED", Qt::CaseInsensitive) == 0) return QString();
+
+    QString reason;
+    if (!isSafeReadOnlySql(sql, reason)) {
+        return QString("J'ai tente une requete SQL, mais elle n'etait pas sure: <b>%1</b>. "
+                       "Reformule en precisant les champs demandes (ex: total commandes livrees ce mois).")
+            .arg(reason.toHtmlEscaped());
+    }
+    sql = addRowLimitIfMissing(sql);
+
+    QString html;
+    QString err;
+    if (executeReadOnlySqlToHtml(sql, html, err)) {
+        return html;
+    }
+
+    // One retry: ask Qwen to correct SQL using the Oracle error.
+    QString correctedSql = sanitizeSqlCandidate(queryLocalQwenSql(userMessage, module, sql, err));
+    if (correctedSql.compare("UNSUPPORTED", Qt::CaseInsensitive) == 0) {
+        return QString();
+    }
+    if (!correctedSql.isEmpty() && isSafeReadOnlySql(correctedSql, reason)) {
+        correctedSql = addRowLimitIfMissing(correctedSql);
+        if (executeReadOnlySqlToHtml(correctedSql, html, err)) {
+            return html;
+        }
+    }
+
+    if (err.contains("ORA-00904", Qt::CaseInsensitive)
+        && containsAny(normalized, {"employe", "employes", "equipe", "staff"})) {
+        const QString fallback = fallbackEmployeeListFromLiveSchema();
+        if (!fallback.isEmpty()) {
+            return fallback;
+        }
+    }
+
+    return QString("Je n'ai pas pu finaliser la requete SQL pour cette question. "
+                   "Erreur Oracle: <i>%1</i><br>"
+                   "Conseil: precise l'entite (client, employe, commande...), le filtre (statut/date) et la metrique (total, moyenne, liste).")
+        .arg(err.toHtmlEscaped());
 }
 
 QString moduleTableName(const QString &module)
@@ -866,7 +1383,9 @@ QString answerDataQuestion(const QString &userMessage, const QString &module)
         const QString labelCol = modulePrimaryLabelColumn(module);
         if (labelCol.isEmpty()) return QString();
         QSqlQuery q;
-        const QString sql = QString("SELECT %1 FROM %2 WHERE %1 IS NOT NULL FETCH FIRST 10 ROWS ONLY").arg(labelCol, table);
+        const QString sql = QString(
+            "SELECT * FROM (SELECT %1 FROM %2 WHERE %1 IS NOT NULL) WHERE ROWNUM <= 10"
+        ).arg(labelCol, table);
         if (q.exec(sql)) {
             QStringList rows;
             while (q.next()) {
@@ -895,8 +1414,9 @@ QString answerDataQuestion(const QString &userMessage, const QString &module)
         }
 
         QSqlQuery q;
-        const QString sql = QString("SELECT %1 FROM %2 WHERE (%3) AND %1 IS NOT NULL FETCH FIRST 1 ROWS ONLY")
-            .arg(fieldCol, table, where);
+        const QString sql = QString(
+            "SELECT * FROM (SELECT %1 FROM %2 WHERE (%3) AND %1 IS NOT NULL) WHERE ROWNUM <= 1"
+        ).arg(fieldCol, table, where);
         q.prepare(sql);
         q.bindValue(":needle", QString("%") + target.toUpper() + "%");
         if (q.exec() && q.next()) {
@@ -1063,133 +1583,187 @@ LabibAssistant::~LabibAssistant()
 {
 }
 
+// Retourne true si au moins un candidat existe sur disque ou en ressource
+// (heuristique : on ne valide pas le codec, juste la presence du fichier).
+static bool anyVideoCandidateExists(const QStringList &candidates)
+{
+    for (const QString &p : candidates) {
+        if (p.startsWith(":/") || p.startsWith("qrc:/")) return true;
+        if (QFileInfo::exists(p)) return true;
+    }
+    return false;
+}
+
 void LabibAssistant::setupUI()
 {
     setWindowTitle("Labib AI Assistant - WasteGuard Intelligence");
     setWindowIcon(QIcon(":/login_logo.png"));
-    resize(900, 680);
-    setMinimumSize(520, 520);
-    
-    // Professional Color Palette
-    const QString PRIMARY_COLOR = "#0f2b4c";      // Deep Blue
-    const QString SECONDARY_COLOR = "#2a5298";    // Medium Blue
-    const QString ACCENT_COLOR = "#27ae60";       // Green
-    const QString SUCCESS_COLOR = "#059669";      // Bright Green
-    const QString WARNING_COLOR = "#f59e0b";      // Amber
-    const QString ERROR_COLOR = "#dc2626";        // Red
-    const QString TEXT_PRIMARY = "#1e293b";       // Dark Gray
-    const QString TEXT_SECONDARY = "#64748b";     // Medium Gray
-    const QString BG_LIGHT = "#f8fafc";           // Light Gray
-    const QString BG_WHITE = "#ffffff";           // White
-    const QString BORDER_COLOR = "#e2e8f0";       // Light Border
-    
+    // Format pop-out Messenger : fenetre etroite, deplacable, ouvre n'importe ou.
+    resize(420, 640);
+    setMinimumSize(360, 480);
+
+    // Dark ChatGPT-like palette
+    const QString PRIMARY_COLOR   = "#22c55e";    // Accent green (WasteGuard)
+    const QString SECONDARY_COLOR = "#16a34a";    // Deep green
+    const QString ACCENT_COLOR    = "#22c55e";    // Vivid Green
+    const QString SUCCESS_COLOR   = "#10b981";    // Emerald
+    const QString WARNING_COLOR   = "#f59e0b";    // Amber
+    const QString ERROR_COLOR     = "#ef4444";    // Red
+    const QString TEXT_PRIMARY    = "#e5e7eb";    // Zinc 200
+    const QString TEXT_SECONDARY  = "#9ca3af";    // Zinc 400
+    const QString BG_DARK         = "#0d0d0f";    // Almost black
+    const QString BG_PANEL        = "#161618";    // Dark panel
+    const QString BG_RAISED       = "#1f1f22";    // Raised elements
+    const QString BORDER_COLOR    = "#2a2a2e";    // Subtle border
+
     QString stylesheet = QString(
-        "QWidget { background: %1; }"
-        "QTextEdit { background: %6; border: 1px solid %7; border-radius: 12px; padding: 12px; font-size: 13px; color: %2; }"
-        "QLineEdit { background: %6; border: 1px solid %7; border-radius: 8px; padding: 10px; font-size: 13px; color: %4; }"
-        "QPushButton { background: qlineargradient(x1:0,y1:0,x2:1,y2:1, stop:0 %1, stop:1 %2); color: white; border: none; border-radius: 10px; padding: 12px 18px; font-weight: 700; font-size: 13px; }"
-        "QPushButton:hover { background: qlineargradient(x1:0,y1:0,x2:1,y2:1, stop:0 %2, stop:1 %1); }"
-        "QPushButton:pressed { transform: scale(0.98); }"
-        "QTableWidget { background: %6; border: 1px solid %7; border-radius: 8px; gridline-color: %7; }"
-        "QHeaderView::section { background: qlineargradient(x1:0,y1:0,x2:0,y2:1, stop:0 %1, stop:1 %2); color: white; padding: 8px; font-weight: 700; border: none; }"
-        "QListWidget { background: %6; border: 1px solid %7; border-radius: 8px; color: %4; }"
-        "QListWidget::item { color: %4; }"
-        "QListWidget::item:selected { background: qlineargradient(x1:0,y1:0,x2:1,y2:1, stop:0 %1, stop:1 %2); color: white; font-weight: 700; }"
-        "QLabel { color: %2; }"
+        "QWidget { background: %1; color: %5; }"
+        "QTextEdit { background: %2; border: 1px solid %7; border-radius: 14px; padding: 12px; font-size: 13px; color: %5; selection-background-color: %3; selection-color: #ffffff; }"
+        "QLineEdit { background: %2; border: 1px solid %7; border-radius: 10px; padding: 10px; font-size: 13px; color: %5; }"
+        "QPushButton { background: %3; color: #06120a; border: none; border-radius: 11px; padding: 11px 18px; font-weight: 700; font-size: 13px; }"
+        "QPushButton:hover { background: %4; }"
+        "QPushButton:pressed { padding-top: 12px; padding-bottom: 10px; }"
+        "QTableWidget { background: %2; border: 1px solid %7; border-radius: 10px; gridline-color: %7; color: %5; }"
+        "QHeaderView::section { background: %6; color: %5; padding: 8px; font-weight: 700; border: none; }"
+        "QListWidget { background: %2; border: 1px solid %7; border-radius: 10px; color: %5; outline: 0; }"
+        "QListWidget::item { color: %5; }"
+        "QListWidget::item:selected { background: %3; color: #06120a; font-weight: 700; }"
+        "QToolTip { background: #000000; color: #e5e7eb; border: 1px solid %7; border-radius: 6px; padding: 6px 8px; }"
+        "QLabel { color: %5; background: transparent; }"
         )
-        .arg(PRIMARY_COLOR, SECONDARY_COLOR, BG_LIGHT, TEXT_PRIMARY, TEXT_SECONDARY, BG_WHITE, BORDER_COLOR);
-    
+        .arg(BG_DARK, BG_PANEL, ACCENT_COLOR, SECONDARY_COLOR,
+             TEXT_PRIMARY, BG_RAISED, BORDER_COLOR);
+
     setStyleSheet(stylesheet);
     
     QVBoxLayout *mainLayout = new QVBoxLayout(this);
     mainLayout->setContentsMargins(16, 16, 16, 16);
     mainLayout->setSpacing(14);
     
-    // ===== PROFESSIONAL HEADER =====
+    // ===== MODERN HEADER =====
     QFrame *headerFrame = new QFrame();
-    headerFrame->setMinimumHeight(72);
+    headerFrame->setMinimumHeight(74);
     headerFrame->setStyleSheet(
         QString("QFrame { "
-                "background: qlineargradient(x1:0,y1:0,x2:1,y2:1, stop:0 %1, stop:1 %2); "
-                "border-radius: 16px; border: 2px solid %2; }")
-        .arg(PRIMARY_COLOR, SECONDARY_COLOR, ACCENT_COLOR));
-    
+                "background: %1; "
+                "border-radius: 16px; border: 1px solid %2; }")
+        .arg(BG_PANEL, BORDER_COLOR));
+
     QHBoxLayout *headerLayout = new QHBoxLayout(headerFrame);
-    headerLayout->setContentsMargins(16, 10, 16, 10);
-    headerLayout->setSpacing(12);
-    
-    // Logo/Icon Area
-    QLabel *iconLabel = new QLabel();
-    const QPixmap mascotPixmap(":/login_logo.png");
-    if (!mascotPixmap.isNull()) {
-        iconLabel->setPixmap(mascotPixmap.scaled(50, 50, Qt::KeepAspectRatio, Qt::SmoothTransformation));
-    } else {
-        iconLabel->setText("AI");
-        iconLabel->setStyleSheet("font-size: 34px;");
+    headerLayout->setContentsMargins(18, 12, 18, 12);
+    headerLayout->setSpacing(14);
+
+    // Avatar : cercle video, 3 etats expressifs synchronises avec l'interaction.
+    //  - Waiting   (download.mp4)  : Labib attend, posture relaxee, boucle douce.
+    //  - Listening (download2.mp4) : Labib t'ecoute, attentif (declenche quand
+    //                                tu tapes / focus l'input), boucle douce.
+    //  - Speaking  (download3.mp4) : Labib parle (pendant la generation /
+    //                                affichage de la reponse), joue en entier.
+    m_avatarCircle = new LabibMediaCircle(this);
+    m_avatarCircle->setFixedSize(58, 58);
+    m_avatarCircle->setBorderColor(QColor(255, 255, 255));
+    m_avatarCircle->setRingColor(QColor(0x22, 0xc5, 0x5e));
+    {
+        const QPixmap mascotPixmap(":/login_logo.png");
+        if (!mascotPixmap.isNull()) {
+            m_avatarCircle->setFallbackPixmap(mascotPixmap);
+        }
     }
-    headerLayout->addWidget(iconLabel);
-    
+
+    m_waitingVideoCandidates   = buildVideoCandidates("download.mp4");
+    m_listeningVideoCandidates = buildVideoCandidates("download2.mp4");
+    m_speakingVideoCandidates  = buildVideoCandidates("download3.mp4");
+    // Aliases retro-compatibilite (anciennes fonctions parlent de idle/typing).
+    m_idleVideoCandidates      = m_waitingVideoCandidates;
+    m_typingVideoCandidates    = m_speakingVideoCandidates;
+
+    // Quand la video Speaking (download3.mp4) finit naturellement, on debloque
+    // l'affichage de la reponse en attente.
+    connect(m_avatarCircle, &LabibMediaCircle::playbackEnded,
+            this, &LabibAssistant::onTypingVideoFinished);
+    headerLayout->addWidget(m_avatarCircle);
+
+    // Etat initial : en attente.
+    m_idleRevertTimer = new QTimer(this);
+    m_idleRevertTimer->setSingleShot(true);
+    m_idleRevertTimer->setInterval(6000); // 6s sans activite -> retour Waiting
+    connect(m_idleRevertTimer, &QTimer::timeout, this, [this]() {
+        if (m_avatarState == AvatarState::Listening) {
+            setAvatarState(AvatarState::Waiting);
+        }
+    });
+    setAvatarState(AvatarState::Waiting);
+
     // Title & Description
     QVBoxLayout *titleLayout = new QVBoxLayout();
-    titleLayout->setSpacing(2);
-    
-    QLabel *titleLabel = new QLabel("Labib AI Assistant");
-    titleLabel->setStyleSheet("color: white; font-size: 18px; font-weight: 900; letter-spacing: 0.2px;");
+    titleLayout->setSpacing(3);
+
+    QLabel *titleLabel = new QLabel("Labib");
+    titleLabel->setStyleSheet("color: #f4f4f5; font-size: 18px; font-weight: 800; letter-spacing: 0.2px; background: transparent;");
     titleLayout->addWidget(titleLabel);
-    
-    QLabel *subtitleLabel = new QLabel("Assistant Intelligent pour la Gestion Optimale des Dechets");
-    subtitleLabel->setStyleSheet("color: #bfdbfe; font-size: 10px; font-weight: 600;");
-    titleLayout->addWidget(subtitleLabel);
-    
+
+    // Status dynamique : reflete l'etat de l'avatar (En attente / Je t'ecoute / Je reponds).
+    m_avatarStatusLabel = new QLabel(QString::fromUtf8("En attente\xE2\x80\xA6"));
+    m_avatarStatusLabel->setStyleSheet(
+        "color: #9ca3af; font-size: 11px; font-weight: 500; letter-spacing: 0.2px; background: transparent;");
+    titleLayout->addWidget(m_avatarStatusLabel);
+
     headerLayout->addLayout(titleLayout, 1);
-    
-    // Status Badge
-    QLabel *statusLabel = new QLabel("EN LIGNE");
-    statusLabel->setStyleSheet(QString(
-        "color: %1; font-weight: 700; font-size: 10px; "
-        "background: rgba(255, 255, 255, 0.2); border-radius: 20px; "
-        "padding: 4px 10px;").arg(ACCENT_COLOR));
-    headerLayout->addWidget(statusLabel, 0, Qt::AlignRight | Qt::AlignVCenter);
+
+    // Status Badge with pulsing dot
+    QFrame *statusBadge = new QFrame();
+    statusBadge->setStyleSheet(
+        "QFrame { background: rgba(34,197,94,0.10); border: 1px solid rgba(34,197,94,0.40); "
+        "border-radius: 12px; }");
+    QHBoxLayout *statusLay = new QHBoxLayout(statusBadge);
+    statusLay->setContentsMargins(10, 5, 12, 5);
+    statusLay->setSpacing(7);
+    QLabel *statusDot = new QLabel();
+    statusDot->setFixedSize(8, 8);
+    statusDot->setStyleSheet("QLabel { background: #22c55e; border-radius: 4px; }");
+    QLabel *statusText = new QLabel("En ligne");
+    statusText->setStyleSheet("color: #86efac; font-weight: 700; font-size: 10px; letter-spacing: 0.4px; background: transparent;");
+    statusLay->addWidget(statusDot);
+    statusLay->addWidget(statusText);
+    headerLayout->addWidget(statusBadge, 0, Qt::AlignRight | Qt::AlignVCenter);
+
+    // Pulsing animation on the status dot
+    {
+        auto *dotEffect = new QGraphicsOpacityEffect(statusDot);
+        dotEffect->setOpacity(1.0);
+        statusDot->setGraphicsEffect(dotEffect);
+        auto *pulseA = new QPropertyAnimation(dotEffect, "opacity", this);
+        pulseA->setStartValue(1.0);
+        pulseA->setEndValue(0.35);
+        pulseA->setDuration(900);
+        pulseA->setEasingCurve(QEasingCurve::InOutSine);
+        auto *pulseB = new QPropertyAnimation(dotEffect, "opacity", this);
+        pulseB->setStartValue(0.35);
+        pulseB->setEndValue(1.0);
+        pulseB->setDuration(900);
+        pulseB->setEasingCurve(QEasingCurve::InOutSine);
+        auto *pulseSeq = new QSequentialAnimationGroup(this);
+        pulseSeq->addAnimation(pulseA);
+        pulseSeq->addAnimation(pulseB);
+        pulseSeq->setLoopCount(-1);
+        pulseSeq->start();
+    }
+
     auto *headerShadow = new QGraphicsDropShadowEffect(this);
-    headerShadow->setBlurRadius(18);
-    headerShadow->setOffset(0, 4);
-    headerShadow->setColor(QColor(15, 43, 76, 52));
+    headerShadow->setBlurRadius(28);
+    headerShadow->setOffset(0, 6);
+    headerShadow->setColor(QColor(11, 37, 69, 90));
     headerFrame->setGraphicsEffect(headerShadow);
-    
+
     mainLayout->addWidget(headerFrame);
-    
-    // ===== MODULE BAR (TOP) =====
-    QFrame *moduleBar = new QFrame();
-    moduleBar->setStyleSheet(
-        "QFrame { background: qlineargradient(x1:0,y1:0,x2:1,y2:0, stop:0 #163b6a, stop:1 #0f2b4c); border: 1px solid #2d5f9a; border-radius: 12px; }");
-    QVBoxLayout *moduleBarLayout = new QVBoxLayout(moduleBar);
-    moduleBarLayout->setContentsMargins(10, 7, 10, 7);
-    moduleBarLayout->setSpacing(4);
 
-    QLabel *moduleLbl = new QLabel("Modules");
-    moduleLbl->setStyleSheet("font-weight: 700; color: #e2ecff; font-size: 12px;");
-    moduleBarLayout->addWidget(moduleLbl);
-
-    m_moduleSelector = new QListWidget();
+    // Module selector kept as a hidden widget so existing signal wiring
+    // (setupConnections) and module-aware logic continue to work, even though
+    // the visual module bar is removed in the new dark layout.
+    m_moduleSelector = new QListWidget(this);
     m_moduleSelector->addItems({"Clients", "Employes", "Produits", "Maintenance", "Commandes", "Stock"});
-    m_moduleSelector->setFlow(QListView::LeftToRight);
-    m_moduleSelector->setWrapping(true);
-    m_moduleSelector->setResizeMode(QListView::Adjust);
-    m_moduleSelector->setVerticalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
-    m_moduleSelector->setHorizontalScrollBarPolicy(Qt::ScrollBarAsNeeded);
-    m_moduleSelector->setFixedHeight(60);
     m_moduleSelector->setCurrentRow(0);
-    m_moduleSelector->setStyleSheet(
-        "QListWidget { background: rgba(255,255,255,0.08); border: 1px solid rgba(173,205,255,0.35); border-radius: 8px; }"
-        "QListWidget::item { padding: 6px 8px; color: #f1f6ff; border-radius: 6px; }"
-        "QListWidget::item:selected { background: qlineargradient(x1:0,y1:0,x2:1,y2:1, stop:0 #2a5ea0, stop:1 #1d4b84); color: #ffffff; font-weight: 700; }");
-    moduleBarLayout->addWidget(m_moduleSelector);
-    auto *moduleShadow = new QGraphicsDropShadowEffect(this);
-    moduleShadow->setBlurRadius(18);
-    moduleShadow->setOffset(0, 4);
-    moduleShadow->setColor(QColor(15, 43, 76, 36));
-    moduleBar->setGraphicsEffect(moduleShadow);
-    mainLayout->addWidget(moduleBar);
+    m_moduleSelector->hide();
 
     // ===== MAIN CONTENT LAYOUT =====
     QHBoxLayout *contentLayout = new QHBoxLayout();
@@ -1198,73 +1772,57 @@ void LabibAssistant::setupUI()
     // --- CENTER PANEL: Chat + Input ---
     QFrame *centerPanel = new QFrame();
     centerPanel->setStyleSheet(QString(
-        "QFrame { background: %1; border: 2px solid %2; border-radius: 14px; }")
-        .arg(BG_WHITE, BORDER_COLOR));
+        "QFrame { background: %1; border: 1px solid %2; border-radius: 16px; }")
+        .arg(BG_PANEL, BORDER_COLOR));
     QVBoxLayout *centerLayout = new QVBoxLayout(centerPanel);
     centerLayout->setContentsMargins(14, 14, 14, 14);
-    centerLayout->setSpacing(12);
-    
-    QLabel *chatLbl = new QLabel("Conversation Intelligente");
-    chatLbl->setStyleSheet(QString("font-weight: 700; color: %1; font-size: 13px;").arg(PRIMARY_COLOR));
-    centerLayout->addWidget(chatLbl);
+    centerLayout->setSpacing(10);
 
-    // Smart stats card for proactive assistant insights.
+    // Smart stats card for proactive assistant insights (dark, minimal).
     QFrame *statsFrame = new QFrame();
     statsFrame->setStyleSheet(
-        "QFrame { background: qlineargradient(x1:0,y1:0,x2:1,y2:1, stop:0 rgba(15,43,76,0.05), stop:1 rgba(42,82,152,0.08)); border: 1px solid rgba(42,82,152,0.12); border-radius: 12px; }");
+        "QFrame { background: #131316; border: 1px solid #27272a; border-radius: 12px; }");
     auto *statsLayout = new QHBoxLayout(statsFrame);
-    statsLayout->setContentsMargins(12, 10, 12, 10);
+    statsLayout->setContentsMargins(14, 9, 14, 9);
     statsLayout->setSpacing(10);
+    QLabel *statsIcon = new QLabel("\xE2\x9A\xA1"); // lightning
+    statsIcon->setStyleSheet("font-size: 14px; color: #22c55e; background: transparent;");
+    statsLayout->addWidget(statsIcon);
     m_statsLabel = new QLabel();
     m_statsLabel->setWordWrap(true);
-    m_statsLabel->setStyleSheet("color: #24415f; font-size: 11px; font-weight: 600;");
+    m_statsLabel->setStyleSheet("color: #d4d4d8; font-size: 12px; font-weight: 500; background: transparent;");
     statsLayout->addWidget(m_statsLabel, 1);
     centerLayout->addWidget(statsFrame);
-    auto *statsShadow = new QGraphicsDropShadowEffect(this);
-    statsShadow->setBlurRadius(18);
-    statsShadow->setOffset(0, 4);
-    statsShadow->setColor(QColor(15, 43, 76, 26));
-    statsFrame->setGraphicsEffect(statsShadow);
-
-    // Professional quick options to streamline common assistant actions.
-    QHBoxLayout *assistantToolsLayout = new QHBoxLayout();
-    assistantToolsLayout->setSpacing(4);
-
-    QToolButton *newChatBtn = new QToolButton();
-    newChatBtn->setIcon(style()->standardIcon(QStyle::SP_FileIcon));
-    newChatBtn->setToolTip("Nouveau chat");
-    newChatBtn->setAutoRaise(true);
-
-    QToolButton *copyLastBtn = new QToolButton();
-    copyLastBtn->setIcon(style()->standardIcon(QStyle::SP_DialogSaveButton));
-    copyLastBtn->setToolTip("Copier la derniere reponse");
-    copyLastBtn->setAutoRaise(true);
-
-    QToolButton *guideBtn = new QToolButton();
-    guideBtn->setIcon(style()->standardIcon(QStyle::SP_MessageBoxInformation));
-    guideBtn->setToolTip("Guide rapide du module");
-    guideBtn->setAutoRaise(true);
-
-    assistantToolsLayout->addWidget(newChatBtn);
-    assistantToolsLayout->addWidget(copyLastBtn);
-    assistantToolsLayout->addWidget(guideBtn);
-    assistantToolsLayout->addStretch();
-    centerLayout->addLayout(assistantToolsLayout);
     
     m_chatHistory = new QTextEdit();
     m_chatHistory->setReadOnly(true);
-    m_chatHistory->setStyleSheet(QString(
-        "QTextEdit { background: %1; border: 1px solid %2; border-radius: 10px; padding: 12px; color: %3; }"
-        "QScrollBar:vertical { background: transparent; width: 10px; margin: 8px 0; }"
-        "QScrollBar::handle:vertical { background: rgba(42,82,152,0.45); border-radius: 5px; min-height: 28px; }"
-        "QScrollBar::handle:vertical:hover { background: rgba(42,82,152,0.70); }")
-        .arg(BG_LIGHT, BORDER_COLOR, TEXT_PRIMARY));
-    centerLayout->addWidget(m_chatHistory);
+    // Fond style Messenger dark (#18191A)
+    m_chatHistory->setStyleSheet(
+        "QTextEdit { background: #18191A; "
+        "  border: 1px solid #2a2a2e; border-radius: 14px; padding: 14px 12px; color: #E4E6EB; "
+        "  selection-background-color: #0084FF; selection-color: #ffffff; }"
+        "QScrollBar:vertical { background: transparent; width: 10px; margin: 8px 4px; }"
+        "QScrollBar::handle:vertical { background: rgba(255,255,255,0.10); border-radius: 5px; min-height: 32px; }"
+        "QScrollBar::handle:vertical:hover { background: rgba(255,255,255,0.20); }"
+        "QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical { height: 0; }"
+        "QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical { background: transparent; }");
+    centerLayout->addWidget(m_chatHistory, 1);
 
+    // Indicateur typing minimal : juste un petit texte vert, l'animation visuelle
+    // de Labib se fait dans l'avatar du header (cercle download3.mp4).
     m_typingLabel = new QLabel("Labib ecrit...");
-    m_typingLabel->setStyleSheet("color: #5f7ea8; font-size: 11px; font-style: italic; padding-left: 2px;");
+    m_typingLabel->setStyleSheet(
+        "QLabel { color: #86efac; font-size: 11px; font-weight: 600; "
+        "  background: transparent; border: none; padding: 2px 4px; }");
+    m_typingLabel->setAlignment(Qt::AlignLeft);
+    {
+        QHBoxLayout *typingRow = new QHBoxLayout();
+        typingRow->setContentsMargins(2, 0, 0, 0);
+        typingRow->addWidget(m_typingLabel, 0, Qt::AlignLeft);
+        typingRow->addStretch();
+        centerLayout->addLayout(typingRow);
+    }
     m_typingLabel->hide();
-    centerLayout->addWidget(m_typingLabel);
     m_typingTimer = new QTimer(this);
     m_typingTimer->setInterval(350);
     connect(m_typingTimer, &QTimer::timeout, this, [this]() {
@@ -1272,76 +1830,89 @@ void LabibAssistant::setupUI()
         m_typingLabel->setText(QString("Labib ecrit%1").arg(QString(m_typingStep, '.')));
     });
     
-    QHBoxLayout *inputLayout = new QHBoxLayout();
-    inputLayout->setSpacing(10);
+    // Composer wrapper (textbox + action buttons grouped on a card).
+    // SizePolicy Fixed pour que le composer ne s'etire pas verticalement
+    // dans le centerLayout (sinon il prend toute la place restante).
+    QFrame *composer = new QFrame();
+    composer->setStyleSheet(
+        "QFrame { background: #1f1f22; border: 1px solid #2a2a2e; border-radius: 14px; }"
+        "QFrame:focus-within { border: 1px solid #22c55e; }");
+    composer->setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Fixed);
+
+    QHBoxLayout *inputLayout = new QHBoxLayout(composer);
+    inputLayout->setContentsMargins(8, 4, 8, 4);
+    inputLayout->setSpacing(6);
+
     m_userInput = new QTextEdit();
-    m_userInput->setPlaceholderText("Tapez votre question ou demande...");
+    m_userInput->setPlaceholderText("Message a Labib...");
     m_userInput->setAcceptRichText(false);
     m_userInput->setLineWrapMode(QTextEdit::WidgetWidth);
     m_userInput->setVerticalScrollBarPolicy(Qt::ScrollBarAsNeeded);
-    m_userInput->setMinimumHeight(58);
-    m_userInput->setMaximumHeight(118);
+    m_userInput->setMinimumHeight(34);
+    m_userInput->setMaximumHeight(96);
+    m_userInput->setFixedHeight(34);
+    m_userInput->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
     m_userInput->setStyleSheet(QString(
-        "QTextEdit { background: %1; border: 2px solid %2; border-radius: 10px; padding: 9px 12px; "
-        "font-size: 13px; color: %3; } QTextEdit:focus { border: 2px solid %4; }").arg(BG_LIGHT, BORDER_COLOR, TEXT_PRIMARY, SECONDARY_COLOR));
+        "QTextEdit { background: transparent; border: none; padding: 4px 8px; "
+        "  font-size: 13px; color: %1; } "
+        "QTextEdit::placeholder { color: #71717a; }"
+        "QTextEdit:focus { border: none; outline: 0; }").arg(TEXT_PRIMARY));
     m_userInput->installEventFilter(this);
-    
-    m_sendButton = new QPushButton();
-    m_sendButton->setIcon(style()->standardIcon(QStyle::SP_ArrowForward));
-    m_sendButton->setToolTip("Envoyer");
-    m_sendButton->setMinimumWidth(40);
-    m_sendButton->setMaximumWidth(44);
-    m_sendButton->setMinimumHeight(38);
-    m_sendButton->setStyleSheet(QString(
-        "QPushButton { background: qlineargradient(x1:0,y1:0,x2:1,y2:1, stop:0 %1, stop:1 %2); "
-        "color: white; border: none; border-radius: 10px; "
-        "padding: 6px; font-weight: 700; font-size: 11px; } "
-        "QPushButton:hover { background: qlineargradient(x1:0,y1:0,x2:1,y2:1, stop:0 %2, stop:1 %1); } "
-        "QPushButton:pressed { opacity: 0.8; }").arg(SECONDARY_COLOR, PRIMARY_COLOR));
-    m_sendButton->setIconSize(QSize(18, 18));
-    
+
+    // Common round icon-button style (size 32x32, matches smaller input)
+    const QString ICON_BTN_BASE =
+        "QPushButton { border: none; border-radius: 16px; padding: 0; "
+        "  font-weight: 700; min-width: 32px; max-width: 32px; min-height: 32px; max-height: 32px; }";
+
     QPushButton *quickImportButton = new QPushButton();
     quickImportButton->setIcon(style()->standardIcon(QStyle::SP_DirOpenIcon));
-    quickImportButton->setToolTip("Importer");
-    quickImportButton->setMinimumWidth(40);
-    quickImportButton->setMaximumWidth(44);
-    quickImportButton->setMinimumHeight(38);
-    quickImportButton->setStyleSheet(QString(
-        "QPushButton { background: qlineargradient(x1:0,y1:0,x2:1,y2:1, stop:0 %1, stop:1 %2); "
-        "color: white; border: none; border-radius: 10px; "
-        "padding: 6px; font-weight: 700; font-size: 11px; } "
-        "QPushButton:hover { background: qlineargradient(x1:0,y1:0,x2:1,y2:1, stop:0 %2, stop:1 %1); }")
-        .arg(SUCCESS_COLOR, ACCENT_COLOR));
-    quickImportButton->setIconSize(QSize(18, 18));
+    quickImportButton->setToolTip("Importer un fichier (CSV / JSON)");
+    quickImportButton->setCursor(Qt::PointingHandCursor);
+    quickImportButton->setStyleSheet(ICON_BTN_BASE +
+        "QPushButton { background: #2a2a2e; color: #d4d4d8; }"
+        "QPushButton:hover { background: #34343a; }"
+        "QPushButton:pressed { background: #1f1f22; }");
+    quickImportButton->setIconSize(QSize(15, 15));
 
     QPushButton *quickProcessButton = new QPushButton();
     quickProcessButton->setIcon(style()->standardIcon(QStyle::SP_DialogApplyButton));
-    quickProcessButton->setToolTip("Traiter");
-    quickProcessButton->setMinimumWidth(40);
-    quickProcessButton->setMaximumWidth(44);
-    quickProcessButton->setMinimumHeight(38);
+    quickProcessButton->setToolTip("Traiter les donnees importees");
+    quickProcessButton->setCursor(Qt::PointingHandCursor);
     quickProcessButton->setEnabled(false);
-    quickProcessButton->setStyleSheet(QString(
-        "QPushButton { background: qlineargradient(x1:0,y1:0,x2:1,y2:1, stop:0 %1, stop:1 %2); "
-        "color: white; border: none; border-radius: 10px; "
-        "padding: 6px; font-weight: 700; font-size: 11px; } "
-        "QPushButton:disabled { background: #cbd5e1; color: #94a3b8; } "
-        "QPushButton:hover:enabled { background: qlineargradient(x1:0,y1:0,x2:1,y2:1, stop:0 %2, stop:1 %1); }")
-        .arg(WARNING_COLOR, ACCENT_COLOR));
-    quickProcessButton->setIconSize(QSize(18, 18));
+    quickProcessButton->setStyleSheet(ICON_BTN_BASE +
+        "QPushButton { background: #2a2a2e; color: #86efac; }"
+        "QPushButton:hover:enabled { background: #34343a; }"
+        "QPushButton:disabled { background: #1a1a1c; color: #52525b; }");
+    quickProcessButton->setIconSize(QSize(15, 15));
+
+    m_sendButton = new QPushButton();
+    m_sendButton->setIcon(style()->standardIcon(QStyle::SP_ArrowForward));
+    m_sendButton->setToolTip("Envoyer le message  (Entree)");
+    m_sendButton->setCursor(Qt::PointingHandCursor);
+    m_sendButton->setStyleSheet(ICON_BTN_BASE +
+        "QPushButton { background: #22c55e; color: #06120a; }"
+        "QPushButton:hover { background: #16a34a; }"
+        "QPushButton:pressed { background: #15803d; }");
+    m_sendButton->setIconSize(QSize(16, 16));
 
     connect(m_userInput, &QTextEdit::textChanged, this, [this]() {
-        const int minH = 58;
-        const int maxH = 118;
-        const int docH = static_cast<int>(m_userInput->document()->size().height()) + 22;
+        const int minH = 34;
+        const int maxH = 96;
+        const int docH = static_cast<int>(m_userInput->document()->size().height()) + 14;
         m_userInput->setFixedHeight(qBound(minH, docH, maxH));
+
+        // Tu tapes -> Labib ecoute (sauf s'il est deja en train de parler).
+        if (m_avatarState != AvatarState::Speaking) {
+            setAvatarState(AvatarState::Listening);
+            if (m_idleRevertTimer) m_idleRevertTimer->start();
+        }
     });
 
     inputLayout->addWidget(m_userInput, 1);
-    inputLayout->addWidget(quickImportButton);
-    inputLayout->addWidget(quickProcessButton);
-    inputLayout->addWidget(m_sendButton);
-    centerLayout->addLayout(inputLayout);
+    inputLayout->addWidget(quickImportButton, 0, Qt::AlignBottom);
+    inputLayout->addWidget(quickProcessButton, 0, Qt::AlignBottom);
+    inputLayout->addWidget(m_sendButton, 0, Qt::AlignBottom);
+    centerLayout->addWidget(composer);
 
     connect(quickImportButton, &QPushButton::clicked, this, [this, quickProcessButton]() {
         onImportFile();
@@ -1350,30 +1921,6 @@ void LabibAssistant::setupUI()
     connect(quickProcessButton, &QPushButton::clicked, this, [this, quickProcessButton]() {
         onProcessImportedData();
         quickProcessButton->setEnabled(false);
-    });
-
-    connect(newChatBtn, &QToolButton::clicked, this, [this]() {
-        stopTypingIndicator();
-        m_chatHistory->clear();
-        m_chatHistory->setText(
-            "<div style='color: #0f2b4c; font-weight: bold; font-size: 15px; margin-bottom: 12px;'>"
-            "Nouveau chat Labib</div>"
-            "<div style='color: #64748b; font-size: 12px;'>"
-            "Posez votre question ou utilisez les actions rapides.</div>");
-    });
-
-    connect(copyLastBtn, &QToolButton::clicked, this, [this]() {
-        if (!m_lastAssistantHtml.trimmed().isEmpty()) {
-            QTextDocument doc;
-            doc.setHtml(m_lastAssistantHtml);
-            QGuiApplication::clipboard()->setText(doc.toPlainText().trimmed());
-        }
-    });
-
-    connect(guideBtn, &QToolButton::clicked, this, [this]() {
-        const QString module = m_selectedModule.isEmpty() ? QString("Client") : m_selectedModule;
-        m_userInput->setPlainText(QString("Donne-moi un guide etapes par etapes pour le module %1").arg(module));
-        m_userInput->setFocus();
     });
 
     // Hidden action buttons kept for existing signal wiring and state propagation.
@@ -1388,18 +1935,30 @@ void LabibAssistant::setupUI()
     
     mainLayout->addLayout(contentLayout, 1);
     
-    // Professional Welcome Message
-    m_chatHistory->setText(
-        "<div style='color: #0f2b4c; font-weight: bold; font-size: 15px; margin-bottom: 12px;'>"
-        "Bienvenue dans Labib AI Assistant!</div>"
-        "<div style='color: #64748b; font-size: 12px; line-height: 1.6;'>"
-        "<b>Je suis votre assistant intelligent pour WasteGuard.</b><br><br>"
-        "Je peux vous aider avec:<br>"
-        "- <b>Questions</b> - Posez n'importe quelle question sur le systeme<br>"
-        "- <b>Importation</b> - Importer des fichiers CSV ou Excel<br>"
-        "- <b>Operations groupees</b> - Ajouter/modifier des donnees en masse<br>"
-        "- <b>Analyse</b> - Analyser et resumer les donnees<br><br>"
-        "<i>Commencez par selectionner un module et posez votre question...</i></div>");
+    // Bulle d'accueil de Labib, style Messenger (gris #3A3B3C, queue a gauche).
+    {
+        const QString hello = Labib::welcomeMessage();
+        m_chatHistory->setHtml(QString(
+            "<div style='margin: 0 0 8px 0;'>"
+            "<table cellpadding='0' cellspacing='0' style='display:inline-table; max-width:78%%;'>"
+            "<tr><td style='background:#3A3B3C; color:#E4E6EB; padding:11px 15px; "
+            "  border-radius:18px; border-bottom-left-radius:4px; "
+            "  line-height:1.5; font-size:13px;'>"
+            "<div style='color:#86efac; font-weight:700; font-size:13px; margin-bottom:5px;'>"
+            "\xF0\x9F\xA6\x8A Salut, c'est Labib</div>"
+            "<div>%1</div>"
+            "<div style='margin-top:8px; padding-top:7px; "
+            "  color:#B0B3B8; font-size:11px;'>"
+            "<b>Astuce :</b> essayez <i>aide</i>, <i>rapport du jour</i>, "
+            "<i>alertes stock</i>, <i>equipe</i>, <i>commandes</i> ou <i>interventions</i>."
+            "</div>"
+            "</td></tr>"
+            "</table>"
+            "</div>").arg(hello));
+        // La bulle d'accueil compte comme un cluster Labib pour eviter un
+        // separateur orphelin avant la 1ere reponse.
+        m_lastBubbleFromUser = 0;
+    }
 
     refreshSmartStats();
 }
@@ -1434,17 +1993,50 @@ void LabibAssistant::showEvent(QShowEvent *event)
 
 void LabibAssistant::appendChatBubble(const QString &message, bool fromUser, bool allowHtml)
 {
-    const QString bubbleColor = fromUser ? "#1d4b84" : "#f7fbff";
-    const QString textColor = fromUser ? "#ffffff" : "#10273d";
-    const QString borderColor = fromUser ? "rgba(29,75,132,0.18)" : "rgba(42,82,152,0.14)";
-    const QString align = fromUser ? "right" : "left";
+    // Style Messenger : clustering par expediteur (margin reduit si meme
+    // expediteur que le precedent), separateur horodate quand l'expediteur
+    // change, palette officielle (#0084FF / #3A3B3C), queue de bulle a 4px.
     const QString content = allowHtml ? message : message.toHtmlEscaped();
-    m_chatHistory->append(QString(
-        "<div style='text-align:%1; margin: 8px 0;'>"
-        "<span style='display:inline-block; max-width:84%%; background:%2; color:%3; padding:11px 13px;"
-        " border-radius:16px; border:1px solid %4; box-shadow:0 6px 18px rgba(15,43,76,0.08); line-height:1.45;'>%5</span>"
-        "</div>")
-        .arg(align, bubbleColor, textColor, borderColor, content));
+    const QString timestamp = QDateTime::currentDateTime().toString("HH:mm");
+
+    const int curr = fromUser ? 1 : 0;
+    const bool newCluster = (m_lastBubbleFromUser != curr);
+    const int marginTop = newCluster ? 14 : 3;
+
+    // Separateur horodate quand l'expediteur change (sauf au tout 1er message,
+    // qui suit deja la bulle d'accueil setHtml).
+    if (newCluster && m_lastBubbleFromUser != -1) {
+        m_chatHistory->append(QString(
+            "<div style='text-align:center; color:#8a8d91; font-size:10px; "
+            " margin: 10px 0 4px 0; letter-spacing:0.3px;'>%1</div>")
+            .arg(timestamp));
+    }
+
+    if (fromUser) {
+        // Bulle sortante : bleu Messenger #0084FF, alignee a droite, queue a
+        // bottom-right (4px) pour la pointe.
+        m_chatHistory->append(QString(
+            "<div style='text-align:right; margin-top: %1px;'>"
+            "<table cellpadding='0' cellspacing='0' style='display:inline-table; max-width:74%%;'>"
+            "<tr><td style='background:#0084FF; color:#ffffff; "
+            " padding:9px 14px; border-radius:18px; border-bottom-right-radius:4px; "
+            " line-height:1.4; font-size:13px;'>%2</td></tr>"
+            "</table></div>")
+            .arg(marginTop).arg(content));
+    } else {
+        // Bulle entrante (Labib) : gris Messenger dark #3A3B3C, alignee a
+        // gauche, queue a bottom-left (4px).
+        m_chatHistory->append(QString(
+            "<div style='text-align:left; margin-top: %1px;'>"
+            "<table cellpadding='0' cellspacing='0' style='display:inline-table; max-width:74%%;'>"
+            "<tr><td style='background:#3A3B3C; color:#E4E6EB; "
+            " padding:9px 14px; border-radius:18px; border-bottom-left-radius:4px; "
+            " line-height:1.45; font-size:13px;'>%2</td></tr>"
+            "</table></div>")
+            .arg(marginTop).arg(content));
+    }
+
+    m_lastBubbleFromUser = curr;
     scrollChatToBottom();
 }
 
@@ -1485,6 +2077,26 @@ void LabibAssistant::startTypingIndicator()
     m_typingLabel->setText("Labib ecrit...");
     m_typingLabel->show();
     m_typingTimer->start();
+    if (m_idleRevertTimer) m_idleRevertTimer->stop();
+
+    // Bascule en Speaking : download3.mp4 joue en entier (loops=1).
+    // On attendra le signal playbackEnded avant d'afficher la reponse.
+    m_typingVideoFinished = false;
+    const bool hasSpeakingVideo = m_avatarCircle
+                                  && anyVideoCandidateExists(m_speakingVideoCandidates);
+    if (hasSpeakingVideo) {
+        setAvatarState(AvatarState::Speaking);
+        // Filet de securite : si playbackEnded ne se declenche pas (codec,
+        // corruption, etc.), on debloque apres 8s.
+        QTimer::singleShot(8000, this, [this]() {
+            if (!m_typingVideoFinished) {
+                m_typingVideoFinished = true;
+                deliverPendingResponseIfReady();
+            }
+        });
+    } else {
+        m_typingVideoFinished = true;
+    }
     qApp->processEvents();
 }
 
@@ -1492,20 +2104,155 @@ void LabibAssistant::stopTypingIndicator()
 {
     if (m_typingTimer) m_typingTimer->stop();
     if (m_typingLabel) m_typingLabel->hide();
+
+    // Apres reponse : Labib repasse en Listening (l'utilisateur est encore
+    // probablement focalise sur l'input). Au bout de 6s sans activite, on
+    // retombera sur Waiting via m_idleRevertTimer.
+    setAvatarState(AvatarState::Listening);
+    if (m_idleRevertTimer) m_idleRevertTimer->start();
+}
+
+void LabibAssistant::onTypingVideoFinished()
+{
+    // Ce slot est appele a CHAQUE fin de media du cercle avatar (idle ou
+    // typing). On ne debloque la reponse que si on est en attente.
+    if (m_responseReady && !m_pendingResponse.isEmpty()) {
+        m_typingVideoFinished = true;
+        deliverPendingResponseIfReady();
+    }
+}
+
+void LabibAssistant::deliverPendingResponseIfReady()
+{
+    if (!m_responseReady || !m_typingVideoFinished) return;
+    const QString r = m_pendingResponse;
+    m_pendingResponse.clear();
+    m_responseReady = false;
+    displayAiAnswer(r);
+}
+
+void LabibAssistant::loadAvatarVideo(const QStringList &candidates)
+{
+    if (!m_avatarCircle || candidates.isEmpty()) return;
+    m_avatarCircle->tryLoadAny(candidates);
+}
+
+void LabibAssistant::setAvatarState(AvatarState s)
+{
+    if (s == m_avatarState && m_avatarCircle) {
+        // meme etat : pas de rechargement video pour ne pas casser l'animation.
+        return;
+    }
+    m_avatarState = s;
+    if (!m_avatarCircle) return;
+
+    QStringList target;
+    QString labelText;
+    QString labelColor;
+    int loops = 1;
+
+    switch (s) {
+    case AvatarState::Waiting:
+        target     = m_waitingVideoCandidates;
+        labelText  = QString::fromUtf8("En attente\xE2\x80\xA6");
+        labelColor = "#9ca3af";          // gris
+        loops      = QMediaPlayer::Infinite; // boucle douce, Labib reste vivant
+        break;
+    case AvatarState::Listening:
+        target     = m_listeningVideoCandidates;
+        // Note: separation litterale apres \xA9 pour que le compilateur ne
+        // lise pas "A9c" comme un seul escape hex.
+        labelText  = QString::fromUtf8("Je t'\xC3\xA9" "coute\xE2\x80\xA6");
+        labelColor = "#60a5fa";          // bleu
+        loops      = QMediaPlayer::Infinite; // boucle attentive
+        break;
+    case AvatarState::Speaking:
+        target     = m_speakingVideoCandidates;
+        labelText  = QString::fromUtf8("Je r\xC3\xA9ponds\xE2\x80\xA6");
+        labelColor = "#22c55e";          // vert
+        loops      = 1;                  // joue en entier puis playbackEnded
+        break;
+    }
+
+    m_avatarCircle->setLoopCount(loops);
+    if (!target.isEmpty()) {
+        loadAvatarVideo(target);
+    }
+
+    if (m_avatarStatusLabel) {
+        m_avatarStatusLabel->setText(labelText);
+        m_avatarStatusLabel->setStyleSheet(QString(
+            "color: %1; font-size: 11px; font-weight: 600; letter-spacing: 0.2px; background: transparent;")
+            .arg(labelColor));
+    }
+}
+
+QStringList LabibAssistant::buildVideoCandidates(const QString &fileName) const
+{
+    if (fileName.trimmed().isEmpty()) return {};
+
+    const QString appDir = QCoreApplication::applicationDirPath();
+    const QString cwd    = QDir::currentPath();
+    const QString srcDir = QFileInfo(__FILE__).absolutePath();
+
+    QStringList paths = {
+        appDir + "/" + fileName,
+        appDir + "/../" + fileName,
+        appDir + "/../../" + fileName,
+        appDir + "/assets/" + fileName,
+        cwd    + "/" + fileName,
+        cwd    + "/../" + fileName,
+        cwd    + "/../../" + fileName,
+        cwd    + "/assets/" + fileName,
+        srcDir + "/" + fileName,
+        srcDir + "/../" + fileName,
+        srcDir + "/assets/" + fileName,
+        ":/" + fileName,
+    };
+
+    // Remonte aussi 6 niveaux depuis appDir et cwd, pour les builds Qt Creator
+    // qui placent l'exe dans build-<...>/release.
+    QDir up(appDir);
+    for (int i = 0; i < 6; ++i) {
+        if (!up.cdUp()) break;
+        paths << up.filePath(fileName);
+    }
+    QDir up2(cwd);
+    for (int i = 0; i < 6; ++i) {
+        if (!up2.cdUp()) break;
+        paths << up2.filePath(fileName);
+    }
+
+    QStringList dedup;
+    QSet<QString> seen;
+    for (const QString &p : paths) {
+        const QString norm = QDir::cleanPath(p);
+        if (norm.isEmpty() || seen.contains(norm)) continue;
+        seen.insert(norm);
+        dedup << norm;
+    }
+    return dedup;
 }
 
 bool LabibAssistant::eventFilter(QObject *watched, QEvent *event)
 {
-    if (watched == m_userInput && event->type() == QEvent::KeyPress) {
-        auto *keyEvent = static_cast<QKeyEvent *>(event);
-        if (keyEvent->key() == Qt::Key_Return || keyEvent->key() == Qt::Key_Enter) {
-            if (keyEvent->modifiers() == Qt::NoModifier) {
-                onSendMessage();
-                return true;
-            }
-
-            if (keyEvent->modifiers() == Qt::ShiftModifier) {
-                return false;
+    if (watched == m_userInput) {
+        // Tu cliques / focus l'input -> Labib t'ecoute.
+        if (event->type() == QEvent::FocusIn
+            && m_avatarState != AvatarState::Speaking) {
+            setAvatarState(AvatarState::Listening);
+            if (m_idleRevertTimer) m_idleRevertTimer->start();
+        }
+        if (event->type() == QEvent::KeyPress) {
+            auto *keyEvent = static_cast<QKeyEvent *>(event);
+            if (keyEvent->key() == Qt::Key_Return || keyEvent->key() == Qt::Key_Enter) {
+                if (keyEvent->modifiers() == Qt::NoModifier) {
+                    onSendMessage();
+                    return true;
+                }
+                if (keyEvent->modifiers() == Qt::ShiftModifier) {
+                    return false;
+                }
             }
         }
     }
@@ -1519,7 +2266,7 @@ void LabibAssistant::onSendMessage()
     if (userMessage.isEmpty()) return;
     
     // Display user message
-    appendChatBubble(QString("<b>Vous :</b> %1").arg(userMessage.toHtmlEscaped()), true, true);
+    appendChatBubble(userMessage.toHtmlEscaped(), true, true);
     
     m_userInput->clear();
     startTypingIndicator();
@@ -1531,8 +2278,16 @@ void LabibAssistant::onSendMessage()
 
 void LabibAssistant::handleAiResponse(const QString &userMessage)
 {
-    QString response = generateAiResponse(userMessage);
-    displayAiAnswer(response);
+    // On rend la main a l'event loop pour que QMediaPlayer demarre la
+    // lecture de download3.mp4. Puis on genere la reponse et on la met en
+    // attente : elle ne sera affichee qu'une fois la video typing terminee
+    // (signal playbackEnded). Ainsi download3.mp4 n'est jamais coupe.
+    QTimer::singleShot(0, this, [this, userMessage]() {
+        const QString response = generateAiResponse(userMessage);
+        m_pendingResponse = response;
+        m_responseReady = true;
+        deliverPendingResponseIfReady();
+    });
 }
 
 QString LabibAssistant::generateAiResponse(const QString &userMessage)
@@ -1545,11 +2300,27 @@ QString LabibAssistant::generateAiResponse(const QString &userMessage)
         mentionedModule = m_selectedModule;
     }
 
-    const bool asksDataField = containsAny(normalized, {
-        "quel", "quelle", "nom", "email", "matricule", "cin", "prix", "stock", "quantite", "statut", "combien", "liste"
-    });
+    // 1) Labib (DB live + personnalitÃ©). Il a prioritÃ© sur tout : KPIs, alertes,
+    //    rapport du jour, comptages, prÃ©sentations, salutations, remerciementsâ€¦
+    const QString labibAnswer = Labib::replyIfMatched(userMessage);
+    if (!labibAnswer.isEmpty()) {
+        return labibAnswer;
+    }
+    // 2) SQL intelligent via Qwen local (lecture seule): couvre les questions
+    //    data non prevues par les regles fixes.
+    const QString sqlQwenAnswer = answerSqlQuestionWithQwen(userMessage, mentionedModule);
+    if (!sqlQwenAnswer.isEmpty()) {
+        return sqlQwenAnswer;
+    }
 
-    if (asksDataField || normalized.contains("client") || normalized.contains("produit") || normalized.contains("employe") || normalized.contains("stock")) {
+    // 3) Reponse data ciblee (fallback rapide).
+    const bool asksDataField = containsAny(normalized, {
+        "quel", "quelle", "nom", "email", "matricule", "cin", "prix", "stock",
+        "quantite", "statut", "combien", "liste"
+    });
+    if (asksDataField
+        || normalized.contains("client")  || normalized.contains("produit")
+        || normalized.contains("employe") || normalized.contains("stock")) {
         const QString dataAnswer = answerDataQuestion(userMessage, mentionedModule);
         if (!dataAnswer.isEmpty()) {
             return dataAnswer;
@@ -1568,31 +2339,27 @@ QString LabibAssistant::generateAiResponse(const QString &userMessage)
     const bool hasExplicitModuleInPrompt = !explicitModuleMention.isEmpty();
     if (!appScopedQuestion && !hasExplicitModuleInPrompt) {
         if (genericAssistantIntent) {
-            return "Je suis limite a WasteGuard. "
-                   "Precise le module (Clients, Employes, Produits, Maintenance, Commandes ou Stock) "
-                   "et je t'aiderai pas a pas.";
+            return Labib::reply(QStringLiteral("aide"));
         }
-        return "Je suis l'assistant personnel de l'application WasteGuard uniquement. "
-               "Pose-moi une question sur un module, un workflow, une donnee ou une erreur de l'app.";
+        return "Je suis Labib, ton coll\xC3\xA8gue WasteGuard. Pose-moi une question "
+               "sur un module (Clients, Employ\xC3\xA9s, Produits, Maintenance, Commandes, "
+               "Stock) ou tape <b>aide</b> pour voir tout ce que je sais faire.";
     }
 
+    // 4) Dernier recours : Qwen local s'il est dispo, sinon fallback engageant.
     QString localAnswer = queryLocalQwenAssistant(userMessage, mentionedModule);
     if (!localAnswer.trimmed().isEmpty()) {
-        localAnswer = localAnswer.toHtmlEscaped();
-        localAnswer.replace("\n", "<br>");
-        return localAnswer;
+        return Labib::markdownToHtml(localAnswer);
     }
 
-    return "Qwen local est indisponible pour le moment. "
-           "Verifie que le serveur local est actif (ex: Ollama) et que le modele Qwen est installe, "
-           "puis reessaie.";
+    return Labib::reply(userMessage);
 }
 
 void LabibAssistant::displayAiAnswer(const QString &answer)
 {
     stopTypingIndicator();
     m_lastAssistantHtml = answer;
-    appendChatBubble(QString("<b>Labib :</b> %1").arg(answer), false, true);
+    appendChatBubble(answer, false, true);
     refreshSmartStats();
 }
 
@@ -1946,3 +2713,4 @@ QString LabibAssistant::getModuleDescription(const QString &module)
     }
     return "";
 }
+

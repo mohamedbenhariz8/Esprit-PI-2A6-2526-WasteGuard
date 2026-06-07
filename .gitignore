@@ -1,4 +1,8 @@
-# Build artifacts
+# ===========================================================
+# WasteGuard — .gitignore
+# ===========================================================
+
+# ---- Build artifacts ----
 debug/
 release/
 *.o
@@ -11,46 +15,128 @@ Makefile*
 .qmake.stash
 ui_mainwindow.h
 test_ui_mainwindow.h
+mocinclude.opt
 
-# Qt Creator specific
+# ---- Qt Creator / IDE specific ----
 *.pro.user
 *.pro.user.*
 .qtcreator/
-
-# VS Code / JetBrains
 .vscode/
 .idea/
 .vs/
+.claude/
 *.swp
-*.bak
 
-# Backups and Temporary files
+# ---- Backups and Temporary files ----
+*.bak
+*.bak_*
+*.backup
+*.backup_*
 mainwindow.ui.backup*
 mainwindow_temp.ui
 *.log
 nul)
+diff.txt
 
-# Python artifacts
+# ---- Secrets — never commit the real .env ----
+.env
+ngrok_url.txt
+
+# ---- Python artifacts ----
 .venv/
 __pycache__/
 *.pyc
 *.pyo
 
-# One-off scripts (keeping only core project files)
-# Suggesting to delete these manually to avoid accidental loss of useful scripts,
-# but adding them here for documentation.
-# patch*.py
-# safe_patch*.py
-# search*.py
-# find_*.py
-# fix_*.py
-# move_*.py
-# print_*.py
-# append_*.py
-# inject_*.py
-# restore_header.py
-# update_ui.py
-# debug*.py
-# merge_ui_final.py
-# *_bot.py
-# *_bot.js
+# ---- Trained models / large media (host externally, link in README) ----
+*.pt
+*.pth
+*.onnx
+*.h5
+*.keras
+*.pkl
+*.joblib
+ngrok.exe
+
+# ---- One-off dev scripts (not part of the published project) ----
+patch*.py
+safe_patch*.py
+search*.py
+find_*.py
+fix_*.py
+fix_*.ps1
+fix_*.js
+move_*.py
+print_*.py
+append_*.py
+inject_*.py
+restore_header.py
+update_ui.py
+debug*.py
+check_*.py
+mass_fix.py
+cleanup_encoding.py
+show_ctx.py
+style_btn.py
+merge_ui_final.py
+*_bot.py
+*_bot.js
+diagnose_meta.ps1
+CLEAN_PROJECT.ps1
+apply_rfid_removal.py
+ai_worker_test.py
+ai_worker_simple.py
+repair.py
+hand_tracker.py
+classify_live.py
+
+# ---- Redundant generated/setup docs (consolidated into README.md + docs/) ----
+START_HERE.txt
+00_START_HERE.txt
+VISUAL_SUMMARY.txt
+startup_crash_log.txt
+README_FINAL.md
+README_QUICK_INDEX.md
+api_find.txt
+nav_code.txt
+stats_find.txt
+meta_shortcut_info.txt
+delivery_tracking.json
+
+# ---- Old / duplicate project files ----
+projettcpp.pro
+old_arduino_code.ino
+second_card_code.ino
+
+# ---- Build helper scripts ----
+build_dark.bat
+rebuild.bat
+rebuild_force.bat
+copy_voice_engine_to_build.bat
+
+# ---- Node.js ----
+node_modules/
+package-lock.json
+
+# ---- Luma / video generation browser profile ----
+luma_profile/
+luma_video_bot.js
+lumalabs_bot.py
+meta_video_bot.js
+
+# ---- Test data (not for production) ----
+test_data/
+
+# ---- Old standalone Arduino sketches (kept in updated_arduino_code/) ----
+mg90s_test/
+servo_arduino/
+servo_bitbang_test/
+sketch_apr30d/
+updated_arduino_code.ino
+
+# ---- Misc dev leftovers ----
+run_ollama.bat
+run_with_ollama.bat
+verify_setup.bat
+*.sql
+!docs/*.sql

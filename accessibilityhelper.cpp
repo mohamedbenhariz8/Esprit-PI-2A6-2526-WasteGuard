@@ -366,14 +366,20 @@ void AccessibilityHelper::applyZoomToWidget(QWidget *widget)
 
     qDebug() << "[ACCESSIBILITY] Applying zoom" << m_textZoomPercentage << "% to widget";
 
-    // Appliquer le zoom à tous les descendants
+    // Regex to find font-size in stylesheets (e.g. "font-size: 13px;" or "font-size: 10pt;")
+    static const QRegularExpression fontSizeRx(
+        R"(font-size\s*:\s*(\d+)\s*(px|pt))",
+        QRegularExpression::CaseInsensitiveOption);
+
+    // Apply zoom to all descendants
     QList<QWidget*> allWidgets = widget->findChildren<QWidget*>();
     allWidgets.append(widget);
 
     int zoomedCount = 0;
     for (QWidget *w : allWidgets) {
         if (!w) continue;
-        
+
+        // --- 1. Scale the programmatic font ---
         QFont font = w->font();
         const QVariant baseProp = w->property("basePointSize");
         int baseSize = baseProp.isValid() ? baseProp.toInt() : font.pointSize();
@@ -381,22 +387,54 @@ void AccessibilityHelper::applyZoomToWidget(QWidget *widget)
         if (!baseProp.isValid()) {
             w->setProperty("basePointSize", baseSize);
         }
-        
+
         int scaledSize = adjustFontSize(baseSize);
-        
-        // IMPORTANT: Toujours appliquer la nouvelle taille
         font.setPointSize(scaledSize);
         w->setFont(font);
-        
+
+        // --- 2. Patch stylesheet font-size so it doesn't override setFont ---
+        QString ss = w->styleSheet();
+        if (!ss.isEmpty() && fontSizeRx.match(ss).hasMatch()) {
+            // Save original stylesheet once
+            if (!w->property("baseStyleSheet").isValid()) {
+                w->setProperty("baseStyleSheet", ss);
+            }
+            const QString baseSheet = w->property("baseStyleSheet").toString();
+
+            // Replace every font-size in the *original* stylesheet with the scaled value
+            QString patched = baseSheet;
+            QRegularExpressionMatchIterator it = fontSizeRx.globalMatch(baseSheet);
+            // Process matches in reverse order so string positions stay valid
+            QList<QRegularExpressionMatch> matches;
+            while (it.hasNext()) matches.append(it.next());
+
+            for (int i = matches.size() - 1; i >= 0; --i) {
+                const QRegularExpressionMatch &m = matches[i];
+                int origSize = m.captured(1).toInt();
+                const QString unit = m.captured(2);
+
+                // Save per-occurrence base size
+                int scaledFontSize = (origSize * m_textZoomPercentage) / 100;
+                if (scaledFontSize < 1) scaledFontSize = 1;
+
+                const QString replacement = QString("font-size: %1%2").arg(scaledFontSize).arg(unit);
+                patched.replace(m.capturedStart(), m.capturedLength(), replacement);
+            }
+
+            if (patched != ss) {
+                w->setStyleSheet(patched);
+            }
+        }
+
         zoomedCount++;
     }
-    
+
     qDebug() << "[ACCESSIBILITY] Zoomed" << zoomedCount << "widgets to size scale" << m_textZoomPercentage << "%";
-    
-    // Force la mise à jour complète du widget
+
+    // Force full repaint
     widget->update();
     widget->repaint();
-    
+
     // Also recursively update parent
     QWidget *parent = widget->parentWidget();
     while (parent) {

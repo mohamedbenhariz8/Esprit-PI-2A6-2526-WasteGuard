@@ -2,6 +2,19 @@
 
 #include <QSqlError>
 #include <QDebug>
+#include <QProcessEnvironment>
+
+// Database connection settings are read from environment variables so that
+// no credentials are stored in source control. See .env.example for the
+// list of variables. Defaults match the local Oracle dev instance, except
+// the password, which MUST be provided via WASTEGUARD_DB_PASSWORD.
+namespace {
+QString dbEnv(const char *key, const QString &fallback = QString())
+{
+    const QString value = QProcessEnvironment::systemEnvironment().value(key);
+    return value.isEmpty() ? fallback : value;
+}
+}
 
 Connection* Connection::p_instance = nullptr;
 
@@ -24,9 +37,9 @@ bool Connection::createConnect()
         db.close();
     }
 
-    db.setDatabaseName("Source_Projet2A");
-    db.setUserName("wasteguard");
-    db.setPassword("123");
+    db.setDatabaseName(dbEnv("WASTEGUARD_DB_NAME", "Source_Projet2A"));
+    db.setUserName(dbEnv("WASTEGUARD_DB_USER", "wasteguard"));
+    db.setPassword(dbEnv("WASTEGUARD_DB_PASSWORD"));
 
     if (db.open()) {
         qDebug() << "Connexion a la base de donnees reussie";
@@ -45,7 +58,7 @@ bool Connection::createConnect(const QString &userName, const QString &password)
 
     const QString user = userName.trimmed();
 
-    db.setDatabaseName("Source_Projet2A");
+    db.setDatabaseName(dbEnv("WASTEGUARD_DB_NAME", "Source_Projet2A"));
     db.setUserName(user);
     db.setPassword(password);
 

@@ -1,0 +1,79 @@
+﻿<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <title>Suivre Livraison</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <style>
+        body { font-family: Arial, sans-serif; text-align: center; margin-top: 50px; background-color: #f4f4f9; color: #333; }
+        .status { padding: 20px; border-radius: 10px; margin: 20px; font-size: 1.2em; font-weight: bold; }
+        .active { background-color: #d4edda; color: #155724; border: 1px solid #c3e6cb; }
+        .error { background-color: #f8d7da; color: #721c24; border: 1px solid #f5c6cb; }
+        #coords { margin-top: 20px; font-family: monospace; color: #666; }
+        .btn { padding: 15px 30px; font-size: 1em; background-color: #007bff; color: white; border: none; border-radius: 5px; cursor: pointer; }
+        .btn:active { background-color: #0056b3; }
+    </style>
+</head>
+<body>
+    <h1>Tracker de Livraison</h1>
+    <div id="statusBox" class="status">En attente d'autorisation GPS...</div>
+    <div id="coords">Lat: --<br>Lng: --</div>
+    <br>
+    <button class="btn" onclick="stopTracking()">Terminer la livraison</button>
+
+    <script>
+        let watchId;
+        const statusBox = document.getElementById('statusBox');
+        const coordsBox = document.getElementById('coords');
+
+        function sendLocation(lat, lng) {
+            fetch('/update_location', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ lat: lat, lng: lng })
+            })
+            .then(response => response.json())
+            .then(data => console.log('Location updated:', data))
+            .catch(error => console.error('Error updating location:', error));
+        }
+
+        function success(position) {
+            const lat = position.coords.latitude;
+            const lng = position.coords.longitude;
+            coordsBox.innerHTML = `Lat: ${lat.toFixed(6)}<br>Lng: ${lng.toFixed(6)}`;
+            statusBox.className = 'status active';
+            statusBox.innerText = 'Suivi en cours...';
+            sendLocation(lat, lng);
+        }
+
+        function error(err) {
+            statusBox.className = 'status error';
+            statusBox.innerText = `Erreur: ${err.message}`;
+        }
+
+        function requestLocation() {
+            if (navigator.geolocation) {
+                navigator.geolocation.getCurrentPosition(success, error, {
+                    enableHighAccuracy: true,
+                    timeout: 5000,
+                    maximumAge: 0
+                });
+            } else {
+                statusBox.className = 'status error';
+                statusBox.innerText = 'Geolocalisation non supportee par le navigateur.';
+            }
+        }
+
+        requestLocation();
+        watchId = setInterval(requestLocation, 5000);
+
+        function stopTracking() {
+            if (watchId) clearInterval(watchId);
+            statusBox.className = 'status';
+            statusBox.innerText = 'Livraison terminee.';
+            statusBox.style.backgroundColor = '#e2e3e5';
+            statusBox.style.color = '#383d41';
+        }
+    </script>
+</body>
+</html>

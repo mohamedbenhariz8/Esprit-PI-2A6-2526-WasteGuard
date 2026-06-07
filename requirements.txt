@@ -1,4 +1,23 @@
-SpeechRecognition==3.15.1
+# ============================================================
+# WasteGuard — dépendances Python (versions fixées)
+# Installation : pip install -r requirements.txt
+# Testé avec Python 3.11
+# ============================================================
+
+# --- Reconnaissance & synthèse vocale ---
+SpeechRecognition==3.10.4
 pyttsx3==2.90
-sounddevice==0.5.5
-numpy==2.4.3
+sounddevice==0.5.1
+
+# --- Vision / classification des déchets (ESP32-CAM) ---
+ultralytics==8.3.0
+opencv-python==4.10.0.84
+transformers==4.44.2
+Pillow==10.4.0
+mediapipe==0.10.14
+
+# --- Calcul numérique (partagé, <2 pour compat mediapipe) ---
+numpy==1.26.4
+
+# --- Serveur de tracking livraison ---
+Flask==3.0.3

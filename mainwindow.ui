@@ -1675,7 +1675,7 @@ QLabel#userLabel_Aj {
                   </size>
                  </property>
                  <property name="placeholderText">
-                  <string>Rechercher un employe par matricule</string>
+                  <string>Rechercher un employe par nom ou matricule...</string>
                  </property>
                 </widget>
                </item>
@@ -1689,22 +1689,27 @@ QLabel#userLabel_Aj {
                  </property>
                  <item>
                   <property name="text">
+                   <string>Trier par: Nom (A-Z)</string>
+                  </property>
+                 </item>
+                 <item>
+                  <property name="text">
+                   <string>Trier par: Matricule (A-Z)</string>
+                  </property>
+                 </item>
+                 <item>
+                  <property name="text">
                    <string>Trier par: Specialite</string>
                   </property>
                  </item>
                  <item>
                   <property name="text">
-                   <string>Trier par: note de fin d annes</string>
+                   <string>Trier par: Salaire (decroissant)</string>
                   </property>
                  </item>
                  <item>
                   <property name="text">
-                   <string>Trier par: salaire</string>
-                  </property>
-                 </item>
-                 <item>
-                  <property name="text">
-                   <string>Trier par: Nom</string>
+                   <string>Trier par: Note (decroissant)</string>
                   </property>
                  </item>
                 </widget>
@@ -4004,7 +4009,7 @@ font-weight: 700;
 text-align: center;</string>
                               </property>
                               <property name="text">
-                               <string>Visualisation Map 3D</string>
+                               <string>Stock Map</string>
                               </property>
                              </widget>
                             </item>
@@ -4024,7 +4029,7 @@ font-weight: 700;
 text-align: center;</string>
                               </property>
                               <property name="text">
-                               <string>Generer Video 3D</string>
+                               <string>Assemblage</string>
                               </property>
                              </widget>
                             </item>
@@ -4074,7 +4079,7 @@ text-align: center;</string>
                             <item>
                              <widget class="QPushButton" name="prod_btnPdf">
                               <property name="text">
-                               <string>Rapport PDF</string>
+                               <string>Catalogue</string>
                               </property>
                              </widget>
                             </item>

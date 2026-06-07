@@ -203,6 +203,29 @@ Rectangle {
             }
         }
 
+        MapQuickItem {
+            id: phoneMarker
+            coordinate: QtPositioning.coordinate(0, 0)
+            anchorPoint.x: 12
+            anchorPoint.y: 12
+            visible: false
+            sourceItem: Rectangle {
+                width: 24
+                height: 24
+                radius: 12
+                color: "#10B981" // Green dot for Phone Real-time Location
+                border.color: "white"
+                border.width: 2
+
+                // Pulsing animation
+                SequentialAnimation on scale {
+                    loops: Animation.Infinite
+                    PropertyAnimation { to: 1.2; duration: 800; easing.type: Easing.InOutQuad }
+                    PropertyAnimation { to: 1.0; duration: 800; easing.type: Easing.InOutQuad }
+                }
+            }
+        }
+
         TapHandler {
             enabled: !mapContainer.isReadOnly
             onTapped: (eventPoint) => {
@@ -401,5 +424,11 @@ Rectangle {
              mapContainer.currentAddress = lat.toFixed(5) + ", " + lon.toFixed(5);
         }
         updateRoute();
+    }
+
+    function updatePhoneLocation(lat, lon) {
+        phoneMarker.coordinate = QtPositioning.coordinate(lat, lon);
+        phoneMarker.visible = true;
+        map.center = phoneMarker.coordinate;
     }
 }

@@ -32,6 +32,33 @@ int Arduino::connect_arduino()
     arduino_is_available = false;
     arduino_port_name.clear();
 
+    // 0. Preferred port: try COM12 first (the ESP32 is usually enumerated
+    //    here). If it is present AND actually opens, use it. Otherwise fall
+    //    through to auto-detection so a renumbered/different port still works
+    //    instead of leaving the app silently disconnected.
+    const QString kForcedPort = QStringLiteral("COM12");
+    foreach (const QSerialPortInfo &info, QSerialPortInfo::availablePorts()) {
+        if (info.portName().compare(kForcedPort, Qt::CaseInsensitive) == 0) {
+            if (serial->isOpen()) serial->close();
+            serial->setPortName(kForcedPort);
+            if (serial->open(QSerialPort::ReadWrite)) {
+                serial->setBaudRate(QSerialPort::Baud9600);
+                serial->setDataBits(QSerialPort::Data8);
+                serial->setParity(QSerialPort::NoParity);
+                serial->setStopBits(QSerialPort::OneStop);
+                serial->setFlowControl(QSerialPort::NoFlowControl);
+                arduino_is_available = true;
+                arduino_port_name = kForcedPort;
+                qInfo() << "[Arduino] Opened preferred port" << kForcedPort << "at 9600 baud.";
+                return 0;
+            }
+            qWarning() << "[Arduino] Preferred port" << kForcedPort
+                       << "present but failed to open (" << serial->errorString()
+                       << ") - falling back to auto-detect.";
+            break;
+        }
+    }
+
     // 1. Try exact Arduino Uno VID/PID.
     foreach (const QSerialPortInfo &info, QSerialPortInfo::availablePorts()) {
         qDebug() << "[Arduino] port:" << info.portName()
