@@ -24,7 +24,6 @@ mocinclude.opt
 .vscode/
 .idea/
 .vs/
-.claude/
 *.swp
 
 # ---- Backups and Temporary files ----
